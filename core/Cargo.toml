@@ -7,6 +7,7 @@ edition = "2021"
 [build-dependencies]
 bindgen = "0.60.1" 
 cc = "1.0.79"
+serde_yaml = "0.9"
 
 [dependencies]
 anyhow = "1.0.70"
@@ -46,6 +47,10 @@ thiserror = "1.0"
 tls-parser = { git = "https://github.com/thegwan/tls-parser.git" }
 toml = "0.5.11"
 x509-parser = "0.13.2"
+cfg-if = "0.1"
+cfg_aliases = "0.1.0"
+build_const = "0.2.2"
+config = "0.13.1"
 
 [features]
 timing = []

@@ -12,6 +12,7 @@ pub mod frame;
 pub mod http_transaction;
 pub mod tls_handshake;
 pub mod zc_frame;
+pub mod custom;
 
 // Re-export subscribable types for more convenient usage.
 pub use self::connection::Connection;

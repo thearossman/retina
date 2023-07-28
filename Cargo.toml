@@ -2,6 +2,7 @@
 members = [
     "core",
     "examples/basic",
+    "examples/basic_custom",
     "examples/client_randoms",
     "examples/ip_anon",
     "examples/log_conn",

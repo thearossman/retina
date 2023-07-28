@@ -45,11 +45,13 @@ extern "C" {
     fn rte_ring_get_capacity_(ring: *const rte_ring) -> c_uint;
 }
 
+/*
 #[cfg(feature = "mlx5")]
 #[link(name = "rte_net_mlx5")]
 extern "C" {
     fn rte_pmd_mlx5_get_dyn_flag_names();
 }
+*/
 
 #[cfg(feature = "mlx5")]
 #[inline(never)]
