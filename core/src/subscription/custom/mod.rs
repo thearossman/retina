@@ -32,13 +32,14 @@ impl Subscribable for CustomSubscribable {
 
     fn level() -> Level {
         cfg_if::cfg_if! {
-            if #[cfg(subscribed="application")] {
-                Level::Session
-            } else if #[cfg(subscribed="connection")] {
+            if #[cfg(subscribed="connection")] {
                 Level::Connection
+            } else if #[cfg(subscribed="session")] {
+                Level::Session
             } else {
                 Level::Packet
             }
+            // TODO figure out ordering here
         }
     }
 
@@ -97,7 +98,9 @@ impl Trackable for CustomTracked {
 
     fn pre_match(&mut self, _pdu: L4Pdu, _session_id: Option<usize>) {
         #[cfg(subscribed="connection")]
-        if let Some(connections) = &mut self.connections { connections.pre_match(&_pdu, _session_id) };
+        if let Some(connections) = &mut self.connections { 
+            connections.pre_match(&_pdu, _session_id) 
+        }
         #[cfg(subscribed="frame")]
         if let Some(frames) = &mut self.frames { frames.pre_match(_pdu, _session_id) };
     }
@@ -112,11 +115,15 @@ impl Trackable for CustomTracked {
          # - If delivering app data that parser will discard on match, store it
          */
         #[cfg(subscribed="connection")]
-        if let Some(connections) = &mut self.connections { connections.on_match(&_session) }; // should return value here re: whether to track
+        if let Some(connections) = &mut self.connections { 
+            connections.on_match(&_session); 
+        }        
         #[cfg(subscribed="frame")]
         if let Some(frames) = &mut self.frames { frames.on_match(&_session) }; 
         #[cfg(subscribed="application")]
-        if let Some(application) = &mut self.application { application.on_match(_session); }
+        if let Some(application) = &mut self.application { 
+            application.on_match(_session); 
+        }
     }
 
     fn post_match(&mut self, _pdu: L4Pdu, _subscription: &Subscription<Self::Subscribed>) {

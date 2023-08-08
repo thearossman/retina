@@ -2,6 +2,7 @@ subscribed:
   frame:
     zc_frame:
     frame:
+    custom:
   connection:
     five_tuple:
     timing:
@@ -9,6 +10,7 @@ subscribed:
       time_to_second_packet:
       max_inactivity:
       duration:
+      custom:
     history:
     orig_flow:
       nb_pkts:
@@ -28,7 +30,9 @@ subscribed:
       data_start:
       capacity:
       gaps:
+    custom:
   application:
+    custom:
     tls:
       client_hello:
       server_hello:
@@ -70,4 +74,4 @@ subscribed:
         answers:
         nameservers:
         additionals:
-
+  custom:

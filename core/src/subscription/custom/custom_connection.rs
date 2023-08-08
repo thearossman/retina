@@ -8,6 +8,10 @@ use std::time::{Duration, Instant};
 #[allow(unused_imports)]
 use crate::protocols::packet::tcp::{ACK, FIN, RST, SYN};
 
+#[cfg(feature="user-def")]
+include!(concat!(env!("OUT_DIR"), "/custom.rs"));
+
+
 use serde::{Serialize, Deserialize};
 
 #[derive(Debug)]
@@ -16,6 +20,8 @@ pub struct ConnectionData {
     pub five_tuple: FiveTuple,
     #[cfg(connection="timing")]
     pub timing: Timing,
+    #[cfg(feature="user-def")]
+    pub user_data: UserSubscribable,
 
     // TODOTR not implemented yet 
     /* 
@@ -152,7 +158,7 @@ impl TimingTracker {
 
 #[allow(dead_code)]
 pub(super) struct ConnectionTracker {
-    connections: HashMap<ConnId, (TimingTracker, FiveTuple)>,
+    connections: HashMap<ConnId, (TimingTracker, FiveTuple, UserTracked)>,
     // TODOTR history, flowdata
 }
 
@@ -162,11 +168,15 @@ impl ConnectionTracker {
     fn track(&mut self, pdu: &L4Pdu) {
         let five_tuple = FiveTuple::from_ctxt(pdu.ctxt);
         let conn_id = five_tuple.conn_id();
-        self.connections
-            .entry(conn_id)
-            .or_insert((TimingTracker::new(), five_tuple))
-            .0
-            .update();
+        let entry = self.connections
+                       .entry(conn_id)
+                       .or_insert((TimingTracker::new(), five_tuple, UserTracked::new()));
+
+        #[cfg(connection="timing")]
+        entry.0.update();
+
+        #[cfg(feature="user-def")]
+        entry.2.packet_received(pdu);
     }
 
     pub fn new(five_tuple: FiveTuple) -> Self {
@@ -174,7 +184,7 @@ impl ConnectionTracker {
         let mut con = ConnectionTracker {
             connections: HashMap::new(),
         }; 
-        con.connections.insert(five_tuple.conn_id(), (TimingTracker::new(), five_tuple));
+        con.connections.insert(five_tuple.conn_id(), (TimingTracker::new(), five_tuple, UserTracked::new()));
         con
     }
 
@@ -200,6 +210,8 @@ impl ConnectionTracker {
                     five_tuple: _v.1, 
                     #[cfg(connection="timing")]
                     timing: _v.0.to_data(),
+                    #[cfg(feature="user-def")]
+                    user_data: _v.2.to_data()
                 }
             );
         }

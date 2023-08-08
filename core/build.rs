@@ -12,14 +12,17 @@ fn main() {
     println!("cargo:rerun-if-env-changed=DPDK_PATH");
     println!("cargo:rerun-if-changed=build.rs");
     println!("cargo:rerun-if-changed=src/dpdk/inline.c");
+    println!("cargo:rerun-if-changed=build_data/custom.rs");
+    println!("cargo:rerun-if-changed=build_data/custom_cfgs.yml");
     let cargo_manifest_dir = env::var("CARGO_MANIFEST_DIR").unwrap();
-
-    build_custom_subscription();
 
     let cargo_dir = Path::new(&cargo_manifest_dir);
 
     let out_dir_s = env::var("OUT_DIR").unwrap();
     let out_dir = Path::new(&out_dir_s);
+
+    build_custom_subscription(out_dir);
+
     let load_lib_path_s = env::var("LD_LIBRARY_PATH").unwrap();
     let load_lib_path = Path::new(&load_lib_path_s);
     let pkg_config_path = load_lib_path.join("pkgconfig");
@@ -195,79 +198,28 @@ impl ConfigBuilder {
         }
     }
 
+    pub fn user_defs(&self, out_dir: &Path) {
+        // temp 
+        let fp_custom = "/home/trossman/retina/build_data/custom.rs";
+        let out_file = out_dir.join("custom.rs");
+
+        let data_in = std::fs::read_to_string(fp_custom).expect("Unable to read input file");
+        
+        std::fs::write(out_file, data_in).expect("Unable to write custom data");
+
+        // TODO need to specify the scope of the custom data 
+        // (Packet, App, Connection)
+        println!("cargo:rustc-cfg=feature=\"user-def\"");
+    }
+
 }
 
-fn build_custom_subscription() {
+fn build_custom_subscription(out_dir: &Path) {
     // temp 
     let fp_grammar = "/home/trossman/retina/build_data/grammar.yml";
     let fp_cfgs = "/home/trossman/retina/build_data/custom_cfgs.yml";
     let mut builder = ConfigBuilder::new(fp_grammar, fp_cfgs);
     builder.parse();
     builder.print_configs();
+    builder.user_defs(out_dir);
 }
-
-/*
-fn build_custom_subscription_manual() {
-    // TODO - read from custom_defs (constants) and user config file
-
-    println!("cargo:rustc-cfg=subscribed=\"connection\"");
-    println!("cargo:rustc-cfg=subscribed=\"frame\"");
-    println!("cargo:rustc-cfg=subscribed=\"application\"");
-    println!("cargo:rustc-cfg=frame=\"frame\"");
-    println!("cargo:rustc-cfg=frame=\"zc_frame\"");
-    println!("cargo:rustc-cfg=connection=\"five_tuple\"");
-    println!("cargo:rustc-cfg=connection=\"timing\"");
-    println!("cargo:rustc-cfg=timing=\"ts_first\"");
-    println!("cargo:rustc-cfg=timing=\"time_to_second_packet\"");
-    println!("cargo:rustc-cfg=timing=\"max_inactivity\"");
-    println!("cargo:rustc-cfg=timing=\"duration\"");
-    println!("cargo:rustc-cfg=application=\"dns\"");
-    println!("cargo:rustc-cfg=application=\"tls\"");
-    println!("cargo:rustc-cfg=application=\"http\"");
-
-    println!("cargo:rustc-cfg=dns=\"transaction_id\"");
-    println!("cargo:rustc-cfg=dns=\"dns_query\"");
-    println!("cargo:rustc-cfg=dns=\"dns_response\"");
-    println!("cargo:rustc-cfg=dns_query=\"num_questions\"");
-    println!("cargo:rustc-cfg=dns_query=\"recursion_desired\"");
-    println!("cargo:rustc-cfg=dns_query=\"queries\"");
-    println!("cargo:rustc-cfg=dns_response=\"response_code\"");
-    println!("cargo:rustc-cfg=dns_response=\"authoritative\"");
-    println!("cargo:rustc-cfg=dns_response=\"recursion_available\"");
-    println!("cargo:rustc-cfg=dns_response=\"num_answers\"");
-    println!("cargo:rustc-cfg=dns_response=\"num_additional\"");
-    println!("cargo:rustc-cfg=dns_response=\"num_nameservers\"");
-    println!("cargo:rustc-cfg=dns_response=\"answers\"");
-    println!("cargo:rustc-cfg=dns_response=\"nameservers\"");
-    println!("cargo:rustc-cfg=dns_response=\"additionals\"");
-
-    println!("cargo:rustc-cfg=tls=\"client_hello\"");
-    println!("cargo:rustc-cfg=tls=\"server_hello\"");
-    println!("cargo:rustc-cfg=tls=\"server_certificates\"");
-    println!("cargo:rustc-cfg=tls=\"client_certificates\"");
-    println!("cargo:rustc-cfg=tls=\"server_key_exchange\"");
-    println!("cargo:rustc-cfg=tls=\"client_key_exchange\"");
-
-    println!("cargo:rustc-cfg=http=\"request_data\"");
-    println!("cargo:rustc-cfg=http=\"response_data\"");
-    println!("cargo:rustc-cfg=http=\"transaction_depth\"");
-
-    println!("cargo:rustc-cfg=http_request=\"method\"");
-    println!("cargo:rustc-cfg=http_request=\"uri\"");
-    println!("cargo:rustc-cfg=http_request=\"version\"");
-    println!("cargo:rustc-cfg=http_request=\"user_agent\"");
-    println!("cargo:rustc-cfg=http_request=\"cookie\"");
-    println!("cargo:rustc-cfg=http_request=\"host\"");
-    println!("cargo:rustc-cfg=http_request=\"content_length\"");
-    println!("cargo:rustc-cfg=http_request=\"content_type\"");
-    println!("cargo:rustc-cfg=http_request=\"transfer_encoding\"");
-
-    println!("cargo:rustc-cfg=http_response=\"version\"");
-    println!("cargo:rustc-cfg=http_response=\"status_code\"");
-    println!("cargo:rustc-cfg=http_response=\"status_msg\"");
-    println!("cargo:rustc-cfg=http_response=\"content_length\"");
-    println!("cargo:rustc-cfg=http_response=\"content_type\"");
-    println!("cargo:rustc-cfg=http_response=\"transfer_encoding\"");
-}
-
- */

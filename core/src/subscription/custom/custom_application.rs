@@ -266,7 +266,6 @@ impl HttpResponseData {
 pub fn custom_parsers() -> Vec<ConnParser> {
     #[allow(unused_mut)]
     let mut ret = vec![];
-    #[cfg(application="dns")]
     ret.push(ConnParser::Dns(DnsParser::default()));
     #[cfg(application="http")]
     ret.push(ConnParser::Http(HttpParser::default()));
