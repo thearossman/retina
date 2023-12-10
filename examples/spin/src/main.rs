@@ -16,17 +16,17 @@ struct Args {
     spin: u64,
 }
 
-#[filter("tls")]
+#[filter("")]
 fn main() -> Result<()> {
     env_logger::init();
     let args = Args::parse();
     let config = load_config(&args.config);
 
     let cycles = args.spin;
-    let callback = |_: TlsHandshake| {
+    let callback = |_: Connection| {
         spin(cycles);
     };
-    let mut runtime: Runtime<TlsHandshake> = Runtime::new(config, filter, vec![Box::new(callback)])?;
+    let mut runtime: Runtime<Connection> = Runtime::new(config, filter, vec![Box::new(callback)])?;
     runtime.run();
     Ok(())
 }

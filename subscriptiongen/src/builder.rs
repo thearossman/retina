@@ -73,9 +73,11 @@ impl MethodBuilder {
     }
 
     pub(crate) fn gen_terminate(&mut self) -> (proc_macro2::TokenStream, Vec<proc_macro2::TokenStream>) {
-        let get_conn = match self.terminate.is_empty() {
-            true => { quote! {} },
-            false => { ConnectionData::get_conn() }
+        let get_conn = match self.connection_bitmask {
+            0 => { quote! {} },
+            _ => { 
+                ConnectionData::get_conn()
+            }
         };
         ( get_conn , Vec::from(std::mem::take(&mut self.terminate)) )
     }
