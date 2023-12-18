@@ -39,8 +39,8 @@ pub enum FilterResult {
 #[derive(Debug, Clone)]
 pub struct FilterResultData {
     // Bitmaps
-    pub terminal_matches: u32,
-    pub nonterminal_matches: u32,
+    pub terminal_matches: u128,
+    pub nonterminal_matches: u128,
     pub nonterminal_nodes: [usize; NUM_SUBSCRIPTIONS],
 }
 

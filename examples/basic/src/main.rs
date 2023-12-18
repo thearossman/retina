@@ -33,26 +33,6 @@ fn callback1(_data: Subscribed) {
     }
 }
 
-/* 
-static cb1_count_tls: AtomicUsize = AtomicUsize::new(0);
-static cb1_count_http: AtomicUsize = AtomicUsize::new(0);
-static cb2_count: AtomicUsize = AtomicUsize::new(0);
-
-#[allow(unused)]
-fn callback1(data: Subscribed) {
-    if let Subscribed::TlsSubscription(tls) = data {
-        cb1_count_tls.fetch_add(1, Ordering::SeqCst);
-    } else if let Subscribed::HttpSubscription(http) = data {
-        cb1_count_http.fetch_add(1, Ordering::SeqCst);
-    }
-}
-
-#[allow(unused)]
-fn callback2(data: Subscribed) {
-    cb2_count.fetch_add(1, Ordering::SeqCst);
-}
-*/
-
 #[retina_main]
 fn main() {
     env_logger::init();

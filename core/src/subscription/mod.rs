@@ -171,9 +171,9 @@ where
 pub struct MatchData {
     pkt_filter_result: FilterResultData,
     conn_filter_result: Option<FilterResultData>,
-    conn_term_matched: u32,
-    conn_nonterm_matched: u32,
-    session_term_matched: u32,
+    conn_term_matched: u128,
+    conn_nonterm_matched: u128,
+    session_term_matched: u128,
 }
 
 impl MatchData {
@@ -224,12 +224,12 @@ impl MatchData {
     // TODO: API to clear `session match` after session delivery if subscription isn't cnxn-level?
 
     #[inline]
-    fn terminal_matches(&self) -> u32 {
+    fn terminal_matches(&self) -> u128 {
         self.session_term_matched | self.conn_term_matched | self.pkt_filter_result.terminal_matches
     }
 
     #[inline]
-    fn nonterminal_matches(&self) -> u32 {
+    fn nonterminal_matches(&self) -> u128 {
         self.conn_nonterm_matched | self.pkt_filter_result.nonterminal_matches
     }
 
@@ -244,7 +244,7 @@ impl MatchData {
     }
 
     #[inline]
-    pub fn matching_by_bitmask(&self, bitmask: u32) -> bool {
+    pub fn matching_by_bitmask(&self, bitmask: u128) -> bool {
         (self.nonterminal_matches() | self.terminal_matches()) & bitmask != 0
     }
 

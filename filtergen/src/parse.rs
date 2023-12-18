@@ -138,6 +138,7 @@ pub(crate) fn get_callbacks_from_config(data_in: Value) -> proc_macro2::TokenStr
     }
 
     quote! {
+        #[inline]
         fn callbacks() -> Vec<Box<dyn Fn(Subscribed)>> {
             vec![#( #callbacks )* ]
         }

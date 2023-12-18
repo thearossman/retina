@@ -283,7 +283,7 @@ fn standard_field(
 
 // Codegen utils shared between packet, connection, and session filters. //
 
-pub(crate) fn terminal_match(node: &PNode) -> (proc_macro2::TokenStream, usize) {
+pub(crate) fn terminal_match(node: &PNode) -> (proc_macro2::TokenStream, u128) {
     if node.is_terminal.is_empty() {
         return (quote! {}, 0);
     }
@@ -295,7 +295,7 @@ pub(crate) fn terminal_match(node: &PNode) -> (proc_macro2::TokenStream, usize) 
     (quote! { result.terminal_matches |= #bitmask_lit; }, bitmask)
 }
 
-pub(crate) fn nonterminal_match(node: &PNode, terminal_bitmask: usize) -> (proc_macro2::TokenStream, usize) {
+pub(crate) fn nonterminal_match(node: &PNode, terminal_bitmask: u128) -> (proc_macro2::TokenStream, u128) {
     if node.filter_ids.is_empty() {
         return (quote! {}, 0);
     }
