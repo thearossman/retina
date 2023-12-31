@@ -2,8 +2,8 @@ use retina_core::config::load_config;
 use retina_core::subscription::{Subscribed, SubscribableWrapper};
 use retina_core::Runtime;
 use retina_filtergen::retina_main;
-
 use std::path::PathBuf;
+use retina_core::rte_rdtsc;
 
 use clap::Parser;
 
@@ -23,17 +23,14 @@ struct Args {
 fn no_op(_data: Subscribed) { }
 
 #[allow(unused)]
-fn callback1(data: Subscribed) {
-    if let Subscribed::TlsSubscription(tls) = data {
-        println!("CB 1: {:?}", tls);
-    } else if let Subscribed::HttpSubscription(http) = data {
-        println!("CB 1: {:?}", http);
+fn callback1(_data: Subscribed) {
+    let start = unsafe { rte_rdtsc() };
+    loop {
+        let now = unsafe { rte_rdtsc() };
+        if now - start > 10000 {
+            break;
+        }
     }
-}
-
-#[allow(unused)]
-fn callback2(data: Subscribed) {
-    println!("CB 2: {:?}", data);
 }
 
 #[retina_main]

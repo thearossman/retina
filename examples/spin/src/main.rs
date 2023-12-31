@@ -2,7 +2,10 @@ use retina_core::config::load_config;
 use retina_core::rte_rdtsc;
 use retina_core::subscription::*;
 use retina_core::Runtime;
-use retina_filtergen::filter;
+use retina_filtergen::retina_main;
+#[macro_use]
+extern crate lazy_static;
+use std::sync::RwLock;
 
 use anyhow::Result;
 use clap::Parser;
@@ -16,18 +19,61 @@ struct Args {
     spin: u64,
 }
 
-#[filter("tls")]
+lazy_static!(
+    static ref CYCLES: RwLock<u64> = RwLock::new(0);
+    static ref HTTP: RwLock<u64> = RwLock::new(0);
+    static ref TCP80: RwLock<u64> = RwLock::new(0);
+    static ref IPDST: RwLock<u64> = RwLock::new(0);
+    static ref IPSRC: RwLock<u64> = RwLock::new(0);
+    static ref ETH: RwLock<u64> = RwLock::new(0);
+);
+
+#[allow(unused)]
+fn http(_: Subscribed) {
+    spin(*CYCLES.read().unwrap());
+    *HTTP.write().unwrap() += 1;
+}
+
+#[allow(unused)]
+fn tcp_port_80(_: Subscribed) {
+    spin(*CYCLES.read().unwrap());
+    *TCP80.write().unwrap() += 1;
+}
+
+#[allow(unused)]
+fn ip_dst(_: Subscribed) {
+    spin(*CYCLES.read().unwrap());
+    *IPDST.write().unwrap() += 1;
+}
+
+#[allow(unused)]
+fn ip_src(_: Subscribed) {
+    spin(*CYCLES.read().unwrap());
+    *IPSRC.write().unwrap() += 1;
+}
+
+#[allow(unused)]
+fn eth(_: Subscribed) {
+    spin(*CYCLES.read().unwrap());
+    *ETH.write().unwrap() += 1;
+}
+
+#[retina_main]
 fn main() -> Result<()> {
     env_logger::init();
     let args = Args::parse();
     let config = load_config(&args.config);
-
-    let cycles = args.spin;
-    let callback = |_: TlsHandshake| {
-        spin(cycles);
-    };
-    let mut runtime: Runtime<TlsHandshake> = Runtime::new(config, filter, vec![Box::new(callback)])?;
+    {
+        *CYCLES.write().unwrap() = args.spin;
+    }
+    let mut runtime: Runtime<SubscribableWrapper> = Runtime::new(config, filter, callbacks())?;
     runtime.run();
+    println!("Called: {} - HTTP, {} - TCP-80, {} - IP-dst, {} - IP-src, {} - Eth", 
+             *HTTP.read().unwrap(),
+             *TCP80.read().unwrap(),
+             *IPDST.read().unwrap(),
+             *IPSRC.read().unwrap(),
+             *ETH.read().unwrap()); 
     Ok(())
 }
 

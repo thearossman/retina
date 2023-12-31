@@ -19,8 +19,8 @@ pub(crate) struct MethodBuilder {
     enums: Vec<proc_macro2::TokenStream>,
     subscriptions: Vec<proc_macro2::TokenStream>,
     drop: Vec<proc_macro2::TokenStream>,
-    connection_bitmask: usize,
-    tracking_bitmask: usize,
+    connection_bitmask: u128,
+    tracking_bitmask: u128,
     raw_data: Option<Value>,
 }
 
@@ -73,9 +73,11 @@ impl MethodBuilder {
     }
 
     pub(crate) fn gen_terminate(&mut self) -> (proc_macro2::TokenStream, Vec<proc_macro2::TokenStream>) {
-        let get_conn = match self.terminate.is_empty() {
-            true => { quote! {} },
-            false => { ConnectionData::get_conn() }
+        let get_conn = match self.connection_bitmask {
+            0 => { quote! {} },
+            _ => { 
+                ConnectionData::get_conn()
+            }
         };
         ( get_conn , Vec::from(std::mem::take(&mut self.terminate)) )
     }
@@ -300,6 +302,10 @@ pub(crate) fn read_subscriptions(filepath_in: &str) -> proc_macro2::TokenStream 
 
     let value = raw_data.get("num_subscriptions").unwrap().as_i64().unwrap();
     let num_subscriptions = syn::LitInt::new(&value.to_string(), Span::call_site());
+
+    if value > 128 {
+        panic!("Max. num subscriptions supported is 127");
+    }
 
     quote! {
         pub const NUM_SUBSCRIPTIONS: usize = #num_subscriptions;

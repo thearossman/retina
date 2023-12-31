@@ -11,3 +11,4 @@ env_logger = "0.8.4"
 log = { version = "0.4", features = ["release_max_level_info"] }
 retina-core = { path = "../../core" }
 retina-filtergen = { path = "../../filtergen" }
+lazy_static = "1.4.0"
