@@ -172,7 +172,7 @@ pub struct MatchData {
     pkt_filter_result: FilterResultData,
     conn_filter_result: Option<FilterResultData>,
     conn_term_matched: u128,
-    nonterminal_matches: u128,
+    conn_nonterminal_matches: u128,
     session_term_matched: u128
 }
 
@@ -182,26 +182,25 @@ impl MatchData {
             pkt_filter_result, 
             conn_filter_result: None,
             conn_term_matched: 0,
-            nonterminal_matches: 0,
+            conn_nonterminal_matches: 0,
             session_term_matched: 0
         }
     }
 
     pub fn filter_packet(&mut self, pkt_filter_result: FilterResultData) {
-        // may or may not be the right way to do things
+        // may or may not be the right way to do things - come back to
         self.pkt_filter_result = pkt_filter_result;
-        self.nonterminal_matches = self.pkt_filter_result.nonterminal_matches;
     }
 
     pub fn filter_conn<S: Subscribable>(&mut self, conn: &ConnData, subscription: &Subscription<S>) -> FilterResult {
         let result = subscription.filter_conn(&self.pkt_filter_result, conn);
-        self.nonterminal_matches = result.nonterminal_matches;
+        self.conn_nonterminal_matches = result.nonterminal_matches;
         self.conn_term_matched = result.terminal_matches;
         self.conn_filter_result = Some(result);
         return {
             if self.terminal_matches() != 0 {
                 FilterResult::MatchTerminal(0)
-            } else if self.nonterminal_matches != 0 {
+            } else if self.conn_nonterminal_matches != 0 {
                 FilterResult::MatchNonTerminal(0)
             } else {
                 FilterResult::NoMatch
@@ -216,12 +215,15 @@ impl MatchData {
             },
             None => { 
                 // Shouldn't be reached
-                self.nonterminal_matches = 0;
+                self.conn_nonterminal_matches = 0;
                 return false;
             },
         };
         self.session_term_matched = result.terminal_matches;
-        self.nonterminal_matches = 0; // at session layer now
+        // at session layer now (TODOTR 1/1/24: needs to be fixed for some session/conn cases)
+        // add "clear session match" api for if we deliver a session and then track the connection or similar
+        // only relevant for certain cases that are relatively edge-case-y
+        self.conn_nonterminal_matches = 0; 
         return self.terminal_matches() != 0;
     }
 
@@ -233,23 +235,32 @@ impl MatchData {
     }
 
     #[inline]
+    pub fn nonterminal_matches(&self) -> u128 {
+        // at session layer now (TODOTR 1/1/24 better ways to do this)
+        if self.conn_filter_result.is_some() {
+            return self.conn_nonterminal_matches;
+        }
+        return self.pkt_filter_result.nonterminal_matches;
+    }
+
+    #[inline]
     pub fn matched_term_by_idx(&self, idx: usize) -> bool {
         self.terminal_matches() & (0b1 << idx) != 0
     }
 
     #[inline]
     pub fn matching_by_idx(&self, idx: usize) -> bool {
-        (self.nonterminal_matches | self.terminal_matches()) & (0b1 << idx) != 0
+        (self.nonterminal_matches() | self.terminal_matches()) & (0b1 << idx) != 0
     }
 
     #[inline]
     pub fn matching_by_bitmask(&self, bitmask: u128) -> bool {
-        (self.nonterminal_matches | self.terminal_matches()) & bitmask != 0
+        (self.nonterminal_matches() | self.terminal_matches()) & bitmask != 0
     }
 
     #[inline]
     pub fn matched_nonterm_by_idx(&self, idx: usize) -> bool {
-        self.nonterminal_matches & (0b1 << idx) != 0
+        self.nonterminal_matches() & (0b1 << idx) != 0
     }
 
 }
