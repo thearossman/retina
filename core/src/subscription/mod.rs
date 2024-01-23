@@ -173,7 +173,8 @@ pub struct MatchData {
     conn_filter_result: Option<FilterResultData>,
     conn_term_matched: u128,
     conn_nonterminal_matches: u128,
-    session_term_matched: u128
+    session_term_matched: u128,
+    session_matched: bool,
 }
 
 impl MatchData {
@@ -183,7 +184,8 @@ impl MatchData {
             conn_filter_result: None,
             conn_term_matched: 0,
             conn_nonterminal_matches: 0,
-            session_term_matched: 0
+            session_term_matched: 0,
+            session_matched: false 
         }
     }
 
@@ -209,13 +211,13 @@ impl MatchData {
     }
 
     pub fn filter_session<S: Subscribable>(&mut self, session: &Session, subscription: &Subscription<S>) -> bool {
+        self.session_matched = true;
         let result = match &self.conn_filter_result {
             Some(result_data) => { 
                 subscription.filter_session(session, &result_data) 
             },
             None => { 
                 // Shouldn't be reached
-                self.conn_nonterminal_matches = 0;
                 return false;
             },
         };
@@ -237,6 +239,9 @@ impl MatchData {
     #[inline]
     pub fn nonterminal_matches(&self) -> u128 {
         // at session layer now (TODOTR 1/1/24 better ways to do this)
+        if self.session_matched {
+            return 0;
+        } else 
         if self.conn_filter_result.is_some() {
             return self.conn_nonterminal_matches;
         }
