@@ -94,18 +94,40 @@ where
                 let pdu = L4Pdu::new(mbuf, ctxt, dir);
                 conn.update(pdu, subscription, &self.registry);
                 if conn.remove() {
+                    #[cfg(feature = "timing")]
+                    {
+                        self.timerwheel.conn_end(
+                            unsafe { crate::dpdk::rte_rdtsc() } - conn.info.timers.start
+                        );
+                        self.timerwheel.deliver(
+                            conn.info.timers.deliver_duration
+                        );
+                    }
                     occupied.remove();
                     return;
                 }
 
                 if conn.terminated() {
                     conn.terminate(subscription);
+                    #[cfg(feature = "timing")]
+                    {
+                        self.timerwheel.conn_end(
+                            unsafe { crate::dpdk::rte_rdtsc() } - conn.info.timers.start
+                        );
+                        self.timerwheel.deliver(
+                            conn.info.timers.deliver_duration
+                        );
+                    }
                     occupied.remove();
                 }
             }
             RawEntryMut::Vacant(_) => {
                 if self.size() < self.config.max_connections {
+                    #[cfg(feature = "timing")]
+                    let start = unsafe { crate::dpdk::rte_rdtsc() };
+
                     let pkt_actions = subscription.filter_packet(&mbuf);
+
                     if pkt_actions.drop() {
                         // \note this can be okay, as the rx filter will err
                         // on the side of caution before dropping packets.
@@ -136,6 +158,12 @@ where
                             self.table.insert(conn_id, conn);
                         }
                     }
+                    #[cfg(feature = "timing")]
+                    {
+                        self.timerwheel.first_packet(
+                            unsafe { crate::dpdk::rte_rdtsc() } - start
+                        );
+                    }
                 } else {
                     log::error!("Table full. Dropping packet.");
                 }
@@ -155,6 +183,11 @@ where
     pub(crate) fn check_inactive(&mut self, subscription: &Subscription<T::Subscribed>) {
         self.timerwheel
             .check_inactive(&mut self.table, subscription);
+    }
+
+    #[cfg(feature = "timing")]
+    pub(crate) fn conn_timers(&self) -> &crate::timing::timer::Timers {
+        &self.timerwheel.conn_timers
     }
 }
 

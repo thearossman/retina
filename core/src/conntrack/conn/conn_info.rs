@@ -12,6 +12,23 @@ use crate::protocols::stream::{
 };
 use crate::subscription::{Subscription, Trackable};
 
+#[cfg(feature = "timing")]
+#[derive(Debug)]
+pub(crate) struct ConnTimestamps {
+    pub(crate) start: u64,
+    pub(crate) deliver_duration: u64, // TODO hashmap session/conn/packet6
+}
+
+#[cfg(feature = "timing")]
+impl ConnTimestamps {
+    pub(crate) fn new() -> Self {
+        Self {
+            start: unsafe { crate::dpdk::rte_rdtsc() },
+            deliver_duration: 0,
+        }
+    }
+}
+
 #[derive(Debug)]
 pub(crate) struct ConnInfo<T>
 where
@@ -23,6 +40,8 @@ where
     pub(crate) cdata: ConnData,
     /// Subscription data (for delivering)
     pub(crate) sdata: T,
+    #[cfg(feature = "timing")]
+    pub(crate) timers: ConnTimestamps,
 }
 
 impl<T> ConnInfo<T>
@@ -34,6 +53,8 @@ where
             actions: pkt_actions,
             cdata: ConnData::new(five_tuple),
             sdata: T::new(five_tuple),
+            #[cfg(feature = "timing")]
+            timers: ConnTimestamps::new(),
         }
     }
 
@@ -135,9 +156,19 @@ where
                 self.actions.update(&actions);
             }
             if self.actions.session_deliver() {
+                #[cfg(feature = "timing")]
+                let start = unsafe { crate::dpdk::rte_rdtsc() };
+
                 self.sdata.deliver_session(session, 
                                            subscription, 
                                            &self.actions.data, &self.cdata);
+
+                #[cfg(feature = "timing")]
+                { // two lines to avoid expression (experimental API)
+                    let deliver = unsafe { crate::dpdk::rte_rdtsc() } - start;
+                    self.timers.deliver_duration = deliver;
+                }
+                
                 self.actions.session_delivered();
             }
         } else {
@@ -172,7 +203,16 @@ where
                     self.actions.update(&actions);
                 }
                 if self.actions.session_deliver() {
+                    #[cfg(feature = "timing")]
+                    let start = unsafe { crate::dpdk::rte_rdtsc() };
+
                     self.sdata.deliver_session(session, subscription,&self.actions.data, &self.cdata);
+                    
+                    #[cfg(feature = "timing")]
+                    { // two lines to avoid expression (experimental API)
+                        let deliver = unsafe { crate::dpdk::rte_rdtsc() } - start;
+                        self.timers.deliver_duration = deliver;
+                    }
                     self.actions.session_delivered(); // Clear session-specific match
                 }
             }
@@ -182,7 +222,16 @@ where
 
         // TODOTR do we need to re-apply the connection filter here?
         if self.actions.connection_matched() {
+            #[cfg(feature = "timing")]
+            let start = unsafe { crate::dpdk::rte_rdtsc() };
+            
             self.sdata.deliver_conn(subscription, &self.actions.data, &self.cdata);
+
+            #[cfg(feature = "timing")]
+            {
+                let deliver = unsafe { crate::dpdk::rte_rdtsc() } - start;
+                self.timers.deliver_duration = deliver;
+            }
         }
 
         self.actions.clear();

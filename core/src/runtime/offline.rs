@@ -15,6 +15,12 @@ use std::sync::Arc;
 use cpu_time::ProcessTime;
 use pcap::Capture;
 
+#[cfg(feature = "timing")]
+use crate::timing::timer::Timers;
+
+#[cfg(feature = "timing")]
+const PKT_SAMPLE: u64 = 1;
+
 pub(crate) struct OfflineRuntime<S>
 where
     S: Subscribable,
@@ -23,6 +29,8 @@ where
     pub(crate) proto_filter: Filter,
     pub(crate) subscription: Arc<Subscription<S>>,
     pub(crate) options: OfflineOptions,
+    #[cfg(feature = "timing")]
+    packet_timers: Timers,
 }
 
 impl<S> OfflineRuntime<S>
@@ -48,6 +56,8 @@ where
             proto_filter,
             subscription,
             options,
+            #[cfg(feature = "timing")]
+            packet_timers: Timers::new(),
         }
     }
 
@@ -78,11 +88,24 @@ where
             nb_pkts += 1;
             nb_bytes += mbuf.data_len() as u64;
 
+            #[cfg(feature = "timing")]
+            let start = unsafe { dpdk::rte_rdtsc() };
+
             /* Apply the packet filter to get actions */
             let actions = self.subscription.continue_packet(&mbuf);
+
+            #[cfg(feature = "timing")]
+            self.packet_timers.record("continue_packet", 
+                                    unsafe { dpdk::rte_rdtsc() } - start, 
+                                    PKT_SAMPLE);
+
             if !actions.is_none() {
                 S::process_packet(mbuf, &self.subscription, 
                                   &mut stream_table, actions);
+                #[cfg(feature = "timing")]
+                self.packet_timers.record("process_packet", 
+                                        unsafe { dpdk::rte_rdtsc() } - start, 
+                                        PKT_SAMPLE);
             }
         }
 
@@ -91,6 +114,14 @@ where
         let cpu_time = start.elapsed();
         println!("Processed: {} pkts, {} bytes", nb_pkts, nb_bytes);
         println!("CPU time: {:?}ms", cpu_time.as_millis());
+
+        #[cfg(feature = "timing")]
+        {
+            let core_id = crate::lcore::CoreId(0);
+            self.packet_timers.dump_stats(&core_id, "packet");
+            stream_table.conn_timers().dump_stats(&core_id, "connection");
+            println!("rte_get_tsc_hz: {}", unsafe { crate::dpdk::rte_get_tsc_hz() });
+        }
     }
 
     fn get_mempool_raw(&self) -> *mut dpdk::rte_mempool {

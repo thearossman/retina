@@ -13,6 +13,11 @@ use std::sync::Arc;
 
 use itertools::Itertools;
 
+#[cfg(feature = "timing")]
+use crate::timing::timer::Timers;
+#[cfg(feature = "timing")]
+const PKT_SAMPLE: u64 = 10_000;
+
 /// A RxCore polls from `rxqueues` and reduces the stream of packets into
 /// a stream of higher-level network events to be processed by the user.
 pub(crate) struct RxCore<S>
@@ -25,6 +30,8 @@ where
     pub(crate) conntrack: ConnTrackConfig,
     pub(crate) subscription: Arc<Subscription<S>>,
     pub(crate) is_running: Arc<AtomicBool>,
+    #[cfg(feature = "timing")]
+    pub(crate) packet_timers: Timers,
 }
 
 impl<S> RxCore<S>
@@ -46,6 +53,8 @@ where
             conntrack,
             subscription,
             is_running,
+            #[cfg(feature = "timing")]
+            packet_timers: Timers::new(),
         }
     }
 
@@ -106,11 +115,24 @@ where
                     // );
                     nb_pkts += 1;
                     nb_bytes += mbuf.data_len() as u64;
+                    
+                    #[cfg(feature = "timing")]
+                    let start = unsafe { dpdk::rte_rdtsc() };
 
                     let actions = self.subscription.continue_packet(&mbuf);
+
+                    #[cfg(feature = "timing")]
+                    self.packet_timers.record("continue_packet", 
+                                        unsafe { dpdk::rte_rdtsc() } - start, 
+                                        PKT_SAMPLE);
+
                     if !actions.is_none() {
                         S::process_packet(mbuf, &self.subscription,
                                           &mut conn_table, actions);
+                        #[cfg(feature = "timing")]
+                        self.packet_timers.record("process_packet", 
+                                            unsafe { dpdk::rte_rdtsc() } - start, 
+                                            PKT_SAMPLE);
                     }
                 }
             }
@@ -127,6 +149,13 @@ where
             nb_pkts,
             nb_bytes
         );
+        // Dump core stats
+        #[cfg(feature = "timing")]
+        {
+            self.packet_timers.dump_stats(&self.id, "packet");
+            conn_table.conn_timers().dump_stats(&self.id, "connection");
+            println!("rte_get_tsc_hz: {}", unsafe { crate::dpdk::rte_get_tsc_hz() });
+        }
     }
 
     fn rx_sink(&self) {

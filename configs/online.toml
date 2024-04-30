@@ -13,14 +13,11 @@ mtu = 1500
 hardware_assist = false
 [[online.ports]]
 device = "0000:3b:00.0"
-cores = [ 1, 2 ]
+cores = [ 1, 2, 3, 4, 5, 6, 7, 8, 17, 18, 19, 20, 21, 22, 23, 24 ]
 
-#[online.ports.sink]
-#core = 17
-#nb_buckets = 16
 [[online.ports]]
-device = "0000:d8:00.0"
-cores = [ 9, 10 ]
+device = "0000:3b:00.1"
+cores = [ 9, 10, 11, 12, 13, 14, 15, 16, 25, 26, 27, 28, 29, 30, 31, 32 ]
 
 [conntrack]
 max_connections = 10000000

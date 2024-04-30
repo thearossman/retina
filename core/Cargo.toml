@@ -56,4 +56,4 @@ regex = "1.7.3"
 timing = []
 mlx5 = []
 no_custom = []
-default = []
+default = ["timing", "mlx5"]

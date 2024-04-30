@@ -7,6 +7,11 @@ use hashlink::linked_hash_map::RawEntryMut;
 use std::collections::VecDeque;
 use std::time::{Duration, Instant};
 
+#[cfg(feature = "timing")]
+use crate::timing::timer::Timers;
+#[cfg(feature = "timing")]
+const CONN_SAMPLE: u64 = 1;
+
 /// Tracks inactive connection expiration.
 pub(super) struct TimerWheel {
     /// Period to check for inactive connections (in milliseconds).
@@ -19,6 +24,9 @@ pub(super) struct TimerWheel {
     next_bucket: usize,
     /// List of timers.
     timers: Vec<VecDeque<ConnId>>,
+    /// Performance timers
+    #[cfg(feature = "timing")]
+    pub(crate) conn_timers: Timers,
 }
 
 impl TimerWheel {
@@ -36,7 +44,27 @@ impl TimerWheel {
             ticker,
             next_bucket: 0,
             timers: vec![VecDeque::new(); max_timeout / timeout_resolution],
+            #[cfg(feature = "timing")]
+            conn_timers: Timers::new(),
         }
+    }
+
+    #[cfg(feature = "timing")]
+    pub(crate) fn conn_end(&mut self, duration: u64) {
+        if duration == 0 { return; }
+        self.conn_timers.record("connection_lifetime", duration, CONN_SAMPLE);
+    }
+
+    #[cfg(feature = "timing")]
+    pub(crate) fn deliver(&mut self, duration: u64) {
+        if duration == 0 { return; }
+        self.conn_timers.record( "deliver", duration, CONN_SAMPLE);
+    }
+
+    #[cfg(feature = "timing")]
+    pub(crate) fn first_packet(&mut self, duration: u64) {
+        if duration == 0 { return; }
+        self.conn_timers.record( "first_packet", duration, CONN_SAMPLE);
     }
 
     /// Insert a new connection ID into the timerwheel.
