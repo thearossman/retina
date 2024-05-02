@@ -160,7 +160,7 @@ pub fn retina_main(_args: TokenStream, input: TokenStream) -> TokenStream {
 
     let input_configs = parse::get_configs();
     
-    let (ptree, collapsed_filter, application_protocols) = 
+    let (ptree, hw_filter, application_protocols) = 
                         parse::get_filters_from_config(input_configs.clone());
     let callbacks = parse::get_callbacks_from_config(input_configs);
 
@@ -209,7 +209,7 @@ pub fn retina_main(_args: TokenStream, input: TokenStream) -> TokenStream {
             #packet_filter_fn
             #connection_filter_fn
             #session_filter_fn
-            retina_core::filter::FilterFactory::new(#collapsed_filter, 
+            retina_core::filter::FilterFactory::new(#hw_filter, 
                                                     #application_protocols, 
                                                     packet_filter, connection_filter, session_filter)
         }

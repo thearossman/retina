@@ -34,41 +34,41 @@ pub(crate) fn get_filters_from_config(data_in: Value) -> (PTree, String, String)
         }
     }
 
-    // Collapsed (HW) Filter
-    let collapsed_filter = get_collapsed_filter(&filters);
+    // Combined (HW) Filter
+    let hw_filter = get_hw_filter(&filters);
     // Complete (Indexed) Filter PTree
     let ptree = get_ptree(&filters, &filter_idxs);
     // For building parser registry 
     let application_protocols = get_application_protocols(&ptree);
 
-    (ptree, collapsed_filter, application_protocols)
+    (ptree, hw_filter, application_protocols)
 }
 
 
 // Generate boolean-style filter for packets of interest.
 // May be used by online runtime for hw filter.
-fn get_collapsed_filter(filters: &Vec<String>) -> String {
-    let mut collapsed_filter = String::new(); 
+fn get_hw_filter(filters: &Vec<String>) -> String {
+    let mut hw_filter = String::new(); 
     if !filters.contains(&"".to_string()) {
-        collapsed_filter += "(";
-        collapsed_filter += filters[0].clone().as_str();
+        hw_filter += "(";
+        hw_filter += filters[0].clone().as_str();
         if filters.len() > 1 {
             for i in 1..filters.len() {
                 let filter_str = &filters[i];
                 if filter_str == &filters[i - 1] { continue; }
-                collapsed_filter += ") or (";
-                collapsed_filter += filter_str.clone().as_str();
+                hw_filter += ") or (";
+                hw_filter += filter_str.clone().as_str();
             }
         }
-        collapsed_filter += ")";
+        hw_filter += ")";
     }
-    // Displays the collapsed (Boolean) trie during compilation.
-    let collapsed_ptree = Filter::from_str(&collapsed_filter, false, 0)
-                                                .expect(&format!("Failed to generate collapsed filter: {}", &collapsed_filter))
+    // Displays the combined (Boolean) trie during compilation.
+    let hw_ptree = Filter::from_str(&hw_filter, false, 0)
+                                                .expect(&format!("Failed to generate combined (HW) filter: {}", &hw_filter))
                                                 .to_ptree(0);
-    println!("Collapsed Filter:\n{}", collapsed_ptree);
+    println!("HW (Combined) Filter:\n{}", hw_ptree);
 
-    collapsed_filter
+    hw_filter
 }
 
 fn get_ptree(filters: &Vec<String>, filter_idxs: &Vec<i64>) -> PTree {

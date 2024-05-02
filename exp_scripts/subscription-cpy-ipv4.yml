@@ -1,0 +1,10 @@
+subscribed:
+  SubscribedConnection: 
+    idx: [0]
+    fields:
+      connection:
+filters:
+  "ipv4.dst_addr = 0.0.0.0/0": [0]
+callbacks:
+  eth: [0]
+num_subscriptions: 1

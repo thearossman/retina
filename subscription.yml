@@ -4,7 +4,7 @@ subscribed:
     fields:
       five_tuple: 
 filters:
-  "": [0, 1, 2, 3, 4, 5]
+  "ipv4.dst_addr = 0.0.0.0/0": [0, 1, 2, 3, 4, 5]
 callbacks:
   eth: [0, 1, 2, 3, 4, 5]
 num_subscriptions: 6

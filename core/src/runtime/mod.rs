@@ -156,11 +156,11 @@ where
         } else {
             log::error!("No runtime");
         }
-        #[cfg(feature = "timing")]
-        {
-            self.subscription.timers.display_stats();
-            self.subscription.timers.dump_stats();
-        }
+        //#[cfg(feature = "timing")]
+        //{
+        //    self.subscription.timers.display_stats();
+        //    self.subscription.timers.dump_stats();
+        //}
         log::info!("Done.");
     }
 }

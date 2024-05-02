@@ -122,6 +122,10 @@ where
             nb_pkts,
             nb_bytes
         );
+        #[cfg(feature = "timing")]
+        {
+            self.subscription.timers.dump_stats(&self.id, "naive");
+        }
     }
 
     fn rx_sink(&self) {

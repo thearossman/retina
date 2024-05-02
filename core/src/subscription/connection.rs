@@ -170,11 +170,15 @@ impl Subscribable for Connection {
         subscription: &Subscription<Self>,
         conn_tracker: &mut ConnTracker<Self::Tracked>,
     ) {
+        #[cfg(feature = "timing")]
+        tsc_start!(t0);
+
         let result = subscription.filter_packet(&mbuf);
         if result.terminal_matches != 0 || result.nonterminal_matches != 0 {
             if let Ok(ctxt) = L4Context::new(&mbuf) {
                 conn_tracker.process(mbuf, ctxt, subscription, result);
             }
+            tsc_record!(subscription.timers, "process", t0);
         } else {
             drop(mbuf);
         }

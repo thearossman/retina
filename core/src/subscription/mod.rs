@@ -137,33 +137,42 @@ where
 
     /// Invokes the software packet filter.
     pub(crate) fn filter_packet(&self, mbuf: &Mbuf) -> FilterResultData {
-        (self.packet_filter)(mbuf)
+        tsc_start!(t0);
+        let res = (self.packet_filter)(mbuf);
+        tsc_record!(self.timers, "packet_filter", t0);
+        res
     }
 
     /// Invokes the connection filter.
     pub(crate) fn filter_conn(&self, pkt_result: &FilterResultData, conn: &ConnData) -> FilterResultData {
-        (self.conn_filter)(pkt_result, conn)
+        tsc_start!(t0);
+        let res = (self.conn_filter)(pkt_result, conn);
+        tsc_record!(self.timers, "conn_filter", t0);
+        res
     }
 
     /// Invokes the application-layer session filter. The `idx` parameter is the numerical ID of the
     /// session.
     pub(crate) fn filter_session(&self, session: &Session, conn_result: &FilterResultData) -> FilterResultData {
-        (self.session_filter)(session, conn_result)
+        tsc_start!(t0);
+        let res = (self.session_filter)(session, conn_result);
+        tsc_record!(self.timers, "session_filter", t0);
+        res
     }
 
     /// Invoke the callback on `S`.
     pub(crate) fn invoke(&self, obj: S::SubscribedData) {
-        tsc_start!(t0);
+        // tsc_start!(t0);
         (self.callbacks[0])(obj);
-        tsc_record!(self.timers, "callback", t0);
+        // tsc_record!(self.timers, "callback", t0);
     }
 
     /// Invoke the `idx`th callback on `S`.
     #[allow(dead_code)]
     pub(crate) fn invoke_idx(&self, obj: S::SubscribedData, idx: usize) {
-        tsc_start!(t0);
+        // tsc_start!(t0);
         (self.callbacks[idx])(obj);
-        tsc_record!(self.timers, "callback", t0);
+        // tsc_record!(self.timers, "callback", t0);
     }
 }
 
