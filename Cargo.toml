@@ -12,6 +12,7 @@ members = [
     "examples/pcap_dump",
     "examples/spin",
     "examples/video",
+    "examples/spin_filter",
     "filtergen",
 ]
 
