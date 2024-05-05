@@ -53,6 +53,8 @@ where
             conntrack,
             subscription,
             is_running,
+            #[cfg(feature = "timing")]
+            packet_timers: Timers::new(),
         }
     }
 
@@ -114,7 +116,7 @@ where
                     nb_pkts += 1;
                     nb_bytes += mbuf.data_len() as u64;
                     #[cfg(feature = "timing")]
-                    let mut res = crate::filter::FilterResult::NoMatch;
+                    let mut res = crate::filter::FilterResultData::new();
 
                     #[cfg(feature = "timing")]
                     {
@@ -132,7 +134,7 @@ where
 
                     #[cfg(feature = "timing")]
                     {
-                        if !matches!(res, crate::filter::FilterResult::NoMatch) {
+                        if !res.terminal_matches.is_empty() || !res.nonterminal_matches.is_empty() {
                             let duration = unsafe { dpdk::rte_rdtsc() } - start;
                             self.packet_timers.record("process_packet", duration, PKT_SAMPLE);
                         }
