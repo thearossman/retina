@@ -25,7 +25,7 @@ lazy_static!(
 
 #[allow(unused)]
 fn eth(conn: &Connection) {
-    println!("Conn: {:?}", conn);
+    // println!("Conn: {:?}", conn);
     // spin(*CYCLES.read().unwrap());
 }
 

@@ -9,6 +9,8 @@ use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 use std::sync::Mutex;
 
+const TIMER_DIR: &'static str = "../timer_data";
+
 lazy_static::lazy_static! {
     static ref STATS: Vec<&'static str> =  vec!["name", "cnt", "rec", "avg", "min", "p05", "p25", "p50", "p75", "p95", "p99", "p999", "max"];
 }
@@ -73,17 +75,13 @@ impl Timers {
         table.printstd();
     }
 
-    pub(crate) fn dump_stats(&self) {
+    pub(crate) fn dump_stats(&self, core_id: &crate::lcore::CoreId, ident: &str) {
         let hists = HistDumper::from(self);
-        let csv_fname = Path::new("cycle_hist.csv").to_path_buf();
+        let fp = format!("{}/{}_{}_cycle_hist_BASE.csv", TIMER_DIR, core_id, ident);
+        let csv_fname = Path::new(&fp).to_path_buf();
         hists
             .dump_csv(csv_fname)
             .expect("Unable to dump to cycle hist data");
-
-        let vecs = VecDumper::from(self);
-        let json_fname = Path::new("cycle_vec.json").to_path_buf();
-        vecs.dump_json(json_fname)
-            .expect("Unable to dump to cycle vec data");
     }
 }
 
