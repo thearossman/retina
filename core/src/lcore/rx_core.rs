@@ -147,6 +147,12 @@ where
         // // Deliver remaining data in table from unfinished connections
         conn_table.drain(&self.subscription);
 
+        // Dump core stats
+        #[cfg(feature = "timing")]
+        {
+            self.packet_timers.dump_stats(&self.id, "naive3");
+        }
+
         log::info!(
             "Core {} total recv from {}: {} pkts, {} bytes",
             self.id,

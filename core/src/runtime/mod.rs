@@ -158,8 +158,8 @@ where
         }
         #[cfg(feature = "timing")]
         {
-            self.subscription.timers.display_stats();
-            self.subscription.timers.dump_stats();
+            // self.subscription.timers.display_stats();
+            // self.subscription.timers.dump_stats();
         }
         log::info!("Done.");
     }

@@ -158,15 +158,12 @@ where
     /// Invoke the callback on `S`.
     #[allow(dead_code)]
     pub(crate) fn invoke(&self, obj: S::SubscribedData) {
-        tsc_start!(t0);
         (self.callbacks[0])(&obj);
-        tsc_record!(self.timers, "callback", t0);
     }
 
     /// Invoke the `idx`th callback on `S`.
     #[allow(dead_code)]
     pub(crate) fn invoke_all(&self, obj: &S::SubscribedData, match_data: &MatchData) {
-        tsc_start!(t0);
         for idx in &match_data.pkt_filter_result.terminal_matches {
             (self.callbacks[*idx])(obj);
         }
@@ -176,7 +173,6 @@ where
         for idx in &match_data.session_filter_result.terminal_matches {
             (self.callbacks[*idx])(obj);
         }
-        tsc_record!(self.timers, "callback", t0);
     }
 
     pub(crate) fn invoke_idx(&self, obj: &S::SubscribedData, idx: usize) {
