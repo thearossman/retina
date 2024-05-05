@@ -88,15 +88,15 @@ fn add_service_pred(
         // let service_lit = syn::LitStr::new(&protocol.name().to_string(), Span::call_site());
         ct_nodes.push(node.id);
         let mut body = vec![];
-        let (terminal_body, terminal_bitmask) = terminal_match(node);
-        if terminal_bitmask != 0 {
+        let (terminal_body, terminal_matches) = terminal_match(node);
+        if !terminal_matches.is_empty() {
             body.push(terminal_body);
         }
-        let (nonterminal_body, nonterminal_bitmask) = nonterminal_match(node, terminal_bitmask);
-        if nonterminal_bitmask != 0 {
+        let (nonterminal_body, nonterminal_matches) = nonterminal_match(node, &terminal_matches);
+        if nonterminal_matches {
             body.push(nonterminal_body);
         }
-        if nonterminal_bitmask | terminal_bitmask != 0 {
+        if nonterminal_matches || !terminal_matches.is_empty() {
             code.push(
                 quote! {
                     if matches!(conn.service(), retina_core::protocols::stream::ConnParser::#service_ident { .. }) {

@@ -1,10 +1,10 @@
 subscribed:
-  SavedFiveTuple: 
-    idx: [0, 1, 2, 3, 4, 5]
+  SavedConnection: 
+    idx: [0]
     fields:
-      five_tuple: 
+      connection: 
 filters:
-  "": [0, 1, 2, 3, 4, 5]
+  "ipv4.dst_addr = 0.0.0.0/0": [0]
 callbacks:
-  eth: [0, 1, 2, 3, 4, 5]
-num_subscriptions: 6
+  eth: [0]
+num_subscriptions: 1

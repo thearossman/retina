@@ -6,6 +6,7 @@
 //! be customized within the framework to provide additional data to the callback if needed.
 
 pub mod connection;
+/*
 pub mod connection_frame;
 pub mod dns_transaction;
 pub mod frame;
@@ -13,12 +14,14 @@ pub mod http_transaction;
 pub mod tls_handshake;
 pub mod zc_frame;
 pub mod tls_connection;
+ */
 pub mod custom; 
 
 pub use self::custom::custom_data::{SubscribableWrapper, Subscribed};
 
 // Re-export subscribable types for more convenient usage.
 pub use self::connection::Connection;
+/*
 pub use self::connection_frame::ConnectionFrame;
 pub use self::dns_transaction::DnsTransaction;
 pub use self::frame::Frame;
@@ -26,6 +29,7 @@ pub use self::http_transaction::HttpTransaction;
 pub use self::tls_handshake::TlsHandshake;
 pub use self::zc_frame::ZcFrame;
 pub use self::tls_connection::TlsConnection;
+*/
 
 use crate::conntrack::conn_id::FiveTuple;
 use crate::conntrack::pdu::L4Pdu;
@@ -114,7 +118,7 @@ where
     packet_filter: PacketFilterFn,
     conn_filter: ConnFilterFn,
     session_filter: SessionFilterFn,
-    callbacks: Vec<Box<dyn Fn(S::SubscribedData) + 'a>>,
+    callbacks: Vec<Box<dyn Fn(&S::SubscribedData) + 'a>>,
     #[cfg(feature = "timing")]
     pub(crate) timers: Timers,
 }
@@ -124,7 +128,7 @@ where
     S: Subscribable,
 {
     /// Creates a new subscription from a filter and a callback.
-    pub(crate) fn new(factory: FilterFactory, callbacks: Vec<Box<dyn Fn(S::SubscribedData) + 'a>>) -> Self {
+    pub(crate) fn new(factory: FilterFactory, callbacks: Vec<Box<dyn Fn(&S::SubscribedData) + 'a>>) -> Self {
         Subscription {
             packet_filter: factory.packet_filter,
             conn_filter: factory.conn_filter,
@@ -152,40 +156,49 @@ where
     }
 
     /// Invoke the callback on `S`.
+    #[allow(dead_code)]
     pub(crate) fn invoke(&self, obj: S::SubscribedData) {
         tsc_start!(t0);
-        (self.callbacks[0])(obj);
+        (self.callbacks[0])(&obj);
         tsc_record!(self.timers, "callback", t0);
     }
 
     /// Invoke the `idx`th callback on `S`.
     #[allow(dead_code)]
-    pub(crate) fn invoke_idx(&self, obj: S::SubscribedData, idx: usize) {
+    pub(crate) fn invoke_all(&self, obj: &S::SubscribedData, match_data: &MatchData) {
         tsc_start!(t0);
-        (self.callbacks[idx])(obj);
+        for idx in &match_data.pkt_filter_result.terminal_matches {
+            (self.callbacks[*idx])(obj);
+        }
+        for idx in &match_data.conn_filter_result.terminal_matches {
+            (self.callbacks[*idx])(obj);
+        }
+        for idx in &match_data.session_filter_result.terminal_matches {
+            (self.callbacks[*idx])(obj);
+        }
         tsc_record!(self.timers, "callback", t0);
+    }
+
+    pub(crate) fn invoke_idx(&self, obj: &S::SubscribedData, idx: usize) {
+        (self.callbacks[idx](obj));
     }
 }
 
 
 pub struct MatchData {
     pkt_filter_result: FilterResultData,
-    conn_filter_result: Option<FilterResultData>,
-    conn_term_matched: u128,
-    conn_nonterminal_matches: u128,
-    session_term_matched: u128,
-    session_matched: bool,
+    conn_filter_result: FilterResultData,
+    session_filter_result: FilterResultData,
+    conn_seen: bool,
 }
 
 impl MatchData {
     pub fn new(pkt_filter_result: FilterResultData) -> Self {
         Self {
             pkt_filter_result, 
-            conn_filter_result: None,
-            conn_term_matched: 0,
-            conn_nonterminal_matches: 0,
-            session_term_matched: 0,
-            session_matched: false 
+            conn_filter_result: FilterResultData::new(),
+            session_filter_result: FilterResultData::new(),
+            conn_seen: false,
         }
     }
 
@@ -196,13 +209,12 @@ impl MatchData {
 
     pub fn filter_conn<S: Subscribable>(&mut self, conn: &ConnData, subscription: &Subscription<S>) -> FilterResult {
         let result = subscription.filter_conn(&self.pkt_filter_result, conn);
-        self.conn_nonterminal_matches = result.nonterminal_matches;
-        self.conn_term_matched = result.terminal_matches;
-        self.conn_filter_result = Some(result);
+        self.conn_filter_result = result;
+        self.conn_seen = true;
         return {
-            if self.terminal_matches() != 0 {
+            if self.terminal_matches() {
                 FilterResult::MatchTerminal(0)
-            } else if self.conn_nonterminal_matches != 0 {
+            } else if !self.conn_filter_result.nonterminal_matches.is_empty() {
                 FilterResult::MatchNonTerminal(0)
             } else {
                 FilterResult::NoMatch
@@ -211,61 +223,60 @@ impl MatchData {
     }
 
     pub fn filter_session<S: Subscribable>(&mut self, session: &Session, subscription: &Subscription<S>) -> bool {
-        self.session_matched = true;
-        let result = match &self.conn_filter_result {
-            Some(result_data) => { 
-                subscription.filter_session(session, &result_data) 
-            },
-            None => { 
-                // Shouldn't be reached
-                return false;
-            },
-        };
-        self.session_term_matched = result.terminal_matches;
-        // at session layer now (TODOTR 1/1/24: needs to be fixed for some session/conn cases)
-        // add "clear session match" api for if we deliver a session and then track the connection or similar
-        // only relevant for certain cases that are relatively edge-case-y
-        self.conn_nonterminal_matches = 0; 
-        return self.terminal_matches() != 0;
+        if !self.conn_seen { return false; }
+        self.session_filter_result = subscription.filter_session(session, &self.conn_filter_result);
+        return self.terminal_matches();
     }
 
     // TODO: API to clear `session match` after session delivery if subscription isn't cnxn-level?
 
+
     #[inline]
-    fn terminal_matches(&self) -> u128 {
-        self.session_term_matched | self.conn_term_matched | self.pkt_filter_result.terminal_matches
+    fn terminal_matches(&self) -> bool {
+        !self.session_filter_result.terminal_matches.is_empty() || 
+        !self.conn_filter_result.terminal_matches.is_empty() || 
+        !self.pkt_filter_result.terminal_matches.is_empty()
     }
 
     #[inline]
-    pub fn nonterminal_matches(&self) -> u128 {
-        // at session layer now (TODOTR 1/1/24 better ways to do this)
-        if self.session_matched {
-            return 0;
-        } else 
-        if self.conn_filter_result.is_some() {
-            return self.conn_nonterminal_matches;
+    pub fn nonterminal_matches(&self) -> bool {
+        if self.conn_seen {
+            return !self.conn_filter_result.nonterminal_matches.is_empty();
         }
-        return self.pkt_filter_result.nonterminal_matches;
+        !self.pkt_filter_result.nonterminal_matches.is_empty()
     }
 
     #[inline]
     pub fn matched_term_by_idx(&self, idx: usize) -> bool {
-        self.terminal_matches() & (0b1 << idx) != 0
+        self.session_filter_result.terminal_matches.contains(&idx) || 
+        self.conn_filter_result.terminal_matches.contains(&idx) || 
+        self.pkt_filter_result.terminal_matches.contains(&idx)
     }
 
     #[inline]
     pub fn matching_by_idx(&self, idx: usize) -> bool {
-        (self.nonterminal_matches() | self.terminal_matches()) & (0b1 << idx) != 0
+        let nonterminal = match self.conn_seen {
+            true => { self.conn_filter_result.nonterminal_matches.contains(&idx) }
+            false => { self.pkt_filter_result.nonterminal_matches.contains(&idx ) }
+        };
+        return nonterminal || 
+            self.session_filter_result.terminal_matches.contains(&idx) ||
+            self.conn_filter_result.terminal_matches.contains(&idx) || 
+            self.pkt_filter_result.terminal_matches.contains(&idx)
     }
 
+    /*
     #[inline]
     pub fn matching_by_bitmask(&self, bitmask: u128) -> bool {
         (self.nonterminal_matches() | self.terminal_matches()) & bitmask != 0
-    }
+    } */
 
     #[inline]
     pub fn matched_nonterm_by_idx(&self, idx: usize) -> bool {
-        self.nonterminal_matches() & (0b1 << idx) != 0
+        return match self.conn_seen {
+            true => { self.conn_filter_result.nonterminal_matches.contains(&idx) }
+            false => { self.pkt_filter_result.nonterminal_matches.contains(&idx ) }
+        };
     }
 
 }

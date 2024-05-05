@@ -57,7 +57,7 @@ where
     pub fn new(
         config: RuntimeConfig,
         factory: fn() -> FilterFactory,
-        cb: Vec<Box<dyn Fn(S::SubscribedData) + 'a>>,
+        cb: Vec<Box<dyn Fn(&S::SubscribedData) + 'a>>,
     ) -> Result<Self> {
         let factory = factory();
         let protocol_str = factory.protocol_str.clone();

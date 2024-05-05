@@ -18,8 +18,8 @@ pub(crate) fn gen_packet_filter(
     // Generate ethernet/empty filter, if applicable: 
     let mut root = quote! {};
     if !ptree.root.is_terminal.is_empty() {
-        let (code, bitmask) = terminal_match(&ptree.root);
-        if bitmask != 0 {
+        let (code, terminal_matches) = terminal_match(&ptree.root);
+        if !terminal_matches.is_empty() {
             root = code;
         }
     }
@@ -121,12 +121,12 @@ fn add_unary_pred(
 
     if matches!(node.terminates, Terminate::Packet) {
         pt_nodes.push(node.id);
-        let (code, terminal_bitmask) = terminal_match(&node);
-        if terminal_bitmask != 0 {
+        let (code, terminal_matches) = terminal_match(&node);
+        if !terminal_matches.is_empty() {
             body.push(code);
         }
-        let (code, nonterminal_bitmask) = nonterminal_match(&node, terminal_bitmask);
-        if nonterminal_bitmask != 0 {
+        let (code, nonterminal_matches) = nonterminal_match(&node, &terminal_matches);
+        if nonterminal_matches {
             body.push(code);
         }
     }
@@ -162,12 +162,12 @@ fn add_binary_pred(
     gen_packet_filter_util(pt_nodes, &mut body, statics, node, outer_protocol);
     if matches!(node.terminates, Terminate::Packet) {
         pt_nodes.push(node.id);
-        let (code, terminal_bitmask) = terminal_match(&node);
-        if terminal_bitmask != 0 {
+        let (code, terminal_matches) = terminal_match(&node);
+        if !terminal_matches.is_empty() {
             body.push(code);
         }
-        let (code, nonterminal_bitmask) = nonterminal_match(&node, terminal_bitmask);
-        if nonterminal_bitmask != 0 {
+        let (code, nonterminal_matches) = nonterminal_match(&node, &terminal_matches);
+        if nonterminal_matches {
             body.push(code);
         }
     }

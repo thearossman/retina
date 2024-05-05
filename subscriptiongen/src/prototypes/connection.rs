@@ -30,11 +30,8 @@ impl ConnectionData {
     }
 
     pub fn gen_update(bitmask: u128) -> proc_macro2::TokenStream {
-        let bitmask_lit = syn::LitInt::new(&bitmask.to_string(), Span::call_site());
         quote! { 
-            if self.match_data.matching_by_bitmask(#bitmask_lit) {
-                self.connection.update_data(pdu) 
-            }
+            self.connection.update_data(pdu);
         }
     }
 

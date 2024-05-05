@@ -137,9 +137,11 @@ pub(crate) fn get_callbacks_from_config(data_in: Value) -> proc_macro2::TokenStr
         callbacks.push(cb.0);
     }
 
+    let datatype = quote! { Connection }; // TMP
+
     quote! {
         #[inline]
-        fn callbacks() -> Vec<Box<dyn Fn(Subscribed)>> {
+        fn callbacks() -> Vec<Box<dyn Fn(& #datatype)>> {
             vec![#( #callbacks )* ]
         }
     }

@@ -108,8 +108,8 @@ fn add_binary_pred(
 ) {
     let mut body: Vec<proc_macro2::TokenStream> = vec![];
     gen_session_filter_util(&mut body, statics, node);
-    let (terminal_code, terminal_bitmask) = terminal_match(node);
-    if terminal_bitmask != 0 {
+    let (terminal_code, terminal_matches) = terminal_match(node);
+    if !terminal_matches.is_empty() {
         body.push(terminal_code);
     }
 

@@ -13,6 +13,11 @@ use std::sync::Arc;
 
 use itertools::Itertools;
 
+#[cfg(feature = "timing")]
+use crate::timing::timer::Timers;
+#[cfg(feature = "timing")]
+const PKT_SAMPLE: u64 = 10_000;
+
 /// A RxCore polls from `rxqueues` and reduces the stream of packets into
 /// a stream of higher-level network events to be processed by the user.
 pub(crate) struct RxCore<'a, S>
@@ -25,6 +30,8 @@ where
     pub(crate) conntrack: ConnTrackConfig,
     pub(crate) subscription: Arc<Subscription<'a, S>>,
     pub(crate) is_running: Arc<AtomicBool>,
+    #[cfg(feature = "timing")]
+    pub(crate) packet_timers: Timers,
 }
 
 impl<'a, S> RxCore<'a, S>
@@ -106,7 +113,30 @@ where
                     // );
                     nb_pkts += 1;
                     nb_bytes += mbuf.data_len() as u64;
+                    #[cfg(feature = "timing")]
+                    let mut res = crate::filter::FilterResult::NoMatch;
+
+                    #[cfg(feature = "timing")]
+                    {
+                        let start = unsafe { dpdk::rte_rdtsc() };
+                        res = self.subscription.filter_packet(&mbuf);
+                        self.packet_timers.record("packet_filter",
+                                        unsafe { dpdk::rte_rdtsc() } - start,
+                                        PKT_SAMPLE);
+                    }
+
+                    #[cfg(feature = "timing")]
+                    let start = unsafe { dpdk::rte_rdtsc() };
+
                     S::process_packet(mbuf, &self.subscription, &mut conn_table);
+
+                    #[cfg(feature = "timing")]
+                    {
+                        if !matches!(res, crate::filter::FilterResult::NoMatch) {
+                            let duration = unsafe { dpdk::rte_rdtsc() } - start;
+                            self.packet_timers.record("process_packet", duration, PKT_SAMPLE);
+                        }
+                    }
                 }
             }
             conn_table.check_inactive(&self.subscription);

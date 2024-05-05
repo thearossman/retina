@@ -171,7 +171,7 @@ impl Subscribable for Connection {
         conn_tracker: &mut ConnTracker<Self::Tracked>,
     ) {
         let result = subscription.filter_packet(&mbuf);
-        if result.terminal_matches != 0 || result.nonterminal_matches != 0 {
+        if !result.terminal_matches.is_empty() || result.nonterminal_matches.is_empty() {
             if let Ok(ctxt) = L4Context::new(&mbuf) {
                 conn_tracker.process(mbuf, ctxt, subscription, result);
             }
@@ -310,7 +310,7 @@ impl Trackable for TrackedConnection {
     }
 
     fn on_terminate(&mut self, subscription: &Subscription<Self::Subscribed>) {
-        subscription.invoke(self.to_connection());
+        subscription.invoke_all(&self.to_connection(), &self.match_data);
     }
 
     fn filter_packet(&mut self, pkt_filter_result: FilterResultData) {

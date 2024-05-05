@@ -38,18 +38,17 @@ pub enum FilterResult {
 
 #[derive(Debug, Clone)]
 pub struct FilterResultData {
-    // Bitmaps
-    pub terminal_matches: u128,
-    pub nonterminal_matches: u128,
-    pub nonterminal_nodes: [usize; NUM_SUBSCRIPTIONS],
+    pub terminal_matches: Vec<usize>,
+    pub nonterminal_matches: Vec<usize>,
+    pub nonterminal_nodes: Vec<usize>
 }
 
 impl FilterResultData {
     pub fn new() -> Self {
         Self {
-            terminal_matches: 0,
-            nonterminal_matches: 0,
-            nonterminal_nodes: [std::usize::MAX; NUM_SUBSCRIPTIONS],
+           terminal_matches: Vec::with_capacity(NUM_SUBSCRIPTIONS),
+           nonterminal_matches: Vec::with_capacity(NUM_SUBSCRIPTIONS),
+           nonterminal_nodes: Vec::with_capacity(NUM_SUBSCRIPTIONS),
         }
     }
 }
