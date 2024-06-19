@@ -23,7 +23,7 @@ fn main() -> Result<()> {
     let config = load_config(&args.config);
 
     let cycles = args.spin;
-    let callback = |_: TlsHandshake| {
+    let callback = |_: Connection| {
         spin(cycles);
     };
     let mut runtime = Runtime::new(config, filter, callback)?;

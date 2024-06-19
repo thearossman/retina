@@ -25,6 +25,7 @@ use crate::memory::mbuf::Mbuf;
 use crate::protocols::stream::tls::{parser::TlsParser, Tls};
 use crate::protocols::stream::{ConnParser, Session, SessionData};
 use crate::subscription::{Level, Subscribable, Subscription, Trackable};
+use crate::subscription::Window;
 
 use serde::Serialize;
 
@@ -57,7 +58,7 @@ impl Subscribable for TlsHandshake {
     type Tracked = TrackedTls;
 
     fn level() -> Level {
-        Level::Session
+        Level::Connection
     }
 
     fn parsers() -> Vec<ConnParser> {
@@ -94,16 +95,27 @@ impl Subscribable for TlsHandshake {
 #[doc(hidden)]
 pub struct TrackedTls {
     five_tuple: FiveTuple,
+    window: Window,
+    bytes_match: bool,
 }
 
 impl Trackable for TrackedTls {
     type Subscribed = TlsHandshake;
 
     fn new(five_tuple: FiveTuple) -> Self {
-        TrackedTls { five_tuple }
+        TrackedTls { 
+            five_tuple,
+            window: Window::new(100),
+            bytes_match: false
+        }
     }
 
-    fn pre_match(&mut self, _pdu: L4Pdu, _session_id: Option<usize>) {}
+    fn pre_match(&mut self, pdu: L4Pdu, _session_id: Option<usize>) {
+        self.window.push(pdu);
+        if self.window.check_bytes() {
+            self.bytes_match = true;
+        }
+    }
 
     fn on_match(&mut self, session: Session, subscription: &Subscription<Self::Subscribed>) {
         if let SessionData::Tls(tls) = session.data {
@@ -114,7 +126,16 @@ impl Trackable for TrackedTls {
         }
     }
 
-    fn post_match(&mut self, _pdu: L4Pdu, _subscription: &Subscription<Self::Subscribed>) {}
+    fn post_match(&mut self, pdu: L4Pdu, _subscription: &Subscription<Self::Subscribed>) {
+        self.window.push(pdu);
+        if self.window.check_bytes() {
+            self.bytes_match = true;
+        }
+    }
 
-    fn on_terminate(&mut self, _subscription: &Subscription<Self::Subscribed>) {}
+    fn on_terminate(&mut self, _subscription: &Subscription<Self::Subscribed>) {
+        if self.bytes_match {
+            println!("bytes match");
+        }
+    }
 }

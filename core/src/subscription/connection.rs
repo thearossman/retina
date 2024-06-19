@@ -28,7 +28,7 @@ use crate::filter::FilterResult;
 use crate::memory::mbuf::Mbuf;
 use crate::protocols::packet::tcp::{ACK, FIN, RST, SYN};
 use crate::protocols::stream::{ConnParser, Session};
-use crate::subscription::{Level, Subscribable, Subscription, Trackable};
+use crate::subscription::{Window, Level, Subscribable, Subscription, Trackable};
 
 use serde::ser::{SerializeStruct, Serializer};
 use serde::Serialize;
@@ -198,6 +198,8 @@ pub struct TrackedConnection {
     history: Vec<u8>,
     ctos: Flow,
     stoc: Flow,
+    window: Window,
+    bytes_match: bool,
 }
 
 impl TrackedConnection {
@@ -212,14 +214,18 @@ impl TrackedConnection {
 
         if segment.dir {
             self.update_history(&segment, 0x0);
-            self.ctos.insert_segment(segment);
+            self.ctos.insert_segment(&segment);
         } else {
             self.update_history(&segment, 0x20);
-            self.stoc.insert_segment(segment);
+            self.stoc.insert_segment(&segment);
         }
 
         if self.ctos.nb_pkts + self.stoc.nb_pkts == 2 {
             self.second_seen_ts = now;
+        }
+        self.window.push(segment);
+        if self.window.check_bytes() {
+            self.bytes_match = true;
         }
     }
 
@@ -264,6 +270,8 @@ impl Trackable for TrackedConnection {
             history: Vec::with_capacity(16),
             ctos: Flow::new(),
             stoc: Flow::new(),
+            window: Window::new(100),
+            bytes_match: false
         }
     }
 
@@ -361,7 +369,7 @@ impl Flow {
     }
 
     #[inline]
-    fn insert_segment(&mut self, segment: L4Pdu) {
+    fn insert_segment(&mut self, segment: &L4Pdu) {
         self.nb_pkts += 1;
 
         if segment.offset() > segment.mbuf.data_len()

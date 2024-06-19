@@ -141,3 +141,57 @@ where
         tsc_record!(self.timers, "callback", t0);
     }
 }
+
+
+
+use regex::bytes::Regex;
+
+pub struct Window {
+    curr_len: usize,
+    max_len: usize,
+    // TODO try this as a lifetime parameter w/ just payloads
+    // or macro for MTU?
+    // or VecDeque<u8>? (seems to end up requiring cloning...)
+    window: Vec<u8>, // or ringbuf?
+}
+
+impl Window {
+    pub fn new(window_size: usize) -> Window {
+        Self {
+            curr_len: 0,
+            max_len: window_size,
+            window: Vec::new(),
+        }
+    }
+
+    pub fn push(&mut self, pdu: L4Pdu) -> bool{
+        let length = pdu.length();
+        let offset = pdu.offset();
+
+        if let Ok(payload) = pdu.mbuf_own().get_data_slice(offset, length) {
+            self.window.extend(payload);
+            self.curr_len += length;
+        } else {
+            return false;
+        }
+
+        // Pop oldest segment if needed
+        if self.curr_len > self.max_len {
+            self.window.drain(..self.curr_len - length);
+            self.curr_len = length;
+        }
+
+        return true;
+    }
+
+    pub fn check_bytes(&self) -> bool { // tmp
+        REGEX.is_match(self.window.as_slice())
+    }
+}
+
+lazy_static! {
+    pub(crate) static ref REGEX: Regex = {
+        Regex::new(r"pccsmysqladm/incs/dbconnect.inc").unwrap()
+    };
+}
+

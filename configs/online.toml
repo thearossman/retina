@@ -16,7 +16,7 @@ nb_memory_channels = 6
     nb_rxd = 32_768
     promiscuous = true
     mtu = 1500
-    hardware_assist = true
+    hardware_assist = false
 
     [online.monitor.display]
         throughput = true
