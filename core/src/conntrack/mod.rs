@@ -29,7 +29,7 @@ use hashlink::linked_hash_map::{LinkedHashMap, RawEntryMut};
 
 #[allow(unused_imports)]
 use regex_automata::{MatchKind, dfa::{dense::{Config, Builder}, Automaton}, util::syntax,
-                     util::{start, primitives::StateID}, Anchored};
+                     util::{start, primitives::StateID}, Anchored, PatternSet};
 #[cfg(feature = "dense")]
 use regex_automata::dfa::dense::DFA;
 #[cfg(not(feature = "dense"))]
@@ -60,6 +60,7 @@ where
     #[cfg(not(feature = "dense"))]
     regex_dfa: DFA<Vec<u8>>,
     start_state: StateID,
+    pattern_set: PatternSet,
 }
 
 // TMP - regex for test
@@ -105,13 +106,15 @@ where
         let regex_config = start::Config::new().anchored(Anchored::No);
         let start_state = regex_dfa.start_state(&regex_config).unwrap();
 
+        let pattern_set = PatternSet::new(regex_dfa.pattern_len());
         ConnTracker {
             config,
             registry,
             table,
             timerwheel,
             regex_dfa,
-            start_state
+            start_state, 
+            pattern_set,
         }
     }
 
@@ -144,6 +147,9 @@ where
                 let pdu = L4Pdu::new(mbuf, ctxt, dir);
                 conn.update(pdu, subscription, &self.registry);
                 if conn.state() == ConnState::Remove {
+                    for p in conn.info.pattern_set.iter() {
+                        self.pattern_set.insert(p);
+                    }
                     occupied.remove();
                     return;
                 }
@@ -191,6 +197,12 @@ where
         log::info!("Draining Connection table");
         for (_, mut conn) in self.table.drain() {
             conn.terminate(subscription);
+            for p in conn.info.pattern_set.iter() {
+                self.pattern_set.insert(p);
+            }
+        }
+        if !self.pattern_set.is_empty() {
+            println!("Patterns matched: {:?}", self.pattern_set);
         }
     }
 

@@ -7,7 +7,7 @@ use crate::protocols::stream::{
 use crate::subscription::{Level, Subscribable, Subscription, Trackable};
 
 use regex_automata::{dfa::{Automaton, dense, sparse}, 
-                     util::{start, primitives::StateID}, Anchored};
+                     util::{start, primitives::StateID}, Anchored, PatternSet};
 
 #[derive(Debug)]
 pub(crate) struct ConnInfo<T>
@@ -26,6 +26,7 @@ where
     #[cfg(not(feature = "dense"))]
     pub(crate) regex_dfa: sparse::DFA<Vec<u8>>,
     pub(crate) curr_state: StateID,
+    pub(crate) pattern_set: PatternSet,
 }
 
 impl<T> ConnInfo<T>
@@ -41,31 +42,39 @@ where
             sdata: T::new(five_tuple),
             regex_dfa,
             curr_state: start_state,
+            pattern_set: PatternSet::new(regex_dfa.pattern_len())
         }
     }
 
     #[cfg(not(feature = "dense"))]
     pub(super) fn new(five_tuple: FiveTuple, pkt_term_node: usize, 
             regex_dfa: sparse::DFA<Vec<u8>>, start_state: StateID) -> Self {
+        let pattern_set = PatternSet::new(regex_dfa.pattern_len());
         ConnInfo {
             state: ConnState::Probing,
             cdata: ConnData::new(five_tuple, pkt_term_node),
             sdata: T::new(five_tuple),
             regex_dfa,
             curr_state: start_state,
+            pattern_set
         }
     }
 
     pub(crate) fn string_match(&mut self, pdu: &L4Pdu) {
         let offset = pdu.offset();
         let length = pdu.length();
-        if length == 0 {
+        if length == 0 || self.pattern_set.is_full() {
             return;
         }
 
         if let Ok(data) = (pdu.mbuf_ref()).get_data_slice(offset, length) {
             for b in data {
                 self.curr_state = self.regex_dfa.next_state(self.curr_state, *b);
+                if self.regex_dfa.is_match_state(self.curr_state) {
+                    for i in 0..self.regex_dfa.match_len(self.curr_state) {
+                        self.pattern_set.insert(self.regex_dfa.match_pattern(self.curr_state, i));
+                    }
+                }
             }
         }
     }
