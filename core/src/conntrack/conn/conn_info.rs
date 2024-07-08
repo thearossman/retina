@@ -6,6 +6,9 @@ use crate::protocols::stream::{
 };
 use crate::subscription::{Level, Subscribable, Subscription, Trackable};
 
+use regex_automata::{dfa::{Automaton, dense}, 
+                     util::{start, primitives::StateID}, Anchored};
+
 #[derive(Debug)]
 pub(crate) struct ConnInfo<T>
 where
@@ -17,17 +20,39 @@ where
     pub(crate) cdata: ConnData,
     /// Subscription data (for delivering)
     pub(crate) sdata: T,
+    // DFA for regex matching
+    pub(crate) regex_dfa: dense::DFA<Vec<u32>>,
+    pub(crate) curr_state: StateID,
 }
 
 impl<T> ConnInfo<T>
 where
     T: Trackable,
 {
-    pub(super) fn new(five_tuple: FiveTuple, pkt_term_node: usize) -> Self {
+    pub(super) fn new(five_tuple: FiveTuple, pkt_term_node: usize, 
+            regex_dfa: dense::DFA<Vec<u32>>) -> Self {
+        let regex_config = start::Config::new().anchored(Anchored::No);
+        let curr_state = regex_dfa.start_state(&regex_config).unwrap();
         ConnInfo {
             state: ConnState::Probing,
             cdata: ConnData::new(five_tuple, pkt_term_node),
             sdata: T::new(five_tuple),
+            regex_dfa,
+            curr_state,
+        }
+    }
+
+    pub(crate) fn string_match(&mut self, pdu: &L4Pdu) {
+        let offset = pdu.offset();
+        let length = pdu.length();
+        if length == 0 {
+            return;
+        }
+
+        if let Ok(data) = (pdu.mbuf_ref()).get_data_slice(offset, length) {
+            for b in data {
+                self.curr_state = self.regex_dfa.next_state(self.curr_state, *b);
+            }
         }
     }
 
@@ -37,6 +62,7 @@ where
         subscription: &Subscription<T::Subscribed>,
         registry: &ParserRegistry,
     ) {
+        self.string_match(&pdu);
         match self.state {
             ConnState::Probing => {
                 self.on_probe(pdu, subscription, registry);
