@@ -27,7 +27,8 @@ use std::time::Instant;
 use anyhow::anyhow;
 use hashlink::linked_hash_map::{LinkedHashMap, RawEntryMut};
 
-use regex_automata::{MatchKind, dfa::dense, util::syntax};
+use regex_automata::{MatchKind, dfa::{dense, Automaton}, util::syntax,
+                     util::{start, primitives::StateID}, Anchored};
 
 /// Manages state for all TCP and UDP connections.
 ///
@@ -50,6 +51,7 @@ where
     // DFA that may be needed for RegEx matching.
     // \note Dense DFA uses more memory, but is generally faster at runtime
     regex_dfa: dense::DFA<Vec<u32>>,    
+    start_state: StateID,
 }
 
 // TMP - regex for test
@@ -89,12 +91,16 @@ where
                                     .syntax(syntax)
                                     .build_many(&patterns()).unwrap();
 
+        let regex_config = start::Config::new().anchored(Anchored::No);
+        let start_state = regex_dfa.start_state(&regex_config).unwrap();
+
         ConnTracker {
             config,
             registry,
             table,
             timerwheel,
-            regex_dfa
+            regex_dfa,
+            start_state
         }
     }
 
@@ -143,10 +149,11 @@ where
                             ctxt,
                             self.config.tcp_establish_timeout,
                             self.config.max_out_of_order,
-                            self.regex_dfa.clone()
+                            self.regex_dfa.clone(),
+                            self.start_state
                         ),
                         UDP_PROTOCOL => Conn::new_udp(ctxt, self.config.udp_inactivity_timeout, 
-                                                      self.regex_dfa.clone()),
+                                                      self.regex_dfa.clone(), self.start_state),
                         _ => Err(anyhow!("Invalid L4 Protocol")),
                     };
                     if let Ok(mut conn) = conn {

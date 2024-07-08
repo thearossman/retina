@@ -30,15 +30,13 @@ where
     T: Trackable,
 {
     pub(super) fn new(five_tuple: FiveTuple, pkt_term_node: usize, 
-            regex_dfa: dense::DFA<Vec<u32>>) -> Self {
-        let regex_config = start::Config::new().anchored(Anchored::No);
-        let curr_state = regex_dfa.start_state(&regex_config).unwrap();
+            regex_dfa: dense::DFA<Vec<u32>>, start_state: StateID) -> Self {
         ConnInfo {
             state: ConnState::Probing,
             cdata: ConnData::new(five_tuple, pkt_term_node),
             sdata: T::new(five_tuple),
             regex_dfa,
-            curr_state,
+            curr_state: start_state,
         }
     }
 
