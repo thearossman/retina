@@ -6,7 +6,7 @@ use crate::protocols::stream::{
 };
 use crate::subscription::{Level, Subscribable, Subscription, Trackable};
 
-use regex_automata::{dfa::{Automaton, dense}, 
+use regex_automata::{dfa::{Automaton, dense, sparse}, 
                      util::{start, primitives::StateID}, Anchored};
 
 #[derive(Debug)]
@@ -21,16 +21,32 @@ where
     /// Subscription data (for delivering)
     pub(crate) sdata: T,
     // DFA for regex matching
+    #[cfg(feature = "dense")]
     pub(crate) regex_dfa: dense::DFA<Vec<u32>>,
+    #[cfg(not(feature = "dense"))]
+    pub(crate) regex_dfa: sparse::DFA<Vec<u8>>,
     pub(crate) curr_state: StateID,
 }
 
 impl<T> ConnInfo<T>
 where
     T: Trackable,
-{
+{  
+    #[cfg(feature = "dense")]
     pub(super) fn new(five_tuple: FiveTuple, pkt_term_node: usize, 
             regex_dfa: dense::DFA<Vec<u32>>, start_state: StateID) -> Self {
+        ConnInfo {
+            state: ConnState::Probing,
+            cdata: ConnData::new(five_tuple, pkt_term_node),
+            sdata: T::new(five_tuple),
+            regex_dfa,
+            curr_state: start_state,
+        }
+    }
+
+    #[cfg(not(feature = "dense"))]
+    pub(super) fn new(five_tuple: FiveTuple, pkt_term_node: usize, 
+            regex_dfa: sparse::DFA<Vec<u8>>, start_state: StateID) -> Self {
         ConnInfo {
             state: ConnState::Probing,
             cdata: ConnData::new(five_tuple, pkt_term_node),

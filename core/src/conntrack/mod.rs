@@ -27,8 +27,13 @@ use std::time::Instant;
 use anyhow::anyhow;
 use hashlink::linked_hash_map::{LinkedHashMap, RawEntryMut};
 
-use regex_automata::{MatchKind, dfa::{dense, Automaton}, util::syntax,
+#[allow(unused_imports)]
+use regex_automata::{MatchKind, dfa::{dense::{Config, Builder}, Automaton}, util::syntax,
                      util::{start, primitives::StateID}, Anchored};
+#[cfg(feature = "dense")]
+use regex_automata::dfa::dense::DFA;
+#[cfg(not(feature = "dense"))]
+use regex_automata::dfa::sparse::DFA;
 
 /// Manages state for all TCP and UDP connections.
 ///
@@ -50,7 +55,10 @@ where
     timerwheel: TimerWheel,
     // DFA that may be needed for RegEx matching.
     // \note Dense DFA uses more memory, but is generally faster at runtime
-    regex_dfa: dense::DFA<Vec<u32>>,    
+    #[cfg(feature="dense")]
+    regex_dfa: DFA<Vec<u32>>,    
+    #[cfg(not(feature = "dense"))]
+    regex_dfa: DFA<Vec<u8>>,
     start_state: StateID,
 }
 
@@ -80,16 +88,19 @@ where
         );
 
         // Configure dfa
-        let dfa_config = dense::Config::new()
+        let dfa_config = Config::new()
             // Allow overlapping matches
             .match_kind(MatchKind::All);
         let syntax = syntax::Config::new() 
                     // Allow arbitrary bytes
                     .utf8(false);
-        let regex_dfa = dense::Builder::new()
+        let regex_dfa = Builder::new()
                                     .configure(dfa_config)
                                     .syntax(syntax)
                                     .build_many(&patterns()).unwrap();
+
+        #[cfg(not(feature = "dense"))]
+        let regex_dfa = regex_dfa.to_sparse().unwrap();
 
         let regex_config = start::Config::new().anchored(Anchored::No);
         let start_state = regex_dfa.start_state(&regex_config).unwrap();
