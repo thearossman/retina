@@ -95,6 +95,9 @@ where
         match &mut self.l4conn {
             L4Conn::Tcp(tcp_conn) => {
                 if self.info.state == ConnState::Tracking {
+                    // TMP change for stream matching
+                    // reassemble regardless
+                    /*
                     if tcp_conn.ctos.ooo_buf.len() != 0 {
                         tcp_conn.ctos.ooo_buf.buf.clear();
                     }
@@ -103,6 +106,8 @@ where
                     }
                     tcp_conn.update_term_condition(pdu.flags(), pdu.dir);
                     self.info.sdata.post_match(pdu, subscription);
+                     */
+                    tcp_conn.reassemble(pdu, &mut self.info, subscription, registry);
                 } else {
                     tcp_conn.reassemble(pdu, &mut self.info, subscription, registry);
                 }
