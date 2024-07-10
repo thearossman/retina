@@ -23,7 +23,7 @@ where
     // DFA for regex matching
     pub(crate) regex_dfa: hybrid::dfa::DFA,
     pub(crate) curr_state: hybrid::LazyStateID,
-    pub(crate) cache: hybrid::dfa::Cache,
+    pub(crate) cache: Box<hybrid::dfa::Cache>,
     pub(crate) pattern_set: PatternSet,
 }
 
@@ -44,7 +44,7 @@ where
             sdata: T::new(five_tuple),
             regex_dfa,
             curr_state,
-            cache,
+            cache: Box::new(cache),
             pattern_set
         }
     }
