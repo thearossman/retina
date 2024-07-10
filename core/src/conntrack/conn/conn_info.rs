@@ -6,7 +6,7 @@ use crate::protocols::stream::{
 };
 use crate::subscription::{Level, Subscribable, Subscription, Trackable};
 
-use regex_automata::{dfa::{Automaton, dense, sparse}, 
+use regex_automata::{dfa::{Automaton, dense, sparse}, hybrid,
                      util::{start, primitives::StateID}, Anchored, PatternSet};
 
 #[derive(Debug)]
@@ -21,11 +21,9 @@ where
     /// Subscription data (for delivering)
     pub(crate) sdata: T,
     // DFA for regex matching
-    #[cfg(feature = "dense")]
-    pub(crate) regex_dfa: dense::DFA<Vec<u32>>,
-    #[cfg(not(feature = "dense"))]
-    pub(crate) regex_dfa: sparse::DFA<Vec<u8>>,
-    pub(crate) curr_state: StateID,
+    pub(crate) regex_dfa: hybrid::dfa::DFA,
+    pub(crate) curr_state: hybrid::LazyStateID,
+    pub(crate) cache: hybrid::dfa::Cache,
     pub(crate) pattern_set: PatternSet,
 }
 
@@ -33,29 +31,20 @@ impl<T> ConnInfo<T>
 where
     T: Trackable,
 {  
-    #[cfg(feature = "dense")]
-    pub(super) fn new(five_tuple: FiveTuple, pkt_term_node: usize, 
-            regex_dfa: dense::DFA<Vec<u32>>, start_state: StateID) -> Self {
-        ConnInfo {
-            state: ConnState::Probing,
-            cdata: ConnData::new(five_tuple, pkt_term_node),
-            sdata: T::new(five_tuple),
-            regex_dfa,
-            curr_state: start_state,
-            pattern_set: PatternSet::new(regex_dfa.pattern_len())
-        }
-    }
 
-    #[cfg(not(feature = "dense"))]
     pub(super) fn new(five_tuple: FiveTuple, pkt_term_node: usize, 
-            regex_dfa: sparse::DFA<Vec<u8>>, start_state: StateID) -> Self {
+            regex_dfa: hybrid::dfa::DFA) -> Self {
         let pattern_set = PatternSet::new(regex_dfa.pattern_len());
+        let mut cache = regex_dfa.create_cache();
+        let curr_state = regex_dfa.start_state(&mut cache,
+             &start::Config::new().anchored(Anchored::No)).unwrap();
         ConnInfo {
             state: ConnState::Probing,
             cdata: ConnData::new(five_tuple, pkt_term_node),
             sdata: T::new(five_tuple),
             regex_dfa,
-            curr_state: start_state,
+            curr_state,
+            cache,
             pattern_set
         }
     }
@@ -69,10 +58,10 @@ where
 
         if let Ok(data) = (pdu.mbuf_ref()).get_data_slice(offset, length) {
             for b in data {
-                self.curr_state = self.regex_dfa.next_state(self.curr_state, *b);
-                if self.regex_dfa.is_match_state(self.curr_state) {
-                    for i in 0..self.regex_dfa.match_len(self.curr_state) {
-                        self.pattern_set.insert(self.regex_dfa.match_pattern(self.curr_state, i));
+                self.curr_state = self.regex_dfa.next_state(&mut self.cache, self.curr_state, *b).unwrap();
+                if self.curr_state.is_match() {
+                    for i in 0..self.regex_dfa.match_len(&self.cache, self.curr_state) {
+                        self.pattern_set.insert(self.regex_dfa.match_pattern(&self.cache, self.curr_state, i));
                     }
                 }
             }

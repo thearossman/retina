@@ -20,7 +20,7 @@ use crate::subscription::{Subscription, Trackable};
 use anyhow::{bail, Result};
 use std::time::Instant;
 
-use regex_automata::{dfa::dense, dfa::sparse, util::primitives::StateID};
+use regex_automata::{dfa::dense, dfa::sparse, hybrid, util::primitives::StateID};
 
 /// Tracks either a TCP or a UDP connection.
 ///
@@ -53,9 +53,9 @@ where
     /// `initial_timeout` and a maximum out-or-order tolerance of `max_ooo`. This means that there
     /// can be at most `max_ooo` packets buffered out of sequence before Retina chooses to discard
     /// the connection.
-    #[cfg(feature = "dense")]
+    /// 
     pub(super) fn new_tcp(ctxt: L4Context, initial_timeout: usize, max_ooo: usize,
-                          regex_dfa: dense::DFA<Vec<u32>>, start_state: StateID) -> Result<Self> {
+                          regex_dfa: hybrid::dfa::DFA) -> Result<Self> {
         let five_tuple = FiveTuple::from_ctxt(ctxt);
         let tcp_conn = if ctxt.flags & SYN != 0 && ctxt.flags & ACK == 0 && ctxt.flags & RST == 0 {
             TcpConn::new_on_syn(ctxt, max_ooo)
@@ -66,55 +66,22 @@ where
             last_seen_ts: Instant::now(),
             inactivity_window: initial_timeout,
             l4conn: L4Conn::Tcp(tcp_conn),
-            info: ConnInfo::new(five_tuple, ctxt.idx, regex_dfa, start_state)
-        })
-    }
-
-    #[cfg(not(feature = "dense"))]
-    pub(super) fn new_tcp(ctxt: L4Context, initial_timeout: usize, max_ooo: usize,
-                          regex_dfa: sparse::DFA<Vec<u8>>, start_state: StateID) -> Result<Self> {
-        let five_tuple = FiveTuple::from_ctxt(ctxt);
-        let tcp_conn = if ctxt.flags & SYN != 0 && ctxt.flags & ACK == 0 && ctxt.flags & RST == 0 {
-            TcpConn::new_on_syn(ctxt, max_ooo)
-        } else {
-            bail!("Not SYN")
-        };
-        Ok(Conn {
-            last_seen_ts: Instant::now(),
-            inactivity_window: initial_timeout,
-            l4conn: L4Conn::Tcp(tcp_conn),
-            info: ConnInfo::new(five_tuple, ctxt.idx, regex_dfa, start_state)
+            info: ConnInfo::new(five_tuple, ctxt.idx, regex_dfa)
         })
     }
 
     /// Creates a new UDP connection from `ctxt` with an initial inactivity window of
     /// `initial_timeout`.
     #[allow(clippy::unnecessary_wraps)]
-    #[cfg(feature = "dense")]
     pub(super) fn new_udp(ctxt: L4Context, initial_timeout: usize,
-                          regex_dfa: dense::DFA<Vec<u32>>, 
-                          start_state: StateID) -> Result<Self> {
+                            regex_dfa: hybrid::dfa::DFA) -> Result<Self> {
         let five_tuple = FiveTuple::from_ctxt(ctxt);
         let udp_conn = UdpConn;
         Ok(Conn {
             last_seen_ts: Instant::now(),
             inactivity_window: initial_timeout,
             l4conn: L4Conn::Udp(udp_conn),
-            info: ConnInfo::new(five_tuple, ctxt.idx, regex_dfa, start_state),
-        })
-    }
-
-    #[cfg(not(feature = "dense"))]
-    pub(super) fn new_udp(ctxt: L4Context, initial_timeout: usize,
-                            regex_dfa: sparse::DFA<Vec<u8>>, 
-                            start_state: StateID) -> Result<Self> {
-        let five_tuple = FiveTuple::from_ctxt(ctxt);
-        let udp_conn = UdpConn;
-        Ok(Conn {
-            last_seen_ts: Instant::now(),
-            inactivity_window: initial_timeout,
-            l4conn: L4Conn::Udp(udp_conn),
-            info: ConnInfo::new(five_tuple, ctxt.idx, regex_dfa, start_state),
+            info: ConnInfo::new(five_tuple, ctxt.idx, regex_dfa),
         })
     }
 

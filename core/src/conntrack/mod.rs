@@ -30,10 +30,7 @@ use hashlink::linked_hash_map::{LinkedHashMap, RawEntryMut};
 #[allow(unused_imports)]
 use regex_automata::{MatchKind, dfa::{dense::{Config, Builder}, Automaton}, util::syntax,
                      util::{start, primitives::StateID}, Anchored, PatternSet};
-#[cfg(feature = "dense")]
-use regex_automata::dfa::dense::DFA;
-#[cfg(not(feature = "dense"))]
-use regex_automata::dfa::sparse::DFA;
+use regex_automata::hybrid::{LazyStateID, dfa::DFA};
 
 /// Manages state for all TCP and UDP connections.
 ///
@@ -55,11 +52,7 @@ where
     timerwheel: TimerWheel,
     // DFA that may be needed for RegEx matching.
     // \note Dense DFA uses more memory, but is generally faster at runtime
-    #[cfg(feature="dense")]
-    regex_dfa: DFA<Vec<u32>>,    
-    #[cfg(not(feature = "dense"))]
-    regex_dfa: DFA<Vec<u8>>,
-    start_state: StateID,
+    regex_dfa: DFA,
     pattern_set: PatternSet,
 }
 
@@ -89,22 +82,7 @@ where
         );
 
         // Configure dfa
-        let dfa_config = Config::new()
-            // Allow overlapping matches
-            .match_kind(MatchKind::All);
-        let syntax = syntax::Config::new() 
-                    // Allow arbitrary bytes
-                    .utf8(false);
-        let regex_dfa = Builder::new()
-                                    .configure(dfa_config)
-                                    .syntax(syntax)
-                                    .build_many(&patterns()).unwrap();
-
-        #[cfg(not(feature = "dense"))]
-        let regex_dfa = regex_dfa.to_sparse().unwrap();
-
-        let regex_config = start::Config::new().anchored(Anchored::No);
-        let start_state = regex_dfa.start_state(&regex_config).unwrap();
+        let regex_dfa = DFA::new_many(patterns()).unwrap();
 
         let pattern_set = PatternSet::new(regex_dfa.pattern_len());
         ConnTracker {
@@ -113,7 +91,6 @@ where
             table,
             timerwheel,
             regex_dfa,
-            start_state, 
             pattern_set,
         }
     }
@@ -167,10 +144,9 @@ where
                             self.config.tcp_establish_timeout,
                             self.config.max_out_of_order,
                             self.regex_dfa.clone(),
-                            self.start_state
                         ),
                         UDP_PROTOCOL => Conn::new_udp(ctxt, self.config.udp_inactivity_timeout, 
-                                                      self.regex_dfa.clone(), self.start_state),
+                                                      self.regex_dfa.clone()),
                         _ => Err(anyhow!("Invalid L4 Protocol")),
                     };
                     if let Ok(mut conn) = conn {
