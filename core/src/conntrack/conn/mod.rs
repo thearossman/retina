@@ -6,6 +6,7 @@
 pub(crate) mod conn_info;
 pub(crate) mod tcp_conn;
 pub(crate) mod udp_conn;
+pub(crate) mod regex;
 
 use self::conn_info::{ConnInfo, ConnState};
 use self::tcp_conn::TcpConn;

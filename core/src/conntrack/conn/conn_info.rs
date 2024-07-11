@@ -5,8 +5,11 @@ use crate::protocols::stream::{
     ConnData, ParseResult, ParserRegistry, ProbeRegistryResult, Session,
 };
 use crate::subscription::{Level, Subscribable, Subscription, Trackable};
+use crate::conntrack::conn::regex::{CacheKey, CachePool};
 
-use regex_automata::{dfa::{Automaton, dense, sparse}, hybrid,
+use std::{rc::Rc, cell::RefCell};
+
+use regex_automata::{dfa::{Automaton, dense, sparse}, hybrid, 
                      util::{start, primitives::StateID}, Anchored, PatternSet};
 
 #[derive(Debug)]
@@ -20,10 +23,12 @@ where
     pub(crate) cdata: ConnData,
     /// Subscription data (for delivering)
     pub(crate) sdata: T,
-    // DFA for regex matching
+
+    // DFA stuff for regex matching [TMP]
     pub(crate) regex_dfa: hybrid::dfa::DFA,
     pub(crate) curr_state: Option<hybrid::LazyStateID>,
-    pub(crate) cache: Option<Box<hybrid::dfa::Cache>>,
+    pub(crate) cache: Option<Rc<RefCell<hybrid::dfa::Cache>>>,
+    pub(crate) cache_key: Option<CacheKey>,
     pub(crate) pattern_set: PatternSet,
 }
 
@@ -43,18 +48,29 @@ where
             regex_dfa,
             curr_state: None,
             cache: None,
-            pattern_set
+            cache_key: None,
+            pattern_set,
         }
     }
 
-    pub(crate) fn init_re(&mut self) {
-        self.cache = Some(Box::new(self.regex_dfa.create_cache()));
-        self.curr_state = Some(self.regex_dfa.start_state(self.cache.as_mut().unwrap(),
-            &start::Config::new().anchored(Anchored::No)).unwrap());        
+    pub(crate) fn init_re(&mut self, cache_pool: &mut CachePool) {
+        if self.cache.is_some() {
+            return;
+        }
+        let (key, cache) = cache_pool.get();
+        self.cache = Some(cache);
+        self.cache_key = Some(key);
+
+        let mut cache = self.cache.as_mut().unwrap().borrow_mut();
+
+        self.curr_state = Some(
+            self.regex_dfa.start_state(&mut *cache,
+            &start::Config::new().anchored(Anchored::No)).unwrap()
+        );        
     }
 
     pub(crate) fn string_match(&mut self, pdu: &L4Pdu) {
-        if self.curr_state.is_none() || self.cache.is_none() {
+        if self.curr_state.is_none() {
             return;
         }
 
@@ -63,7 +79,8 @@ where
         if length == 0 || self.pattern_set.is_full() {
             return;
         }
-        let cache_ref = self.cache.as_mut().unwrap();
+
+        let cache_ref = &mut *(self.cache.as_mut().unwrap().borrow_mut());
         let mut state = self.curr_state.unwrap();
 
         if let Ok(data) = (pdu.mbuf_ref()).get_data_slice(offset, length) {
@@ -115,8 +132,6 @@ where
                     FilterResult::MatchTerminal(idx) | FilterResult::MatchNonTerminal(idx) => {
                         self.state = ConnState::Parsing;
                         self.cdata.conn_term_node = idx;
-                        // TMP -- once app proto has been ID'd? 
-                        self.init_re();
                         self.on_parse(pdu, subscription);
                     }
                     FilterResult::NoMatch => {

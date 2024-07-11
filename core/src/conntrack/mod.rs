@@ -11,6 +11,7 @@ mod timerwheel;
 
 use self::conn::conn_info::ConnState;
 use self::conn::{Conn, L4Conn};
+use self::conn::regex::CachePool;
 use self::conn_id::ConnId;
 use self::pdu::{L4Context, L4Pdu};
 use self::timerwheel::TimerWheel;
@@ -21,7 +22,9 @@ use crate::protocols::packet::udp::UDP_PROTOCOL;
 use crate::protocols::stream::ParserRegistry;
 use crate::subscription::{Subscription, Trackable};
 
+use std::cell::RefCell;
 use std::cmp;
+use std::rc::Rc;
 use std::time::Instant;
 
 use anyhow::anyhow;
@@ -50,10 +53,12 @@ where
     table: LinkedHashMap<ConnId, Conn<T>>,
     /// Manages connection timeouts.
     timerwheel: TimerWheel,
+    
     // DFA that may be needed for RegEx matching.
     // \note Dense DFA uses more memory, but is generally faster at runtime
     regex_dfa: DFA,
     pattern_set: PatternSet,
+    cache_pool: CachePool, 
 }
 
 // TMP - regex for test
@@ -83,8 +88,9 @@ where
 
         // Configure dfa
         let regex_dfa = DFA::new_many(patterns()).unwrap();
-
         let pattern_set = PatternSet::new(regex_dfa.pattern_len());
+        let cache_pool = CachePool::new(regex_dfa.clone());
+
         ConnTracker {
             config,
             registry,
@@ -92,6 +98,7 @@ where
             timerwheel,
             regex_dfa,
             pattern_set,
+            cache_pool,
         }
     }
 
@@ -127,12 +134,23 @@ where
                     for p in conn.info.pattern_set.iter() {
                         self.pattern_set.insert(p);
                     }
+                    self.cache_pool.free(conn.info.cache_key);
                     occupied.remove();
                     return;
                 }
 
+                // \TMP start regex matching on parse
+                // (Note currently, this would miss the first parsed packet)
+                else if conn.state() == ConnState::Parsing && conn.info.cache.is_none() {
+                    conn.info.init_re(&mut self.cache_pool);
+                }
+
                 if conn.terminated() {
                     conn.terminate(subscription);
+                    for p in conn.info.pattern_set.iter() {
+                        self.pattern_set.insert(p);
+                    }
+                    self.cache_pool.free(conn.info.cache_key);
                     occupied.remove();
                 }
             }
@@ -151,6 +169,10 @@ where
                     };
                     if let Ok(mut conn) = conn {
                         let pdu = L4Pdu::new(mbuf, ctxt, true);
+                        
+                        // \TMP if starting on re matching
+                        // conn.info.init_re(&mut self.cache_pool);
+
                         conn.info.consume_pdu(pdu, subscription, &self.registry);
                         if conn.state() != ConnState::Remove {
                             self.timerwheel.insert(
