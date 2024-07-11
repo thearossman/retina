@@ -22,8 +22,8 @@ where
     pub(crate) sdata: T,
     // DFA for regex matching
     pub(crate) regex_dfa: hybrid::dfa::DFA,
-    pub(crate) curr_state: hybrid::LazyStateID,
-    pub(crate) cache: Box<hybrid::dfa::Cache>,
+    pub(crate) curr_state: Option<hybrid::LazyStateID>,
+    pub(crate) cache: Option<Box<hybrid::dfa::Cache>>,
     pub(crate) pattern_set: PatternSet,
 }
 
@@ -35,36 +35,48 @@ where
     pub(super) fn new(five_tuple: FiveTuple, pkt_term_node: usize, 
             regex_dfa: hybrid::dfa::DFA) -> Self {
         let pattern_set = PatternSet::new(regex_dfa.pattern_len());
-        let mut cache = regex_dfa.create_cache();
-        let curr_state = regex_dfa.start_state(&mut cache,
-             &start::Config::new().anchored(Anchored::No)).unwrap();
+
         ConnInfo {
             state: ConnState::Probing,
             cdata: ConnData::new(five_tuple, pkt_term_node),
             sdata: T::new(five_tuple),
             regex_dfa,
-            curr_state,
-            cache: Box::new(cache),
+            curr_state: None,
+            cache: None,
             pattern_set
         }
     }
 
+    pub(crate) fn init_re(&mut self) {
+        self.cache = Some(Box::new(self.regex_dfa.create_cache()));
+        self.curr_state = Some(self.regex_dfa.start_state(self.cache.as_mut().unwrap(),
+            &start::Config::new().anchored(Anchored::No)).unwrap());        
+    }
+
     pub(crate) fn string_match(&mut self, pdu: &L4Pdu) {
+        if self.curr_state.is_none() || self.cache.is_none() {
+            return;
+        }
+
         let offset = pdu.offset();
         let length = pdu.length();
         if length == 0 || self.pattern_set.is_full() {
             return;
         }
+        let cache_ref = self.cache.as_mut().unwrap();
+        let mut state = self.curr_state.unwrap();
 
         if let Ok(data) = (pdu.mbuf_ref()).get_data_slice(offset, length) {
             for b in data {
-                self.curr_state = self.regex_dfa.next_state(&mut self.cache, self.curr_state, *b).unwrap();
-                if self.curr_state.is_match() {
-                    for i in 0..self.regex_dfa.match_len(&self.cache, self.curr_state) {
-                        self.pattern_set.insert(self.regex_dfa.match_pattern(&self.cache, self.curr_state, i));
+                state = self.regex_dfa.next_state(cache_ref, state, *b).unwrap();
+                if state.is_match() {
+                    for i in 0..self.regex_dfa.match_len(cache_ref, state) {
+                        self.pattern_set.insert(self.regex_dfa.match_pattern(cache_ref,
+                                             state, i));
                     }
                 }
             }
+            self.curr_state = Some(state);
         }
     }
 
@@ -74,7 +86,6 @@ where
         subscription: &Subscription<T::Subscribed>,
         registry: &ParserRegistry,
     ) {
-        self.string_match(&pdu);
         match self.state {
             ConnState::Probing => {
                 self.on_probe(pdu, subscription, registry);
@@ -104,6 +115,8 @@ where
                     FilterResult::MatchTerminal(idx) | FilterResult::MatchNonTerminal(idx) => {
                         self.state = ConnState::Parsing;
                         self.cdata.conn_term_node = idx;
+                        // TMP -- once app proto has been ID'd? 
+                        self.init_re();
                         self.on_parse(pdu, subscription);
                     }
                     FilterResult::NoMatch => {
@@ -134,6 +147,7 @@ where
     }
 
     fn on_parse(&mut self, pdu: L4Pdu, subscription: &Subscription<T::Subscribed>) {
+        self.string_match(&pdu);
         match self.cdata.conn_parser.parse(&pdu) {
             ParseResult::Done(id) => {
                 self.sdata.pre_match(pdu, Some(id));
@@ -159,6 +173,7 @@ where
     }
 
     fn on_track(&mut self, pdu: L4Pdu, subscription: &Subscription<T::Subscribed>) {
+        self.string_match(&pdu);
         self.sdata.post_match(pdu, subscription);
     }
 
