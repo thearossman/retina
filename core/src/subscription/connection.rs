@@ -30,6 +30,7 @@ use crate::protocols::packet::tcp::{ACK, FIN, RST, SYN};
 use crate::protocols::stream::{ConnParser, Session};
 use crate::subscription::{Level, Subscribable, Subscription, Trackable};
 
+use aho_corasick::AhoCorasick;
 use serde::ser::{SerializeStruct, Serializer};
 use serde::Serialize;
 
@@ -250,6 +251,24 @@ impl TrackedConnection {
     }
 }
 
+fn patterns() -> &'static Vec<&'static str> {
+    static PATTERNS: std::sync::OnceLock<Vec<&str>> = std::sync::OnceLock::new();
+    PATTERNS.get_or_init(||
+        vec![
+            r"abc",
+            r"gzip,",
+            r"charset=",
+            r"msn",
+        ]
+    )
+}
+
+lazy_static! {
+    static ref AC: AhoCorasick = {
+        AhoCorasick::new(patterns()).unwrap()
+    };
+}
+
 impl Trackable for TrackedConnection {
     type Subscribed = Connection;
 
@@ -271,8 +290,26 @@ impl Trackable for TrackedConnection {
         self.update(pdu);
     }
 
-    fn on_match(&mut self, _session: Session, _subscription: &Subscription<Self::Subscribed>) {
+    fn on_match(&mut self, session: Session, _subscription: &Subscription<Self::Subscribed>) {
         // do nothing, should stay tracked
+        // \TMP for evaluating matching approaches
+        
+        if let crate::protocols::stream::SessionData::Http(http) = session.data {
+            // Approach A: iterate
+            let mut matches = vec![];
+            for s in patterns() {
+                if http.uri().contains(s) {
+                    matches.push(s);
+                }
+            }
+
+            // Approach B: shared AC
+            /* let mut matches = vec![];
+            for mat in AC.find_iter(http.uri()) {
+                matches.push((mat.pattern(), mat.start(), mat.end()));
+            } */
+        }
+        
     }
 
     fn post_match(&mut self, pdu: L4Pdu, _subscription: &Subscription<Self::Subscribed>) {
