@@ -8,14 +8,18 @@ use crate::subscription::{Level, Subscribable, Subscription, Trackable};
 
 use std::collections::VecDeque;
 
-#[derive(Debug, Clone)]
+use serde::Serialize;
+
+#[derive(Debug, Clone, Serialize)]
 pub struct PayloadChunk {
+    pub five_tuple: FiveTuple,
     pub data: Vec<u8>,
 }
 
 impl PayloadChunk {
-    fn new() -> Self {
+    fn new(five_tuple: FiveTuple) -> Self {
         Self {
+            five_tuple,
             data: vec![]
         }
     }
@@ -65,10 +69,10 @@ impl TrackedPayloadChunk {
             return;
         }
         if self.chunks.is_empty() {
-            self.chunks.push_back(PayloadChunk::new());
+            self.chunks.push_back(PayloadChunk::new(self.five_tuple));
         }
         if self.chunks.back().unwrap().data.len() + payload_len > WINDOW_SIZE {
-            self.chunks.push_back(PayloadChunk::new());
+            self.chunks.push_back(PayloadChunk::new(self.five_tuple));
         }
         if let Ok(data) = (pdu.mbuf_ref()).get_data_slice(offset, payload_len) {
             self.chunks.back_mut().unwrap().data.extend(data);
