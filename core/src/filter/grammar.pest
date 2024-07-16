@@ -2,24 +2,40 @@
 
 // Expressions
 // ----------------------------------------------------------------------
+/// The whole filter (could be the whole file)
+/// _ = silent filter (not included in parsed result pairs/tokens)
+/// Uses start/end of input, with zero or one expressions (expr defined below)
 filter = _{ SOI ~ expr? ~ EOI }
+/// Non-identifier and pred. defined below
+/// - Zero or instances of predicates wrapped in non-identifiers (and/or)
 raw_predicates = _{ SOI ~ ( (non_identifier)* ~ predicate ~ (non_identifier)* )* ~ EOI }
 
 // encodes operator precedence (AND over OR)
+/// basically guarantees that the logic of or's and and's is correct 
+/// - Each full expression = one or more sub-expressions OR'd together 
+/// - Each sub-expression = one or more "terms" AND'd together
+/// - Each term = an expression OR a single condition (predicate) 
 expr = { sub_expr ~ (or_op ~ sub_expr)* }   
-sub_expr = { term ~ (and_op ~ term)* }      
+sub_expr = { term ~ (and_op ~ term)* }     
+/// Either a predicate or an expression in parentheses 
 term = _{ predicate | "(" ~ expr ~ ")" }
+/// Protocol, optionally with field + op + value
 predicate = { protocol ~ ("." ~ (combined_field | field) ~ bin_op ~ value)? }
+/// TODO: this wouldn't work for a flag (e.g., "tcp syn is set"); needs to be = value
 
 // Identifiers
 // ----------------------------------------------------------------------
 protocol = @{ ASCII_ALPHA ~ (ASCII_ALPHANUMERIC| "_")* }
 field = @{ ASCII_ALPHA ~ (ASCII_ALPHANUMERIC | "_")* }
+/// Helpful to be combined so that this is accessible as a clear "type" in the code
 combined_field = @{ "addr" | "port" }
 
 // order matters! Parser will try from left to right
+/// E.g., if `int` is before `ipv4`, then ipv4 addresses would get misclassified
 value = { ipv4_lit | ipv6_lit | int_range | int_lit | str_lit }
 
+/// @ = atomic = force there to be no whitespace 
+/// Needed because WHITESPACE is defined below
 ipv4_addr = @{ 
     ASCII_DIGIT{1,3} ~ ("." ~ ASCII_DIGIT{1,3}){3} 
 }
@@ -37,11 +53,20 @@ int_lit = @{ ASCII_DIGIT+ }
 int_range = ${ int_lit ~ ".." ~ int_lit }
 
 // Strings
+/// - Extract 'text' from the inside of the quotes
+/// - The 'text' is then accessible as a type (inner)
+///   and is all text except for "'" (this is a negative prefix check)
 str_lit = _{ "\'" ~ text ~ "\'" }
 text = { (!("\'") ~ ANY)+ }
+/// TODO types of regex or byte values would/could go here
+/// TODO need to make this a string literal using STACK
+///      this won't be able to match on `'` char in str 
+///      also could get tricky with whitespace
+///      tangentially, empty string should be allowed
 
 // Logical operators
 // ----------------------------------------------------------------------
+/// Exact string matches
 or_op = { "||" | "or" | "OR" }
 and_op = { "&&" | "and" | "AND" }
 not_op = { "!" | "not" | "NOT" }  // not yet supported, temp placeholder
@@ -61,8 +86,14 @@ lt_op = { "<" | "lt" }
 in_op = { "in" }
 re_op = { "~" | "matches" }
 en_op = { "eq" }
+/// TODO here or in the text types: 
+///      define different types of regex matches (here or as type?)
+///      define byte location/span/start/etc. matching
 
 // Miscellaneous
 // ----------------------------------------------------------------------
+/// Special delimiter, indicates that these characters are considered
+/// whitespace and should be allowed (and ignored) in `*, +, ~` portions
+/// of the patterns
 WHITESPACE = _{ " " | NEWLINE }
 non_identifier = _{ or_op | and_op | not_op | "(" | ")" }
