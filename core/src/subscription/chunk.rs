@@ -59,7 +59,7 @@ lazy_static! {
         let mut outp = vec![];
         outp.push(Consumer::new(50, 0));
         outp.push(Consumer::new(100, 0));
-        //outp.push(Consumer::new(10, 1));
+        outp.push(Consumer::new(10, 1));
         outp
     };
 }
@@ -99,15 +99,17 @@ impl TrackedChunk {
 
     // TODO consumers need to be updated
     //      can't do this until all have matched (or not matched)
-    /* 
     fn drain(&mut self) {
         if self.payload.len() > *MAX_WINDOW + *THRESHOLD {
             let idx = self.payload.len() - *MAX_WINDOW;
             let (_, keep) = self.payload.split_at_mut(idx);
             self.payload = Vec::from(keep);
+            for c in &mut self.consumers {
+                // this may be wrong
+                c.position = c.position - idx;
+            }
         }
     }
-     */
 }
 
 impl Trackable for TrackedChunk {
@@ -134,6 +136,8 @@ impl Trackable for TrackedChunk {
             self.consumers[0].consume(&self.payload);
         } else if let SessionData::Tls(_) = session.data {
             self.consumers[1].consume(&self.payload);
+        } else {
+            self.consumers[1].consume(&self.payload);
         }
     }
 
@@ -142,6 +146,7 @@ impl Trackable for TrackedChunk {
         for c in &mut self.consumers {
             c.consume(&self.payload);
         }
+        self.drain();
     }
 
     // TODO need to ensure draining happens for not connection level...
