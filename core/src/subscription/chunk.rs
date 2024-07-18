@@ -3,9 +3,8 @@ use crate::conntrack::pdu::{L4Context, L4Pdu};
 use crate::conntrack::ConnTracker;
 use crate::filter::FilterResult;
 use crate::memory::mbuf::Mbuf;
-use crate::protocols::stream::{ConnParser, Session};
+use crate::protocols::stream::{ConnParser, Session, SessionData};
 use crate::subscription::{Level, Subscribable, Subscription, Trackable};
-
 
 lazy_static! {
     static ref MAX_WINDOW: usize = 10;
@@ -130,9 +129,11 @@ impl Trackable for TrackedChunk {
     }
 
     fn on_match(&mut self, session: Session, _subscription: &Subscription<Self::Subscribed>) {
-        for c in &mut self.consumers {
-            c.matched = true;
-            c.consume(&self.payload);
+        // tmp - disambiguate multiple subscriptions
+        if let SessionData::Http(_) = session.data {
+            self.consumers[0].consume(&self.payload);
+        } else if let SessionData::Tls(_) = session.data {
+            self.consumers[1].consume(&self.payload);
         }
     }
 
