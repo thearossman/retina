@@ -57,8 +57,8 @@ lazy_static! {
     static ref CHUNK_FNS: [ChunkFn; 2] = [session_cb, data_cb];
     static ref CONSUMERS: Vec<Consumer> = {
         let mut outp = vec![];
-        outp.push(Consumer::new(5, 0));
-        //outp.push(Consumer::new(10, 0));
+        outp.push(Consumer::new(50, 0));
+        outp.push(Consumer::new(100, 0));
         //outp.push(Consumer::new(10, 1));
         outp
     };
