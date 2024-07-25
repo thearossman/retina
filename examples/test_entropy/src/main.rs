@@ -83,27 +83,31 @@ impl EntropyHistogram {
         }
     }
 
-    pub fn record(&mut self, pdu: L4Pdu) {
-        // Get payload (after TCP/UDP headers)
-        let length = pdu.length();
-        let offset = pdu.offset(); 
-        if let Ok(payload) = pdu.mbuf_own().get_data_slice(offset, length) {
-
-            let actual_entropy = shannon_entropy(payload);
-            let ideal = ideal_entropy(length as f64);
-
-            // Can only record u64 to histogram - need to scale
-            let mut ratio = actual_entropy / ideal;
-            if ratio < 0.0 || ratio > 1.001 { 
-                panic!("ENTROPY: {} / {} = {}", actual_entropy, ideal, ratio);
-            }
-            if ratio > 1.0 {
-                ratio = 1.0;
-            }
-            self.data.record((ratio * *SCALE_FACTOR) as u64).unwrap();
-        }
+    pub fn record(&mut self, value: u64) {
+        self.data.record(value).unwrap();
     }
 
+}
+
+fn entropy_ratio(pdu: L4Pdu) -> Option<f64> {
+    let length = pdu.length();
+    let offset = pdu.offset(); 
+    if let Ok(payload) = pdu.mbuf_own().get_data_slice(offset, length) {
+
+        let actual_entropy = shannon_entropy(payload);
+        let ideal = ideal_entropy(length as f64);
+
+        // Can only record u64 to histogram - need to scale
+        let mut ratio = actual_entropy / ideal;
+        if ratio < 0.0 || ratio > 1.001 { 
+            panic!("ENTROPY: {} / {} = {}", actual_entropy, ideal, ratio);
+        }
+        if ratio > 1.0 {
+            ratio = 1.0;
+        }
+        return Some(ratio);
+    }
+    None
 }
 
 #[filter("tls or quic")]
@@ -115,7 +119,9 @@ fn main() -> anyhow::Result<()> {
     let hist = std::sync::Mutex::new(EntropyHistogram::new());
     
     let callback = |frame: ConnectionPdu| {
-        hist.lock().unwrap().record(frame.pdu);
+        if let Some(ratio) = entropy_ratio(frame.pdu) {
+            hist.lock().unwrap().record(ratio as u64 * *SCALE_FACTOR as u64);
+        }        
     };
     let mut runtime = Runtime::new(config, filter, callback)?;
     runtime.run();
