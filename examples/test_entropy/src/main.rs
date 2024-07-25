@@ -120,7 +120,7 @@ fn main() -> anyhow::Result<()> {
     
     let callback = |frame: ConnectionPdu| {
         if let Some(ratio) = entropy_ratio(frame.pdu) {
-            hist.lock().unwrap().record(ratio as u64 * *SCALE_FACTOR as u64);
+            hist.lock().unwrap().record((ratio * *SCALE_FACTOR) as u64);
         }        
     };
     let mut runtime = Runtime::new(config, filter, callback)?;
