@@ -36,7 +36,7 @@ lazy_static! {
 
 fn ideal_entropy(len: f64) -> f64 {
     let prob: f64 = 1.0 / len;
-    -1.0 * len * prob.ln() / *LOG_2
+    -1.0 * len * prob * prob.ln() / *LOG_2
 }
 
 // Adapted from https://docs.rs/entropy/latest/src/entropy/lib.rs.html#14-33
@@ -90,12 +90,15 @@ impl EntropyHistogram {
         if let Ok(payload) = pdu.mbuf_own().get_data_slice(offset, length) {
 
             let actual_entropy = shannon_entropy(payload);
-            let ideal_entropy = ideal_entropy(length as f64);
+            let ideal = ideal_entropy(length as f64);
 
             // Can only record u64 to histogram - need to scale
-            let ratio = actual_entropy / ideal_entropy;
-            if ratio < 0.0 || ratio > 1.0 {
-                panic!("ENTROPY: {} / {} = {}", actual_entropy, ideal_entropy, ratio);
+            let mut ratio = actual_entropy / ideal;
+            if ratio < 0.0 || ratio > 1.001 { 
+                panic!("ENTROPY: {} / {} = {}", actual_entropy, ideal, ratio);
+            }
+            if ratio > 1.0 {
+                ratio = 1.0;
             }
             self.data.record((ratio * *SCALE_FACTOR) as u64).unwrap();
         }
@@ -108,7 +111,7 @@ fn main() -> anyhow::Result<()> {
     env_logger::init();
     let args = Args::parse();
     let config = load_config(&args.config);
-    
+
     let hist = std::sync::Mutex::new(EntropyHistogram::new());
     
     let callback = |frame: ConnectionPdu| {
