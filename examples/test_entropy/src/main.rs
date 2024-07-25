@@ -197,7 +197,7 @@ fn filter() -> retina_core::filter::FilterFactory {
         } {
             return retina_core::filter::FilterResult::NoMatch;
         }
-        return MatchTerminal(3);
+        return retina_core::filter::FilterResult::MatchTerminal(3);
     }
     #[inline]
     fn session_filter(
