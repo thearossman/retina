@@ -13,6 +13,7 @@ pub mod http_transaction;
 pub mod quic_stream;
 pub mod tls_handshake;
 pub mod zc_frame;
+pub mod connection_pdu;
 
 // Re-export subscribable types for more convenient usage.
 pub use self::connection::Connection;
@@ -23,6 +24,7 @@ pub use self::http_transaction::HttpTransaction;
 pub use self::quic_stream::QuicStream;
 pub use self::tls_handshake::TlsHandshake;
 pub use self::zc_frame::ZcFrame;
+pub use self::connection_pdu::ConnectionPdu;
 
 use crate::conntrack::conn_id::FiveTuple;
 use crate::conntrack::pdu::L4Pdu;

@@ -27,22 +27,22 @@ impl L4Pdu {
     }
 
     #[inline]
-    pub(crate) fn mbuf_own(self) -> Mbuf {
+    pub fn mbuf_own(self) -> Mbuf {
         self.mbuf
     }
 
     #[inline]
-    pub(crate) fn mbuf_ref(&self) -> &Mbuf {
+    pub fn mbuf_ref(&self) -> &Mbuf {
         &self.mbuf
     }
 
     #[inline]
-    pub(crate) fn offset(&self) -> usize {
+    pub fn offset(&self) -> usize {
         self.ctxt.offset
     }
 
     #[inline]
-    pub(crate) fn length(&self) -> usize {
+    pub fn length(&self) -> usize {
         self.ctxt.length
     }
 
