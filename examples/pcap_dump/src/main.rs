@@ -36,13 +36,7 @@ struct Args {
     outfile: PathBuf,
 }
 
-/*
- * Usually in Retina, you'd define a filter as a string on the top of your
- * main function (#[filter("tcp.port = 80")], for example).
- * However, original Retina doesn't have a way to filter for "not a protocol",
- * so I'm instead writing a manual filter set below to filter out protocols that
- * we know.
- */
+#[filter("")]
 fn main() -> Result<()> {
     env_logger::init();
     let args = Args::parse();
@@ -102,113 +96,4 @@ fn main() -> Result<()> {
     );
 
     Ok(())
-}
-
-/* Manual filter definition to support "not" */
-
-use retina_core::filter::FilterResult;
-use retina_core::Mbuf;
-use retina_core::protocols::packet::{ethernet::Ethernet, 
-                                     ipv4::Ipv4, ipv6::Ipv6, 
-                                     tcp::Tcp, udp::Udp};
-use retina_core::protocols::stream::{ConnData, ConnParser};
-use retina_core::filter::FilterFactory;
-
-fn filter() -> retina_core::filter::FilterFactory {
-
-    // Applied to each packet
-    #[inline]
-    #[allow(unused_variables)]
-    fn packet_filter(mbuf: &Mbuf) -> FilterResult {
-        if let Ok(ethernet)
-            = &retina_core::protocols::packet::Packet::parse_to::<Ethernet,>(mbuf) {
-            if let Ok(ipv4)
-                = &retina_core::protocols::packet::Packet::parse_to::<Ipv4,>(ethernet) {
-                
-                if let Ok(tcp)
-                    = &retina_core::protocols::packet::Packet::parse_to::<Tcp,>(ipv4) {
-                    /* To add port filters (e.g., exclude port 80), use the following:
-                       Make sure to add for IPv6 too. 
-                       The same applies for UDP.
-                    if tcp.src_port() == 80 || tcp.dst_port() == 80 {
-                        return FilterResult::NoMatch;
-                    }
-                       See below for needed changes to the connection filter to support
-                       port matches.
-                     */
-                    /* Nonterminal match = future condition needs to be checked.
-                     * Returned with the ID of the node on the "filter tree".
-                     * For DIY filters, don't worry about the nodes. */
-                    return FilterResult::MatchNonTerminal(2);
-                
-                } else if let Ok(udp)
-                    = &retina_core::protocols::packet::Packet::parse_to::<Udp,>(ipv4) {
-                    // \optional, filter for UDP ports here
-                    return FilterResult::MatchNonTerminal(7);
-                }
-            } else if let Ok(ipv6)
-                = &retina_core::protocols::packet::Packet::parse_to::<Ipv6,>(ethernet) {
-                
-                if let Ok(tcp)
-                    = &retina_core::protocols::packet::Packet::parse_to::<Tcp,>(ipv6) {
-                    return FilterResult::MatchNonTerminal(12);
-                
-                } else if let Ok(udp)
-                    = &retina_core::protocols::packet::Packet::parse_to::<Udp,>(ipv6) {
-                    return FilterResult::MatchNonTerminal(17);
-                }
-            }
-        }
-        return FilterResult::NoMatch;
-    }
-
-    #[inline]
-    fn connection_filter(
-        conn: &ConnData,
-    ) -> FilterResult {
-        // Connection filter applied once protocol is identified
-        match conn.pkt_term_node {
-            /* If adding tcp/udp ports, use a unique node ID in the terminal match.
-             * E.g., return `FilterResult::MatchTerminal(1);`
-             * Then add a match branch for that, returning the same value: 
-            1 => {
-                return FilterResult::MatchTerminal(1);
-            }
-             */
-            _ => {
-                match conn.service() {
-                    ConnParser::Dns { .. } => { return FilterResult::NoMatch; }
-                    ConnParser::Http { .. } => { return FilterResult::NoMatch; }
-                    ConnParser::Quic { .. } => { return FilterResult::NoMatch; }
-                    ConnParser::Tls { .. } => { return FilterResult::NoMatch; }
-                    ConnParser::Unknown => { return FilterResult::MatchTerminal(3); }
-                }
-            }
-        }
-    }
-
-    #[inline]
-    fn session_filter(
-        _session: &retina_core::protocols::stream::Session,
-        _idx: usize,
-    ) -> bool {
-        // If session filter is applied, connection filter returned a match.
-        true
-    }
-    FilterFactory::new(
-        /* 
-         * This will do the following:
-         * - For features that can be determined at packet layer: 
-         *   inserted into NIC at hardware filter. (E.g.: TCP/UDP port.)
-         *   Only relevant if not flow-sampling.
-         * - For application-layer protocols: the application-layer parsers  
-         *   that will be required for this filter. 
-         *   This will not be used as the actual filter, so all we need to do is
-         *   name the protocols we want excluded. 
-         */
-        "(http or dns or tls or quic)",
-        packet_filter,
-        connection_filter,
-        session_filter,
-    )
 }
