@@ -7,6 +7,7 @@ use retina_filtergen::filter;
 use std::fs::File;
 use std::path::PathBuf;
 use std::sync::Mutex;
+use std::sync::atomic::{AtomicUsize, Ordering};
 
 use anyhow::Result;
 use clap::Parser;
@@ -60,6 +61,8 @@ fn main() -> Result<()> {
     let const_src = pnet::util::MacAddr::new(0xaa, 0xbb, 0xcc, 0xdd, 0xee, 0xf1);
     let const_dst = pnet::util::MacAddr::new(0xaa, 0xbb, 0xcc, 0xdd, 0xee, 0xf2);
 
+    let cnt = AtomicUsize::new(0);
+
     let callback = |pkt: ConnectionFrame| {
         /* \note Using a Frame type here -- essentially, a raw vector of data --
         * will force a copy. The alternative is manipulating raw (unsafe) pointers,
@@ -85,11 +88,19 @@ fn main() -> Result<()> {
                 pcap_writer
                     .write(1, 0, pkt, len as u32)
                     .unwrap();
+                // Counter
+                cnt.fetch_add(1, Ordering::Relaxed);
             }
         }
     };
     let mut runtime = Runtime::new(config, filter, callback)?;
     runtime.run();
+
+    println!(
+        "Done. Logged {:?} packets to {:?}",
+        cnt, &args.outfile
+    );
+
     Ok(())
 }
 
@@ -182,7 +193,6 @@ fn filter() -> retina_core::filter::FilterFactory {
         _idx: usize,
     ) -> bool {
         // If session filter is applied, connection filter returned a match.
-        println!("Session"); 
         true
     }
     FilterFactory::new(
@@ -196,7 +206,7 @@ fn filter() -> retina_core::filter::FilterFactory {
          *   This will not be used as the actual filter, so all we need to do is
          *   name the protocols we want excluded. 
          */
-        "(http or dns or tls or quic) or (tcp or udp)",
+        "(http or dns or tls or quic)",
         packet_filter,
         connection_filter,
         session_filter,
