@@ -1,5 +1,5 @@
 use retina_core::config::load_config;
-use retina_core::subscription::Frame;
+use retina_core::subscription::ConnectionFrame;
 use retina_core::Runtime;
 #[allow(unused_imports)]
 use retina_filtergen::filter;
@@ -60,7 +60,7 @@ fn main() -> Result<()> {
     let const_src = pnet::util::MacAddr::new(0xaa, 0xbb, 0xcc, 0xdd, 0xee, 0xf1);
     let const_dst = pnet::util::MacAddr::new(0xaa, 0xbb, 0xcc, 0xdd, 0xee, 0xf2);
 
-    let callback = |pkt: Frame| {
+    let callback = |pkt: ConnectionFrame| {
         /* \note Using a Frame type here -- essentially, a raw vector of data --
         * will force a copy. The alternative is manipulating raw (unsafe) pointers,
         * which I'd prefer not to do unless it's really needed. */
