@@ -20,6 +20,8 @@ use crate::protocols::packet::tcp::TCP_PROTOCOL;
 use crate::protocols::packet::udp::UDP_PROTOCOL;
 use crate::protocols::stream::ParserRegistry;
 use crate::subscription::{Subscription, Trackable};
+use crate::filter::hardware::flow_runtime::block_flow;
+use crate::port::PortId;
 
 use std::cmp;
 use std::time::Instant;
@@ -45,6 +47,9 @@ where
     table: LinkedHashMap<ConnId, Conn<T>>,
     /// Manages connection timeouts.
     timerwheel: TimerWheel,
+    /// Ports from RX queues this core is polling from 
+    /// \note/TODO: should pass CoreId through process_packet pipeline 
+    port_ids: Vec<PortId>,
 }
 
 impl<T> ConnTracker<T>
@@ -52,7 +57,7 @@ where
     T: Trackable,
 {
     /// Creates a new `ConnTracker`.
-    pub(crate) fn new(config: TrackerConfig, registry: ParserRegistry) -> Self {
+    pub(crate) fn new(config: TrackerConfig, registry: ParserRegistry, port_ids: Vec<PortId>) -> Self {
         let table = LinkedHashMap::with_capacity(config.max_connections);
         let timerwheel = TimerWheel::new(
             cmp::max(config.tcp_inactivity_timeout, config.udp_inactivity_timeout),
@@ -63,6 +68,7 @@ where
             registry,
             table,
             timerwheel,
+            port_ids
         }
     }
 
@@ -100,7 +106,7 @@ where
                 conn.update(pdu, subscription, &self.registry);
                 if conn.state() == ConnState::Remove || 
                    conn.state() == ConnState::Dropped {
-                    // [TODO] NIC Rule install
+                   block_flow(&self.port_ids, &conn.five_tuple());
                 }
                 if conn.state() == ConnState::Remove {
                     occupied.remove();

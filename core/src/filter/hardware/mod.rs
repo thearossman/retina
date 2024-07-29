@@ -1,6 +1,7 @@
 mod flow_action;
 mod flow_attr;
 mod flow_item;
+pub(crate) mod flow_runtime;
 
 use self::flow_action::*;
 use self::flow_attr::*;
@@ -84,7 +85,7 @@ impl<'a> HardwareFilter<'a> {
         }
         // Non-matching traffic will be dropped by default on table 1
         // Redirect is faster than using a default DROP rule
-        add_redirect(self.port, 0, 1, LOW_PRIORITY)?;
+        add_redirect(self.port.id, 0, 1, LOW_PRIORITY)?;
         // drop_eth_traffic(self.port, 0, LOW_PRIORITY)?;
 
         Ok(())
@@ -327,7 +328,7 @@ fn create_rule(
     }
 }
 
-fn add_redirect(port: &Port, from_group: u32, to_group: u32, priority: u32) -> Result<()> {
+fn add_redirect(port_id: PortId, from_group: u32, to_group: u32, priority: u32) -> Result<()> {
     let attr = FlowAttribute::new(from_group, priority);
 
     // Pattern matches all Ethernet traffic
@@ -336,7 +337,7 @@ fn add_redirect(port: &Port, from_group: u32, to_group: u32, priority: u32) -> R
     flow_item::append_end(&mut pattern_rules);
 
     // Set action to redirect
-    let mut action = FlowAction::new(port.id);
+    let mut action = FlowAction::new(port_id);
     action.append_jump(to_group);
     action.finish();
     for a in action.rules.iter_mut() {
@@ -347,13 +348,13 @@ fn add_redirect(port: &Port, from_group: u32, to_group: u32, priority: u32) -> R
 
     info!(
         "Setting port {} to redirect from group {} to {}...",
-        port.id, from_group, to_group
+        port_id, from_group, to_group
     );
 
     let mut error: dpdk::rte_flow_error = unsafe { mem::zeroed() };
     unsafe {
         let ret = dpdk::rte_flow_validate(
-            port.id.raw(),
+            port_id.raw(),
             attr.raw() as *const _,
             pattern_rules.as_ptr(),
             action.rules.as_ptr(),
@@ -371,7 +372,7 @@ fn add_redirect(port: &Port, from_group: u32, to_group: u32, priority: u32) -> R
             });
         } else {
             let ret = dpdk::rte_flow_create(
-                port.id.raw(),
+                port_id.raw(),
                 attr.raw() as *const _,
                 pattern_rules.as_ptr(),
                 action.rules.as_ptr(),

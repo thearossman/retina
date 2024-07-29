@@ -89,7 +89,12 @@ where
         let config = TrackerConfig::from(&self.conntrack);
         let registry = ParserRegistry::build::<S>(&self.filter).expect("Unable to build registry");
         log::debug!("{:#?}", registry);
-        let mut conn_table = ConnTracker::<S::Tracked>::new(config, registry);
+        let port_ids = self.rxqueues.iter()
+                                    .map(|q| q.pid)
+                                    .collect();
+        
+        let mut conn_table = 
+                ConnTracker::<S::Tracked>::new(config, registry, port_ids);
 
         while self.is_running.load(Ordering::Relaxed) {
             for rxqueue in self.rxqueues.iter() {

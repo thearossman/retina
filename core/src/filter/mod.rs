@@ -1,7 +1,7 @@
 #[macro_use]
 pub mod macros;
 pub mod ast;
-mod hardware;
+pub(crate) mod hardware;
 #[allow(clippy::upper_case_acronyms)]
 mod parser;
 mod pattern;

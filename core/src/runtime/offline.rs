@@ -7,6 +7,7 @@ use crate::memory::mbuf::Mbuf;
 use crate::memory::mempool::Mempool;
 use crate::protocols::stream::ParserRegistry;
 use crate::subscription::*;
+use crate::port::PortId;
 
 use std::collections::BTreeMap;
 use std::ffi::CString;
@@ -61,7 +62,7 @@ where
         let config = TrackerConfig::from(&self.options.conntrack);
         let registry = ParserRegistry::build::<S>(&self.filter).expect("Unable to build registry");
         log::debug!("{:#?}", registry);
-        let mut stream_table = ConnTracker::<S::Tracked>::new(config, registry);
+        let mut stream_table = ConnTracker::<S::Tracked>::new(config, registry, vec![PortId(0)]);
 
         let mempool_raw = self.get_mempool_raw();
         let pcap = self.options.offline.pcap.as_str();
