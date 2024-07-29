@@ -82,9 +82,13 @@ where
         let conn_id = ConnId::new(ctxt.src, ctxt.dst, ctxt.proto);
         match self.table.raw_entry_mut().from_key(&conn_id) {
             RawEntryMut::Occupied(mut occupied) => {
-                let conn = occupied.get_mut();
-                let dir = conn.packet_dir(&ctxt);
+                let conn = occupied.get_mut();                
                 conn.last_seen_ts = Instant::now();
+                if conn.state() == ConnState::Dropped {
+                    // Allow connection to age out.
+                    return;
+                }
+                let dir = conn.packet_dir(&ctxt);
                 conn.inactivity_window = match &conn.l4conn {
                     L4Conn::Tcp(_) => self.config.tcp_inactivity_timeout,
                     L4Conn::Udp(_) => self.config.udp_inactivity_timeout,
@@ -119,6 +123,8 @@ where
                         let pdu = L4Pdu::new(mbuf, ctxt, true);
                         conn.info.consume_pdu(pdu, subscription, &self.registry);
                         if conn.state() != ConnState::Remove {
+                            // Insert Dropped connection into timerwheel --
+                            // it should eventually get removed.
                             self.timerwheel.insert(
                                 &conn_id,
                                 conn.last_seen_ts,
