@@ -22,7 +22,7 @@ fn main() -> Result<()> {
     let config = load_config(&args.config);
 
     let cycles = args.spin;
-    let callback = |_: TlsHandshake| {
+    let callback = |_: Connection| {
         spin(cycles);
     };
     let mut runtime = Runtime::new(config, filter, callback)?;
@@ -123,16 +123,10 @@ fn filter() -> retina_core::filter::FilterFactory {
         }
     }
     FilterFactory::new(
-        /* 
-         * This will do the following:
-         * - For features that can be determined at packet layer: 
-         *   inserted into NIC at hardware filter. (E.g.: TCP/UDP port.)
-         *   Only relevant if not flow-sampling.
-         * - For application-layer protocols: the application-layer parsers  
-         *   that will be required for this filter. 
-         *   This will not be used as the actual filter, so all we need to do is
-         *   name the protocols we want excluded. 
-         */
+        /* Hacky way to get: 
+         * - Hardware support on NIC (non-TCP/UDP will be dropped)
+         * - Correct application-layer parsers added to runtime 
+         *   for protocol identification. */
         "(http or dns or tls or quic)",
         packet_filter,
         connection_filter,
