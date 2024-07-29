@@ -98,6 +98,10 @@ where
                 }
                 let pdu = L4Pdu::new(mbuf, ctxt, dir);
                 conn.update(pdu, subscription, &self.registry);
+                if conn.state() == ConnState::Remove || 
+                   conn.state() == ConnState::Dropped {
+                    // [TODO] NIC Rule install
+                }
                 if conn.state() == ConnState::Remove {
                     occupied.remove();
                     return;
@@ -122,6 +126,10 @@ where
                     if let Ok(mut conn) = conn {
                         let pdu = L4Pdu::new(mbuf, ctxt, true);
                         conn.info.consume_pdu(pdu, subscription, &self.registry);
+                        if conn.state() == ConnState::Remove || 
+                           conn.state() == ConnState::Dropped {
+                            // [TODO] NIC Rule install
+                        }
                         if conn.state() != ConnState::Remove {
                             // Insert Dropped connection into timerwheel --
                             // it should eventually get removed.

@@ -13,6 +13,7 @@ members = [
     "examples/pcap_dump",
     "examples/spin",
     "examples/video",
+    "examples/spin_filtered",
     "filtergen",
 ]
 resolver = "2"
