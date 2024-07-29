@@ -22,8 +22,8 @@ fn populate_ipv4(ipv4_mask: &mut dpdk::rte_flow_item_ipv4,
 {
     if let SocketAddr::V4(orig) = five_tuple.orig {
         if let SocketAddr::V4(resp) = five_tuple.resp {
-            ipv4_spec.hdr.src_addr = orig.ip().to_bits();
-            ipv4_spec.hdr.dst_addr = resp.ip().to_bits();
+            ipv4_spec.hdr.src_addr = u32::from(*orig.ip());
+            ipv4_spec.hdr.dst_addr = u32::from(*resp.ip());
             ipv4_mask.hdr.src_addr = 0xFFFFFFFF;
             ipv4_mask.hdr.dst_addr = 0xFFFFFFFF;
             
@@ -41,11 +41,12 @@ fn populate_ipv6(ipv6_mask: &mut dpdk::rte_flow_item_ipv6,
                  ipv6_spec: &mut dpdk::rte_flow_item_ipv6, 
                  five_tuple: &FiveTuple) -> Option<dpdk::rte_flow_item>
 {
+    
     if let SocketAddr::V6(orig) = five_tuple.orig {
         if let SocketAddr::V6(resp) = five_tuple.resp {
             // Addr is already NBO; preserve endianness 
-            ipv6_spec.hdr.src_addr = orig.ip().to_bits().to_ne_bytes();
-            ipv6_spec.hdr.dst_addr = resp.ip().to_bits().to_ne_bytes();
+            ipv6_spec.hdr.src_addr = u128::from(*orig.ip()).to_ne_bytes();
+            ipv6_spec.hdr.dst_addr = u128::from(*resp.ip()).to_ne_bytes();
             ipv6_mask.hdr.src_addr = [0xFF; 16];
             ipv6_mask.hdr.dst_addr = [0xFF; 16];
 
