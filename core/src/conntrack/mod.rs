@@ -134,7 +134,7 @@ where
                         conn.info.consume_pdu(pdu, subscription, &self.registry);
                         if conn.state() == ConnState::Remove || 
                            conn.state() == ConnState::Dropped {
-                            // [TODO] NIC Rule install
+                            block_flow(&self.port_ids, &conn.five_tuple());
                         }
                         if conn.state() != ConnState::Remove {
                             // Insert Dropped connection into timerwheel --
