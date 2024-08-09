@@ -14,7 +14,7 @@ members = [
     "examples/spin",
     "examples/video",
     "examples/spin_filtered",
-    "filtergen",
+    "filtergen", "examples/pcap_dump_filtered",
 ]
 resolver = "2"
 
