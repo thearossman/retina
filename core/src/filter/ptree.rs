@@ -6,6 +6,7 @@ use super::datatypes::DataType;
 use std::fmt;
 use std::collections::HashSet;
 use std::cmp::{Ordering, PartialOrd};
+use std::hash::Hash;
 
 #[derive(Debug, Clone, Copy)]
 pub enum FilterLayer {
@@ -39,6 +40,7 @@ impl fmt::Display for FilterLayer {
 pub struct Deliver {
     pub id: usize,
     pub as_str: String,
+    pub value: Option<Value>,
 }
 
 /// A node representing a predicate in the tree
@@ -211,7 +213,11 @@ impl fmt::Display for PNode {
             write!(f, " D: ")?;
             write!(f, "( ")?;
             for d in &self.deliver {
-                write!(f, "{}, ", d.as_str)?;
+                if let Some(val) = &d.value {
+                    write!(f, "{}: {}, ", val, d.as_str)?;
+                } else {
+                    write!(f, "{}, ", d.as_str)?;
+                }
             }
             write!(f, ")")?;
         }
@@ -285,7 +291,7 @@ impl PTree {
         if !added {
             let pred = Predicate::default_pred();
             if datatype.should_deliver(self.filter_layer, &pred) {
-                self.root.deliver.insert(Deliver { id: filter_id, as_str: subscription_str.clone()});
+                self.root.deliver.insert(Deliver { id: filter_id, as_str: subscription_str.clone(), value: None });
             } else {
                 let actions = datatype.with_term_filter(self.filter_layer);
                 self.root.actions.push(&actions);
@@ -350,7 +356,7 @@ impl PTree {
             node.patterns.push(pattern_id);
         }
         if datatype.should_deliver(self.filter_layer, &node.pred) {
-            node.deliver.insert(Deliver { id: filter_id, as_str: subscription_str.clone() });
+            node.deliver.insert(Deliver { id: filter_id, as_str: subscription_str.clone(), value: None });
         } else {
             let actions = datatype.with_term_filter(self.filter_layer);
             node.actions.push(&actions);
@@ -376,7 +382,7 @@ impl PTree {
 
     /// Best-effort to give the filter generator hints as to where an "else" 
     /// statement can go between two predicates.
-    pub fn mark_mutual_exclusion(&mut self) {
+    pub(crate) fn mark_mutual_exclusion(&mut self) {
         fn mark_mutual_exclusion(node: &mut PNode) {
             // TODO messy
             if !node.children.is_empty() {
@@ -386,7 +392,7 @@ impl PTree {
                 return;
             }
             
-            try_reorder(&mut node.children);
+            node.children.sort();
 
             for idx in 1..node.children.len() {
                 mark_mutual_exclusion(&mut node.children[idx]);
@@ -423,7 +429,7 @@ impl PTree {
 
     /// Removes some patterns that are covered by others
     /// Should be called after tree is completely built
-    pub fn prune_branches(&mut self) {
+    pub(crate) fn prune_branches(&mut self) {
 
         fn prune(node: &mut PNode, on_path_actions: &Actions, on_path_deliver: &HashSet<String>) {
             // Remove redundant delivery
@@ -458,6 +464,88 @@ impl PTree {
         let on_path_deliver = HashSet::new();
         prune(&mut self.root, &on_path_actions, &on_path_deliver);
         self.update_size();
+    }
+
+    /// Combine text patterns for the same field into one PNode
+    /// Facilitates multi-pattern matching
+    /// "Eq" becomes "MultiEq"; "Re" becomes "MultiRe"
+    /// `deliver` data is updated to map pattern to CB/datatype
+    /// Nodes are only combined if actions are equal
+    pub(crate) fn merge_strings(&mut self) {
+        // TODO cleanup
+        fn merge_strings(node: &mut PNode) {
+            let mut new_children = vec![];
+            let mut node_idx = 0;
+            while node_idx < node.children.len() {
+                // "Default" child to be added
+                let mut child = node.children[node_idx].clone();
+                // Note PTree should already be sorted
+                if node.children[node_idx].pred.on_session() && node_idx + 1 < node.children.len() {
+                    let mut patterns = vec![node.children[node_idx].pred.text().unwrap()];
+                    let mut deliver = HashSet::new();
+                    let mut merged = false;
+                    // "Merge" adjacent nodes with same op & text value 
+                    while node_idx + 1 < node.children.len() && 
+                          node.children[node_idx].pred.can_merge_pattern(&node.children[node_idx + 1].pred) &&
+                          node.children[node_idx].actions == node.children[node_idx + 1].actions
+                    {
+                        assert!(node.children[node_idx].children.is_empty());
+                        assert!(node.children[node_idx + 1].children.is_empty());
+                        
+                        patterns.push(node.children[node_idx + 1].pred.text().unwrap());
+                        let value = node.children[node_idx + 1].pred.value().unwrap();
+                        deliver.extend(
+                            node.children[node_idx + 1].deliver
+                                                        .clone()
+                                                        .into_iter()
+                                                        .map(|mut d| {
+                                                            d.value = Some(value.clone());
+                                                            d
+                                                        }).collect::<HashSet<Deliver>>()
+                        );
+                        node_idx += 1;
+                        merged = true;
+                    }
+                    if merged {
+                        deliver.extend(child.deliver
+                            .into_iter()
+                            .map(|mut d| {
+                                   d = d.clone();
+                                   d.value = Some(child.pred.value().unwrap());
+                                   d
+                            }).collect::<HashSet<Deliver>>());
+                        child.deliver = deliver;
+                        child.pred = child.pred.as_multi_op(patterns);
+                    }
+                }
+                new_children.push(child);
+                node_idx += 1;
+            }
+            node.children = new_children;
+            for child in node.children.iter_mut() {
+                merge_strings(child);
+            }
+        }
+
+        merge_strings(&mut self.root);
+        self.update_size();
+    }
+
+    pub(crate) fn sort(&mut self) {
+        fn sort(node: &mut PNode) {
+            node.children.sort();
+            for c in node.children.iter_mut() {
+                sort(c);
+            }
+        }
+        sort(&mut self.root);
+    }
+
+    pub fn collapse(&mut self) {
+        self.prune_branches();
+        self.sort();
+        self.merge_strings();
+        self.mark_mutual_exclusion();
     }
 
     pub fn to_flat_patterns(&self) -> Vec<FlatPattern> {
@@ -649,12 +737,6 @@ impl Ord for PNode {
     }
 }
 
-pub(super) fn try_reorder(input: &mut Vec<PNode>) {
-    if input.len() < 3 { return; }
-    input.sort();
-}
-
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -749,8 +831,7 @@ mod tests {
         let filter = Filter::from_str("ipv4.dst_addr = 1.1.1.1 or (ipv4 and tls)").unwrap();
         let mut ptree = PTree::new_empty(FilterLayer::Packet);
         ptree.add_filter(&filter.get_patterns_flat(), &datatype, 0, &datatype_str);
-        ptree.prune_branches();
-        ptree.mark_mutual_exclusion();
+        ptree.collapse();
         assert!(ptree.size == 4); // eth - ipv4 - tcp, ipv4.dst_addr
     }
 
@@ -796,7 +877,7 @@ mod tests {
 
         // println!("{}", ptree);
         assert!(ptree.size == 13);
-        ptree.prune_branches();
+        ptree.collapse();
         // println!("{}", ptree);
         assert!(ptree.size == 10);
 
@@ -825,7 +906,32 @@ mod tests {
         let filter = Filter::from_str(filter_child).unwrap();
         ptree.add_filter(&filter.get_patterns_flat(), &datatype_conn, 1, &datatype_str_conn);
         
-        ptree.prune_branches();
+        ptree.collapse();
         assert!(!ptree.to_filter_string().contains("1.3.3.1/31") && ptree.size == 3); // eth, ipv4, ipvr.src
+    }
+
+    #[test]
+    fn core_ptree_with_patterns() {
+        let filter = "http.user_agent = 'abcd'";
+        let filter_child = "http.user_agent = 'xyz'";
+        let datatype = DataType::new(Level::Session, false, true);
+        
+        let mut ptree = PTree::new_empty(FilterLayer::Session);
+
+        let filter = Filter::from_str(filter).unwrap();
+        ptree.add_filter(&filter.get_patterns_flat(), &datatype, 0, &"cb_1(Session)".to_string());
+        let filter = Filter::from_str(filter_child).unwrap();
+        ptree.add_filter(&filter.get_patterns_flat(), &datatype, 1, &"cb_2(Session)".to_string());
+        ptree.collapse();
+        let ua_node = ptree.get_subtree(4).unwrap();
+        assert!(ua_node.deliver.len() == 2);
+        assert!({
+            let value = Deliver { 
+                id: 0, 
+                as_str: "cb_1(Session)".to_string(), 
+                value: Some(Value::Text("abcd".to_string())) 
+            };
+            ua_node.deliver.contains(&value)
+        });
     }
 }

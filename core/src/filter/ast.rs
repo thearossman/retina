@@ -168,6 +168,59 @@ impl Predicate {
         hardware::device_supported(self, port)
     }
 
+    /// Returns `true` if `self` and `pred` can be represented by a multi-pattern match
+    pub(super) fn can_merge_pattern(&self, pred: &Predicate) -> bool {
+        if !pred.on_session() || !self.on_session() {
+            return false;
+        }
+        if let Predicate::Binary { protocol: proto, field: field_name,
+                                   op, value: val } = self {
+            if let Predicate::Binary { protocol: peer_proto, field: peer_field_name,
+                                       op: peer_op, value: peer_val } = self {
+                // Regex or Eq; same protocol; same field; text values
+                if op == peer_op && proto.name() == peer_proto.name() && 
+                   field_name == peer_field_name && 
+                   matches!(val, Value::Text(_)) && matches!(peer_val, Value::Text(_)) {
+                        return true;
+                }
+            }
+        }
+        false
+    }
+
+    pub(super) fn text(&self) -> Option<String> {
+        if let Predicate::Binary { protocol: _, field: _, op: _, value: val} = self {
+            if let Value::Text(text) = val {
+                return Some(text.clone());
+            }
+        }
+        return None;
+    }
+
+    pub(super) fn value(&self) -> Option<Value> {
+        if let Predicate::Binary { protocol: _, field: _, op: _, value: val} = self {
+            return Some(val.clone());
+        }
+        return None;
+    }
+
+    pub(super) fn as_multi_op(&self, patterns: Vec<String>) -> Predicate {
+        if let Predicate::Binary { protocol, field, op, value: _} = self {
+            let new_op = match op {
+                BinOp::Re => { BinOp::MultiRe },
+                BinOp::Eq => { BinOp::MultiEq },
+                _ => { panic!("Multi_op called for pred {:?}", self); }
+            };
+            return Predicate::Binary {
+                protocol: protocol.clone(),
+                field: field.clone(), 
+                op: new_op, 
+                value: Value::MultiText(patterns),
+            };
+        }
+        panic!("Multi-op called for unary pred {:?}", self);
+    }
+
     /// Returns `true` if `self` and `pred` are entirely mutually exclusive
     /// (i.e., could be correctly represented by "if `a` {} else if `b` {}"...)
     pub(super) fn is_excl(&self, pred: &Predicate) -> bool {
@@ -565,7 +618,7 @@ pub(super) fn is_excl_int(from: u64, to: u64, op: &BinOp,
                 _ => {}
             }
         },
-        BinOp::Re | BinOp::En => { }
+        _ => { }
     }
     false
 }
@@ -697,19 +750,21 @@ pub enum BinOp {
     In,
     Re,
     En,
+    MultiEq,
+    MultiRe,
 }
 
 impl fmt::Display for BinOp {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> Result<(), fmt::Error> {
         match self {
-            BinOp::Eq => write!(f, "="),
+            BinOp::Eq | BinOp::MultiEq => write!(f, "="),
             BinOp::Ne => write!(f, "!="),
             BinOp::Ge => write!(f, ">="),
             BinOp::Le => write!(f, "<="),
             BinOp::Gt => write!(f, ">"),
             BinOp::Lt => write!(f, "<"),
             BinOp::In => write!(f, "in"),
-            BinOp::Re => write!(f, "matches"),
+            BinOp::Re | BinOp::MultiRe => write!(f, "matches"),
             BinOp::En => write!(f, "eq"),
         }
     }
@@ -723,6 +778,7 @@ pub enum Value {
     Ipv4(Ipv4Net),
     Ipv6(Ipv6Net),
     Text(String),
+    MultiText(Vec<String>)
 }
 
 impl fmt::Display for Value {
@@ -732,7 +788,8 @@ impl fmt::Display for Value {
             Value::IntRange { from, to } => write!(f, "{}..{}", from, to),
             Value::Ipv4(net) => write!(f, "{}", net),
             Value::Ipv6(net) => write!(f, "{}", net),
-            Value::Text(val) => write!(f, "{}", val),
+            Value::Text(val) => write!(f, "\"{}\"", val),
+            Value::MultiText(val) => write!(f, "{:?}", val),
         }
     }
 }
