@@ -190,19 +190,19 @@ impl Subscribable for Connection {
 /// public. Documentation is hidden by default to avoid confusing users.
 #[doc(hidden)]
 pub struct TrackedConnection {
-    five_tuple: FiveTuple,
-    first_seen_ts: Instant,
-    second_seen_ts: Instant,
-    last_seen_ts: Instant,
-    max_inactivity: Duration,
-    history: Vec<u8>,
-    ctos: Flow,
-    stoc: Flow,
+    pub five_tuple: FiveTuple,
+    pub(crate) first_seen_ts: Instant,
+    pub(crate) second_seen_ts: Instant,
+    pub(crate) last_seen_ts: Instant,
+    pub(crate) max_inactivity: Duration,
+    pub history: Vec<u8>,
+    pub(crate) ctos: Flow,
+    pub(crate) stoc: Flow,
 }
 
 impl TrackedConnection {
     #[inline]
-    fn update(&mut self, segment: L4Pdu) {
+    pub(crate) fn update(&mut self, segment: L4Pdu) {
         let now = Instant::now();
         let inactivity = now - self.last_seen_ts;
         if inactivity > self.max_inactivity {
