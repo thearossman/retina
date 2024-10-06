@@ -62,7 +62,7 @@ where
         }
         if self.actions.packet_deliver() {
             // Delivering all remaining packets in connection
-            subscription.deliver_packet(pdu.mbuf_ref(), &self.cdata, &self.sdata);
+            subscription.deliver_packet(pdu.mbuf_ref(), &self.cdata, &mut self.sdata);
         }
         if self.actions.buffer_frame() {
             // Track frame for (potential) future delivery
@@ -116,7 +116,7 @@ where
             }
         }
         if self.actions.apply_proto_filter() {
-            let actions = subscription.filter_protocol(&self.cdata, &self.sdata);
+            let actions = subscription.filter_protocol(&self.cdata, &mut self.sdata);
             self.clear_stale_data(&actions);
             self.actions.update(&actions);
         }
@@ -137,7 +137,7 @@ where
             // (e.g., "tls" filter), but ensure tracking only happens once
             let session_track = self.actions.session_track();
             if self.actions.apply_session_filter() {
-                let actions = subscription.filter_session(&session, &self.cdata, &self.sdata);
+                let actions = subscription.filter_session(&session, &self.cdata, &mut self.sdata);
                 self.clear_stale_data(&actions);
                 self.actions.update(&actions);
             }
@@ -179,7 +179,7 @@ where
             for session in self.cdata.conn_parser.drain_sessions() {
                 let session_track = self.actions.session_track();
                 if self.actions.apply_session_filter() {
-                    let actions = subscription.filter_session(&session, &self.cdata, &self.sdata);
+                    let actions = subscription.filter_session(&session, &self.cdata, &mut self.sdata);
                     self.actions.update(&actions);
                 }
                 if session_track || self.actions.session_track() {
@@ -189,7 +189,7 @@ where
         }
 
         if self.actions.connection_matched() {
-            subscription.deliver_conn(&self.cdata, &self.sdata)
+            subscription.deliver_conn(&self.cdata, &mut self.sdata)
         }
 
         self.actions.clear();

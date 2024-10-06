@@ -32,16 +32,16 @@ use thiserror::Error;
 /// Filter types
 pub type PacketContFn = fn(&Mbuf, &CoreId) -> Actions;
 pub type PacketFilterFn = fn(&Mbuf) -> Actions;
-pub type ProtoFilterFn<T> = fn(&ConnData, &T) -> Actions;
+pub type ProtoFilterFn<T> = fn(&ConnData, &mut T) -> Actions;
 
 // Will apply session filter and potentially deliver or store session
-pub type SessionFilterFn<T> = fn(&Session, &ConnData, &T) -> Actions;
+pub type SessionFilterFn<T> = fn(&Session, &ConnData, &mut T) -> Actions;
 
 // Subscription deliver functions
 // \note Rust won't enforce trait bounds on type alias,
 //       but T should implement Tracked.
-pub type PacketDeliverFn<T> = fn(&Mbuf, &ConnData, &T);
-pub type ConnDeliverFn<T> = fn(&ConnData, &T);
+pub type PacketDeliverFn<T> = fn(&Mbuf, &ConnData, &mut T);
+pub type ConnDeliverFn<T> = fn(&ConnData, &mut T);
 
 pub struct FilterFactory<T>
 where

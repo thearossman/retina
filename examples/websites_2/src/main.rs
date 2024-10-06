@@ -91,6 +91,9 @@ fn combine_results(outfile: &PathBuf) {
     println!("Combining results from {} cores...", NUM_CORES);
     let mut results = Vec::new();
     for core_id in 0..ARR_LEN {
+        let ptr = RESULTS[core_id as usize].load(Ordering::Relaxed);
+        let wtr = unsafe { &mut *ptr };
+        wtr.flush().unwrap();
         let fp = String::from(OUTFILE_PREFIX) + &format!("{}", core_id) + ".jsonl";
         let content = std::fs::read(fp.clone()).unwrap();
         results.extend_from_slice(&content);
@@ -115,7 +118,7 @@ fn main() {
     if cores.len() > 1 && !cores.windows(2).all(|w| w[1].raw() - w[0].raw() == 1) {
         panic!("Cores in config file should be consecutive for zero-lock indexing");
     }
-    if cores[0] > 1 {
+    if cores[0].raw() > 1 {
         panic!("RX core IDs should start at 0 or 1");
     }
     let mut runtime: Runtime<SubscribedWrapper> = Runtime::new(config, filter).unwrap();

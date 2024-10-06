@@ -89,6 +89,12 @@ impl Mbuf {
         unsafe { slice::from_raw_parts(ptr, self.data_len()) as &[u8] }
     }
 
+    /// Returns the contents of the Mbuf as a mutable byte slice.
+    pub fn data_mut(&mut self) -> &mut [u8] {
+        let ptr = self.raw().buf_addr as *mut u8;
+        unsafe { slice::from_raw_parts_mut(ptr, self.data_len()) as &mut [u8] }
+    }
+
     /// Returns a byte slice of data with length count at offset.
     ///
     /// Errors if `offset` is greater than or equal to the buffer length or `count` exceeds the size

@@ -108,7 +108,7 @@ where
 
     /// Invokes the end-to-end protocol filter.
     /// Applied once a parser identifies the application-layer protocol.
-    pub fn filter_protocol(&self, conn: &ConnData, tracked: &S::Tracked) -> Actions {
+    pub fn filter_protocol(&self, conn: &ConnData, tracked: &mut S::Tracked) -> Actions {
         (self.proto_filter)(conn, tracked)
     }
 
@@ -118,18 +118,18 @@ where
         &self,
         session: &Session,
         conn: &ConnData,
-        tracked: &S::Tracked,
+        tracked: &mut S::Tracked,
     ) -> Actions {
         (self.session_filter)(session, conn, tracked)
     }
 
     /// Delivery functions, including delivery to the correct callback
 
-    pub fn deliver_packet(&self, mbuf: &Mbuf, conn_data: &ConnData, tracked: &S::Tracked) {
+    pub fn deliver_packet(&self, mbuf: &Mbuf, conn_data: &ConnData, tracked: &mut S::Tracked) {
         (self.packet_deliver)(mbuf, conn_data, tracked)
     }
 
-    pub fn deliver_conn(&self, conn_data: &ConnData, tracked: &S::Tracked) {
+    pub fn deliver_conn(&self, conn_data: &ConnData, tracked: &mut S::Tracked) {
         (self.conn_deliver)(conn_data, tracked)
     }
 }

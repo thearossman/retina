@@ -130,26 +130,26 @@ fn generate(input: syn::ItemFn, config: SubscriptionConfig) -> TokenStream {
             }
 
             fn protocol_filter(conn: &retina_core::protocols::ConnData,
-                               tracked: &TrackedWrapper) -> Actions {
+                               tracked: &mut TrackedWrapper) -> Actions {
                 #proto_filter
             }
 
             fn session_filter(session: &retina_core::protocols::Session,
                               conn: &retina_core::protocols::ConnData,
-                              tracked: &TrackedWrapper) -> Actions
+                              tracked: &mut TrackedWrapper) -> Actions
             {
                 #session_filter
             }
 
             fn packet_deliver(mbuf: &retina_core::Mbuf,
                               conn: &retina_core::protocols::ConnData,
-                              tracked: &TrackedWrapper)
+                              tracked: &mut TrackedWrapper)
             {
                 #packet_deliver_filter
             }
 
             fn connection_deliver(conn: &retina_core::protocols::ConnData,
-                                  tracked: &TrackedWrapper)
+                                  tracked: &mut TrackedWrapper)
             {
                 #conn_deliver_filter
             }
