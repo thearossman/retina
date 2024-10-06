@@ -26,13 +26,13 @@ const NUM_CORES: usize = 16;
 // Add 1 for ARR_LEN to avoid overflow; one core is used as main_core
 const ARR_LEN: usize = NUM_CORES + 1;
 // Temporary per-core files
-const OUTFILE_PREFIX: &str = "websites_";
+const OUTFILE_PREFIX: &str = "dump_";
 
 lazy_static! {
     static ref RESULTS: [AtomicPtr<Option<PcapWriter<BufWriter<File>>>>; ARR_LEN] = {
         let mut results = vec![];
         for core_id in 0..ARR_LEN {
-            let file_name = String::from(OUTFILE_PREFIX) + &format!("{}", core_id) + ".jsonl";
+            let file_name = String::from(OUTFILE_PREFIX) + &format!("{}", core_id) + ".pcap";
             let buf_wtr = BufWriter::new(File::create(&file_name).unwrap());
             let pcap_wtr = Some(PcapWriter::new(buf_wtr).unwrap());
             let core_wtr = Box::into_raw(Box::new(pcap_wtr));
@@ -51,7 +51,7 @@ struct Args {
         long,
         parse(from_os_str),
         value_name = "FILE",
-        default_value = "pcap_dump.pcap"
+        default_value = "dump.pcap"
     )]
     outfile: PathBuf,
 }
@@ -113,7 +113,7 @@ fn process_results(outfile: &PathBuf) {
         wtr.into_writer().flush().unwrap();
 
         // Read core file
-        let fp = String::from(OUTFILE_PREFIX) + &format!("{}", core_id) + ".jsonl";
+        let fp = String::from(OUTFILE_PREFIX) + &format!("{}", core_id) + ".pcap";
         let core_file = File::open(fp.clone()).unwrap();
         let reader = BufReader::new(core_file);
         let pcap_reader = PcapReader::new(reader).unwrap();
