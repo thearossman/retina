@@ -286,8 +286,8 @@ pub fn filter() -> retina_core::filter::FilterFactory<TrackedWrapper> {
             // that the last packet in the connection is delivered
             result.add_actions(
                 &Actions {
-                    data: ActionData::PacketTrack | ActionData::ConnDeliver,
-                    terminal_actions: ActionData::PacketTrack| ActionData::ConnDeliver
+                    data: ActionData::PacketTrack | ActionData::ConnDeliver | ActionData::PacketDeliver,
+                    terminal_actions: ActionData::PacketTrack| ActionData::ConnDeliver | ActionData::PacketDeliver
                 },
             )
         }
