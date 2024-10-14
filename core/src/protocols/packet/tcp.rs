@@ -104,61 +104,61 @@ impl<'a> Tcp<'a> {
     /// Returns `true` if the (historical) nonce sum flag is set.
     #[inline]
     pub fn ns(&self) -> u8 {
-        ((self.header.data_offset_to_ns & 0x01) != 0).into()
+        ((self.header.data_offset_to_ns & 0x01) != 0) as u8
     }
 
     /// Returns `true` if the congestion window reduced flag is set.
     #[inline]
     pub fn cwr(&self) -> u8 {
-        ((self.flags() & CWR) != 0).into()
+        ((self.flags() & CWR) != 0) as u8
     }
 
     /// Returns `true` if the ECN-Echo flag is set.
     #[inline]
     pub fn ece(&self) -> u8 {
-        ((self.flags() & ECE) != 0).into()
+        ((self.flags() & ECE) != 0) as u8
     }
 
     /// Returns `true` if the urgent pointer flag is set.
     #[inline]
     pub fn urg(&self) -> u8 {
-        ((self.flags() & URG) != 0).into()
+        ((self.flags() & URG) != 0) as u8
     }
 
     /// Returns `true` if the acknowledgment flag is set.
     #[inline]
     pub fn ack(&self) -> u8 {
-        ((self.flags() & ACK) != 0).into()
+        ((self.flags() & ACK) != 0) as u8
     }
 
     /// Returns `true` if the push flag is set.
     #[inline]
     pub fn psh(&self) -> u8 {
-        ((self.flags() & PSH) != 0).into()
+        ((self.flags() & PSH) != 0) as u8
     }
 
     /// Returns `true` if the reset flag is set.
     #[inline]
     pub fn rst(&self) -> u8 {
-        ((self.flags() & RST) != 0).into()
+        ((self.flags() & RST) != 0) as u8
     }
 
     /// Returns `true` if the synchronize flag is set.
     #[inline]
     pub fn syn(&self) -> u8 {
-        ((self.flags() & SYN) != 0).into()
+        ((self.flags() & SYN) != 0) as u8
     }
 
     /// Returns `true` if the FIN flag is set.
     #[inline]
     pub fn fin(&self) -> u8 {
-        ((self.flags() & FIN) != 0).into()
+        ((self.flags() & FIN) != 0) as u8
     }
 
     /// Returns `true` if both `SYN` and `ACK` flags are set.
     #[inline]
     pub fn synack(&self) -> u8 {
-        ((self.flags() & (ACK | SYN)) != 0).into()
+        ((self.flags() & (ACK | SYN)) != 0) as u8
     }
 }
 
