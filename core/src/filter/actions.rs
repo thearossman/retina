@@ -375,9 +375,6 @@ mod tests {
         assert!(!actions.data.contains(ActionData::SessionFilter));
         assert!(actions.data.contains(ActionData::PacketContinue));
 
-        // Check intersection
-        assert!(actions.needs_conntrack());
-
         // Set, clear, and check actions by bitmask
         let frame_mask = ActionData::PacketTrack | ActionData::UpdatePDU;
         actions.data |= frame_mask;

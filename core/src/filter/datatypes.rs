@@ -588,12 +588,11 @@ mod tests {
 
         let matching_actions = spec.packet_filter();
         assert!(matching_actions.if_matching.parse_any());
-        assert!(matching_actions.if_matching.update_pdu(false));
-        assert!(!matching_actions.if_matching.update_pdu(true));
+        assert!(matching_actions.if_matching.update_pdu());
 
         let matching_actions = spec.proto_filter();
         assert!(matching_actions.if_matching.parse_any());
-        assert!(matching_actions.if_matching.update_pdu(false));
+        assert!(matching_actions.if_matching.update_pdu());
 
         let mut spec = SubscriptionSpec::new(String::from(""), String::from("cb"));
         spec.add_datatype(DataType::new_default_packet("Packet"));
