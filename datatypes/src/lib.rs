@@ -1,14 +1,16 @@
-#![allow(clippy::needless_doctest_main)]
-// #![warn(missing_docs)]
 //!
 //! Subscribable data types.
 //!
 //! A subscription is a request for a callback on a subset of network traffic specified by a filter.
-//! Callback functions require one or more *subscribable data types* as parameter(s), which it
+//! Each callback function requires one or more *subscribable data types* as parameter(s), which it
 //! immutably borrows.
 //!
-//! Each subscribable datatype must be defined as a retina_core::DataType and must
-//! implement one of the traits defined in this module.
+//! Each subscribable datatype must:
+//!
+//! - Be defined as a [retina_core::filter::DataType], with appropriate parameters and [retina_core::filter::Level].
+//! - Implement one of the traits defined in this module (Tracked, FromSession, etc.)
+//! - Be added to the [crate::typedefs::DATATYPES] map
+//!
 //!
 
 pub mod conn_fts;
@@ -16,8 +18,8 @@ pub mod typedefs;
 pub use conn_fts::*;
 pub mod connection;
 pub use connection::ConnRecord;
-pub mod http;
-pub use http::HttpTransaction;
+pub mod http_transaction;
+pub use http_transaction::HttpTransaction;
 pub mod dns_transaction;
 pub use dns_transaction::DnsTransaction;
 pub mod tls_handshake;

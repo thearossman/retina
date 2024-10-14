@@ -4,6 +4,7 @@
 //! considered a "stream-level" protocol, even if it is a datagram-based protocol in the
 //! traditional-sense.
 
+#[doc(hidden)]
 pub mod conn;
 pub mod dns;
 pub mod http;

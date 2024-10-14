@@ -15,43 +15,58 @@
 //!
 //! Retina is designed with a focus on performance in real-world, high-volume network environments
 //! (e.g., full-network or full-uplink analysis). It employs an efficient filtering mechanism to
-//! discard out-of-scope traffic, and is not specifically geared towards deep inspection of all
-//! packets (although it can be customized to do so). See [retina_filtergen](../retina_filtergen)
-//! for filter syntax and usage.
+//! discard out-of-scope traffic. Due to performance, is not specifically geared towards deep
+//! inspection of all packets, though it can be customized to do so with sampling.
 //!
-//! The framework currently comes with built-in support for several [subscribable
-//! datatypes](../datatypes). Additional datatypes are welcome and encouraged.
+//! For filter and callback syntax and usage, see [retina_filtergen](../retina_filtergen).
+//! All built-in subscribable datatypes are defined in [retina_datatypes](../retina_datatypes).
+//! Additional datatypes in this crate are welcome and encouraged!
 //!
 //! The following example shows a simple Retina application with two subscriptions, which print
 //! (1) parsed TLS handshakes and (2) parsed DNS transactions to stdout:
 //!
 //! ```rust
-//! /*
 //! use retina_core::config::default_config;
 //! use retina_core::subscription::TlsHandshake;
 //! use retina_core::Runtime;
 //! use retina_filtergen::filter;
 //!
+//! // Specify a subscription: filter, datatype(s), and callback. The filter determines what
+//! // subset of traffic is delivered to the callback. The datatype(s) determine what data is
+//! // delivered (here, a parsed TLS handshake). Datatypes are defined in the retina_datatypes
+//! // crate and must be passed by immutable reference.
+//! // The callback is executed when the filter (here, TLS connection with matching sni)
+//! // is matched and the specified data is ready to be delivered (here, when the TLS handshake
+//! // is fully parsed).
 //! #[filter("tls.sni ~ '^.*\\.com$'")]
 //! fn log_tls(tls: &TlsHandshake) {
 //!      println!("{:?}", tls);
 //! }
 //!
+//! // A Retina application consists of one or more subscriptions.
+//! // Define other subscriptions in the same file.
 //! #[filter("dns")]
 //! fn log_tls(dns: &DnsTransaction) {
 //!      println!("{:?}", dns);
 //! }
 //!
-//! #[retina_main(2)] // Framework expects callbacks
+//! // When using the `filter` macro to identify subscriptions, include the
+//! // `retina_main` attribute with the number of expected subscriptions.
+//! #[retina_main(2)]
 //! fn main() {
+//!     // Specify the runtime config (default or from a config file)
 //!     let cfg = default_config();
+//!     // SubscribedWrapper is the type generated at compile-time to "wrap" all
+//!     // data tracking and delivering functionality, while `filter` wraps all filtering.
 //!     let mut runtime<SubscribedWrapper> = Runtime::new(cfg, filter, callback).unwrap();
+//!     // Starts Retina
 //!     runtime.run();
 //! }
-//!  */
 //! ```
 //!
-//! For more on writing Retina programs, see [GitHub](https://github.com/stanford-esrg/retina).
+//! For programs that require many filters (e.g., searching for 100s of attack signatures), using
+//! the [subscription](retina_filtergen::subscription) macro to specify an input TOML file may
+//! be preferable to specifying each subscription individually as above.
 //!
 
 #[macro_use]
@@ -70,6 +85,7 @@ pub mod memory;
 mod port;
 pub mod protocols;
 mod runtime;
+#[doc(hidden)]
 pub mod subscription;
 pub mod utils;
 

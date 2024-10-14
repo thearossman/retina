@@ -13,7 +13,6 @@
 //!
 //! ## Usage
 //! ```rust
-//! /*
 //! use retina_core::config::default_config;
 //! use retina_core::Runtime;
 //! use retina_filtergen::{filter, retina_main};
@@ -37,7 +36,6 @@
 //!    let mut runtime: Runtime<SubscribedWrapper> = Runtime::new(cfg, filter).unwrap();
 //!    runtime.run();
 //! }
-//! */
 //! ```
 //!
 //! # Specifying Subscriptions in TOML File
@@ -70,7 +68,6 @@
 //! ```
 //!
 //! ```rust
-//! /*
 //! use retina_core::config::default_config;
 //! use retina_core::Runtime;
 //! use retina_filtergen::subscription;
@@ -85,7 +82,7 @@
 //!    let cfg = default_config();
 //!    let mut runtime: Runtime<SubscribedWrapper> = Runtime::new(cfg, filter).unwrap();
 //!    runtime.run();
-//! } */
+//! }
 //! ```
 //!
 //! # Datatype syntax
@@ -358,7 +355,8 @@ fn generate(input: syn::ItemFn, config: SubscriptionConfig) -> TokenStream {
     .into()
 }
 
-// Generate a Retina program from a specification file
+/// Generate a Retina program from a specification file.
+/// This expects an input TOML file with the subscription specifications.
 #[proc_macro_attribute]
 pub fn subscription(args: TokenStream, input: TokenStream) -> TokenStream {
     let input = parse_macro_input!(input as syn::ItemFn);
@@ -367,8 +365,9 @@ pub fn subscription(args: TokenStream, input: TokenStream) -> TokenStream {
     generate(input, config)
 }
 
-// For generating a Retina program without a specification file
-// This expects a #[filter("...")] macro followed by the expected callback
+/// Generate a Retina program without a specification file.
+/// This expects a #[filter("...")] macro followed by the expected callback.
+/// It must be used with #[retina_main(X)], where X = number of subscriptions.
 #[proc_macro_attribute]
 pub fn filter(args: TokenStream, input: TokenStream) -> TokenStream {
     let input = parse_macro_input!(input as syn::ItemFn);
