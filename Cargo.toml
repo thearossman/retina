@@ -5,7 +5,6 @@ members = [
     "examples/websites",
     "examples/proto_counts",
     # "examples/filter_stats",
-    "examples/conn_outliers"
 ]
 resolver = "2"
 
