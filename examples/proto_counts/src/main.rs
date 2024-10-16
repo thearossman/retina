@@ -6,81 +6,16 @@ use retina_datatypes::*;
 use retina_filtergen::{filter, retina_main};
 
 use std::collections::HashMap;
-use std::fs::File;
-use std::io::{BufRead, BufReader, BufWriter, Write};
+use std::io::Write;
 use std::path::PathBuf;
 use std::sync::atomic::{AtomicPtr, AtomicUsize, Ordering};
 use std::sync::OnceLock;
 
 use array_init::array_init;
 use clap::Parser;
-use serde::{Deserialize, Serialize};
+use serde::Serialize;
 
-// Number of cores being used by the runtime; should match config file
-// Should be defined at compile-time so that we can use a
-// statically-sized array for RESULTS
-const NUM_CORES: usize = 16;
-// Add 1 for ARR_LEN to avoid overflow; one core is used as main_core
-const ARR_LEN: usize = NUM_CORES + 1;
-
-static UDP_RESULTS: OnceLock<[AtomicPtr<HashMap<u16, usize>>; ARR_LEN]> = OnceLock::new();
-static TCP_RESULTS: OnceLock<[AtomicPtr<HashMap<u16, usize>>; ARR_LEN]> = OnceLock::new();
-static UDP_CONN_RESULTS: OnceLock<[AtomicPtr<HashMap<u16, usize>>; ARR_LEN]> = OnceLock::new();
-static TCP_CONN_RESULTS: OnceLock<[AtomicPtr<HashMap<u16, usize>>; ARR_LEN]> = OnceLock::new();
-
-fn init_results() -> [AtomicPtr<HashMap<u16, usize>>; ARR_LEN] {
-    let mut results = vec![];
-    for _ in 0..ARR_LEN {
-        results.push(Box::into_raw(Box::new(HashMap::new())));
-    }
-    array_init(|i| AtomicPtr::new(results[i]))
-}
-
-fn udp_results() -> &'static [AtomicPtr<HashMap<u16, usize>>; ARR_LEN] {
-    UDP_RESULTS.get_or_init(init_results)
-}
-
-fn tcp_results() -> &'static [AtomicPtr<HashMap<u16, usize>>; ARR_LEN] {
-    TCP_RESULTS.get_or_init(init_results)
-}
-
-fn udp_conn_results() -> &'static [AtomicPtr<HashMap<u16, usize>>; ARR_LEN] {
-    UDP_CONN_RESULTS.get_or_init(init_results)
-}
-
-fn tcp_conn_results() -> &'static [AtomicPtr<HashMap<u16, usize>>; ARR_LEN] {
-    TCP_CONN_RESULTS.get_or_init(init_results)
-}
-
-static UDP_CNT: AtomicUsize = AtomicUsize::new(0);
-static TCP_CNT: AtomicUsize = AtomicUsize::new(0);
-static UDP_CONN_CNT: AtomicUsize = AtomicUsize::new(0);
-static TCP_CONN_CNT: AtomicUsize = AtomicUsize::new(0);
-
-const OUTFILE_PREFIX: &str = "protos_";
-static CORE_FILES: OnceLock<[AtomicPtr<BufWriter<File>>; ARR_LEN]> = OnceLock::new();
-
-fn core_files() -> &'static [AtomicPtr<BufWriter<File>>; ARR_LEN] {
-    CORE_FILES.get_or_init(|| {
-        let mut outp = vec![];
-        for core_id in 0..ARR_LEN {
-            let file_name = String::from(OUTFILE_PREFIX) + &format!("{}", core_id) + ".jsonl";
-            let core_wtr = BufWriter::new(File::create(&file_name).unwrap());
-            let core_wtr = Box::into_raw(Box::new(core_wtr));
-            outp.push(core_wtr);
-        }
-        array_init(|i| AtomicPtr::new(outp[i]))
-    })
-}
-
-fn init() {
-    let _ = tcp_results();
-    let _ = udp_results();
-    let _ = tcp_conn_results();
-    let _ = udp_conn_results();
-    let _ = core_files();
-}
-
+// Argument parsing
 #[derive(Parser, Debug)]
 struct Args {
     #[clap(short, long, parse(from_os_str), value_name = "FILE")]
@@ -95,6 +30,94 @@ struct Args {
     outfile: PathBuf,
 }
 
+// Number of cores being used by the runtime; should match config file
+// Should be defined at compile-time so that we can use a
+// statically-sized array for RESULTS
+const NUM_CORES: usize = 16;
+// Add 1 for ARR_LEN to avoid overflow; one core is used as main_core
+const ARR_LEN: usize = NUM_CORES + 1;
+
+// Port counts for easy tracking
+#[derive(Serialize, Default, Debug)]
+struct PortCounter {
+    pub orig: usize,
+    pub resp: usize,
+}
+
+impl PortCounter {
+    pub fn extend(&mut self, other: &PortCounter) {
+        self.orig += other.orig;
+        self.resp += other.resp;
+    }
+}
+
+type PortResults = HashMap<u16, PortCounter>;
+
+// Map [UDP | TCP port] -> number of packets seen (src or dst)
+static UDP_PORT_COUNTS_PKT: OnceLock<[AtomicPtr<PortResults>; ARR_LEN]> = OnceLock::new();
+static TCP_PORT_COUNTS_PKT: OnceLock<[AtomicPtr<PortResults>; ARR_LEN]> = OnceLock::new();
+// Map [UDP | TCP port] -> number of connections seen on that port (src or dst)
+static UDP_PORT_COUNTS_CONN: OnceLock<[AtomicPtr<PortResults>; ARR_LEN]> = OnceLock::new();
+static TCP_PORT_COUNTS_CONN: OnceLock<[AtomicPtr<PortResults>; ARR_LEN]> = OnceLock::new();
+// Map app-layer protocols -> port counters
+static PARSED_PORT_COUNTS_PKT: OnceLock<[AtomicPtr<HashMap<String, PortResults>>; ARR_LEN]> =
+    OnceLock::new();
+static PARSED_PORT_COUNTS_CONN: OnceLock<[AtomicPtr<HashMap<String, PortResults>>; ARR_LEN]> =
+    OnceLock::new();
+
+fn init_results() -> [AtomicPtr<PortResults>; ARR_LEN] {
+    let mut results = vec![];
+    for _ in 0..ARR_LEN {
+        results.push(Box::into_raw(Box::new(HashMap::new())));
+    }
+    array_init(|i| AtomicPtr::new(results[i]))
+}
+
+fn init_results_parsed() -> [AtomicPtr<HashMap<String, PortResults>>; ARR_LEN] {
+    let mut results = vec![];
+    for _ in 0..ARR_LEN {
+        results.push(Box::into_raw(Box::new(HashMap::new())));
+    }
+    array_init(|i| AtomicPtr::new(results[i]))
+}
+
+// Accessors
+fn udp_port_counts_pkt() -> &'static [AtomicPtr<PortResults>; ARR_LEN] {
+    UDP_PORT_COUNTS_PKT.get_or_init(init_results)
+}
+fn tcp_port_counts_pkt() -> &'static [AtomicPtr<PortResults>; ARR_LEN] {
+    TCP_PORT_COUNTS_PKT.get_or_init(init_results)
+}
+fn udp_port_counts_conn() -> &'static [AtomicPtr<PortResults>; ARR_LEN] {
+    UDP_PORT_COUNTS_CONN.get_or_init(init_results)
+}
+fn tcp_port_counts_conn() -> &'static [AtomicPtr<PortResults>; ARR_LEN] {
+    TCP_PORT_COUNTS_CONN.get_or_init(init_results)
+}
+fn parsed_port_counts_pkt() -> &'static [AtomicPtr<HashMap<String, PortResults>>; ARR_LEN] {
+    PARSED_PORT_COUNTS_PKT.get_or_init(init_results_parsed)
+}
+fn parsed_port_counts_conn() -> &'static [AtomicPtr<HashMap<String, PortResults>>; ARR_LEN] {
+    PARSED_PORT_COUNTS_CONN.get_or_init(init_results_parsed)
+}
+
+// To make it easier to calculate %s
+static UDP_PKT_CNT: AtomicUsize = AtomicUsize::new(0);
+static TCP_PKT_CNT: AtomicUsize = AtomicUsize::new(0);
+static UDP_CONN_CNT: AtomicUsize = AtomicUsize::new(0);
+static TCP_CONN_CNT: AtomicUsize = AtomicUsize::new(0);
+
+// Ensure OnceLocks are all initialized
+fn init() {
+    let _ = tcp_port_counts_pkt();
+    let _ = udp_port_counts_pkt();
+    let _ = tcp_port_counts_conn();
+    let _ = udp_port_counts_conn();
+    let _ = parsed_port_counts_pkt();
+    let _ = parsed_port_counts_conn();
+}
+
+// Per-packet UDP callback
 #[filter("udp")]
 fn udp_cb(mbuf: &ZcFrame, core_id: &CoreId) {
     let mut src_port = None;
@@ -112,13 +135,20 @@ fn udp_cb(mbuf: &ZcFrame, core_id: &CoreId) {
             }
         }
     }
-    let ptr = udp_results()[core_id.raw() as usize].load(Ordering::Relaxed);
+    let ptr = udp_port_counts_pkt()[core_id.raw() as usize].load(Ordering::Relaxed);
     let dict = unsafe { &mut *ptr };
-    *dict.entry(src_port.unwrap()).or_insert(0) += 1;
-    *dict.entry(dst_port.unwrap()).or_insert(0) += 1;
-    UDP_CNT.fetch_add(1, Ordering::Relaxed);
+    let entry = dict
+        .entry(src_port.unwrap())
+        .or_insert(PortCounter::default());
+    entry.orig += 1;
+    let entry = dict
+        .entry(dst_port.unwrap())
+        .or_insert(PortCounter::default());
+    entry.resp += 1;
+    UDP_PKT_CNT.fetch_add(1, Ordering::Relaxed);
 }
 
+// Per-packet TCP callback
 #[filter("tcp")]
 fn tcp_cp(mbuf: &ZcFrame, core_id: &CoreId) {
     let mut dst_port = None;
@@ -136,190 +166,222 @@ fn tcp_cp(mbuf: &ZcFrame, core_id: &CoreId) {
             }
         }
     }
-    let ptr = tcp_results()[core_id.raw() as usize].load(Ordering::Relaxed);
+    let ptr = tcp_port_counts_pkt()[core_id.raw() as usize].load(Ordering::Relaxed);
     let dict = unsafe { &mut *ptr };
-    *dict.entry(src_port.unwrap()).or_insert(0) += 1;
-    *dict.entry(dst_port.unwrap()).or_insert(0) += 1;
-    TCP_CNT.fetch_add(1, Ordering::Relaxed);
+    let entry = dict
+        .entry(src_port.unwrap())
+        .or_insert(PortCounter::default());
+    entry.orig += 1;
+    let entry = dict
+        .entry(dst_port.unwrap())
+        .or_insert(PortCounter::default());
+    entry.resp += 1;
+    TCP_PKT_CNT.fetch_add(1, Ordering::Relaxed);
 }
 
-#[filter("tcp")]
-fn tcp_conn_cb(five_tuple: &FiveTuple, core_id: &CoreId) {
-    let dst_port = five_tuple.resp.port();
-    let src_port = five_tuple.orig.port();
-    let ptr = tcp_conn_results()[core_id.raw() as usize].load(Ordering::Relaxed);
-    let dict = unsafe { &mut *ptr };
-    *dict.entry(src_port).or_insert(0) += 1;
-    *dict.entry(dst_port).or_insert(0) += 1;
-    TCP_CONN_CNT.fetch_add(1, Ordering::Relaxed);
-}
-
+// Per-connection UDP callback
 #[filter("udp")]
 fn udp_conn_cb(five_tuple: &FiveTuple, core_id: &CoreId) {
     let dst_port = five_tuple.resp.port();
     let src_port = five_tuple.orig.port();
-    let ptr = udp_conn_results()[core_id.raw() as usize].load(Ordering::Relaxed);
+    let ptr = udp_port_counts_conn()[core_id.raw() as usize].load(Ordering::Relaxed);
     let dict = unsafe { &mut *ptr };
-    *dict.entry(src_port).or_insert(0) += 1;
-    *dict.entry(dst_port).or_insert(0) += 1;
+    let entry = dict.entry(src_port).or_insert(PortCounter::default());
+    entry.orig += 1;
+    let entry = dict.entry(dst_port).or_insert(PortCounter::default());
+    entry.resp += 1;
     UDP_CONN_CNT.fetch_add(1, Ordering::Relaxed);
 }
 
-#[derive(Serialize, Deserialize, Clone)]
-enum ProtoData {
-    Dns(DnsData),
-    Http(HttpData),
-    Tls(TlsData),
-    Quic(QuicData),
+// Per-packet TCP callback
+#[filter("tcp")]
+fn tcp_conn_cb(five_tuple: &FiveTuple, core_id: &CoreId) {
+    let dst_port = five_tuple.resp.port();
+    let src_port = five_tuple.orig.port();
+    let ptr = tcp_port_counts_conn()[core_id.raw() as usize].load(Ordering::Relaxed);
+    let dict = unsafe { &mut *ptr };
+    let entry = dict.entry(src_port).or_insert(PortCounter::default());
+    entry.orig += 1;
+    let entry = dict.entry(dst_port).or_insert(PortCounter::default());
+    entry.resp += 1;
+    TCP_CONN_CNT.fetch_add(1, Ordering::Relaxed);
 }
 
-#[derive(Serialize, Deserialize, Clone)]
-struct DnsData {
-    pub server_ip: String,
-    pub transp_proto: String,
-    pub query_domain: String,
+// Per-connection application-layer callbacks
+
+fn insert_parsed_results(
+    pkts: &PktCount,
+    core_id: &CoreId,
+    key: String,
+    dst_port: u16,
+    src_port: u16,
+) {
+    let ptr = parsed_port_counts_conn()[core_id.raw() as usize].load(Ordering::Relaxed);
+    let dict = unsafe { &mut *ptr };
+    let entry = dict
+        .entry(key.clone())
+        .or_insert(HashMap::new())
+        .entry(src_port)
+        .or_insert(PortCounter::default());
+    entry.orig += 1;
+    let entry = dict
+        .entry(key.clone())
+        .or_insert(HashMap::new())
+        .entry(dst_port)
+        .or_insert(PortCounter::default());
+    entry.resp += 1;
+
+    let ptr = parsed_port_counts_pkt()[core_id.raw() as usize].load(Ordering::Relaxed);
+    let dict = unsafe { &mut *ptr };
+    let entry = dict
+        .entry(key.clone())
+        .or_insert(HashMap::new())
+        .entry(src_port)
+        .or_insert(PortCounter::default());
+    entry.orig += pkts.raw();
+    let entry = dict
+        .entry(key)
+        .or_insert(HashMap::new())
+        .entry(dst_port)
+        .or_insert(PortCounter::default());
+    entry.resp += pkts.raw();
 }
 
-// Look for DNS connections on unusual ports
-#[filter("dns and ((tcp and tcp.port != 53 and tcp.port != 853) or (udp and udp.port != 53 and udp.port != 853))")]
-fn dns_cb(dns: &DnsTransaction, five_tuple: &FiveTuple, core_id: &CoreId) {
-    let record = ProtoData::Dns(DnsData {
-        server_ip: five_tuple.dst_ip_str(),
-        transp_proto: five_tuple.transp_proto_str(),
-        query_domain: (*dns).query_domain().to_string(),
-    });
-
-    let ptr = core_files()[core_id.raw() as usize].load(Ordering::Relaxed);
-    let wtr = unsafe { &mut *ptr };
-    if let Ok(s) = serde_json::to_string(&record) {
-        writeln!(wtr, "{}", s).unwrap();
-    }
+#[filter("dns and udp")]
+fn dns_udp_cb(five_tuple: &FiveTuple, pkts: &PktCount, core_id: &CoreId) {
+    let dst_port = five_tuple.resp.port();
+    let src_port = five_tuple.orig.port();
+    insert_parsed_results(pkts, core_id, String::from("dns_udp"), dst_port, src_port);
 }
 
-#[derive(Serialize, Deserialize, Clone)]
-struct HttpData {
-    pub server_subnet: String,
-    pub transp_proto: String,
-    pub uri: String,
-    pub host: String,
-    pub status_code: String,
-}
-// Look for HTTP connections on unusual ports
-#[filter("http and tcp and tcp.port != 80 and tcp.port != 8080")]
-fn http_cb(http: &HttpTransaction, five_tuple: &FiveTuple, core_id: &CoreId) {
-    let txn = ProtoData::Http(HttpData {
-        server_subnet: five_tuple.dst_subnet_str(),
-        transp_proto: five_tuple.transp_proto_str(),
-        uri: (*http).uri().to_string(),
-        host: (*http).host().to_string(),
-        status_code: (*http).status_code().to_string(),
-    });
-    let ptr = core_files()[core_id.raw() as usize].load(Ordering::Relaxed);
-    let wtr = unsafe { &mut *ptr };
-    if let Ok(s) = serde_json::to_string(&txn) {
-        writeln!(wtr, "{}", s).unwrap();
-    }
+#[filter("dns and tcp")]
+fn dns_tcp_cb(five_tuple: &FiveTuple, pkts: &PktCount, core_id: &CoreId) {
+    let dst_port = five_tuple.resp.port();
+    let src_port = five_tuple.orig.port();
+    insert_parsed_results(pkts, core_id, String::from("dns_tcp"), dst_port, src_port);
 }
 
-#[derive(Serialize, Deserialize, Clone)]
-struct TlsData {
-    pub server_ip_subnet: String,
-    pub transp_proto: String,
-    pub sni: String,
-    pub server_cipher: String,
-    pub extensions: String,
+#[filter("http")]
+fn http_cb(five_tuple: &FiveTuple, pkts: &PktCount, core_id: &CoreId) {
+    let dst_port = five_tuple.resp.port();
+    let src_port = five_tuple.orig.port();
+    insert_parsed_results(pkts, core_id, String::from("http"), dst_port, src_port);
 }
 
-// Look for TLS connections on unusual ports
-#[filter("tls and tcp and tcp.port != 443")]
-fn tls_cb(tls: &TlsHandshake, five_tuple: &FiveTuple, core_id: &CoreId) {
-    let hndshk = ProtoData::Tls(TlsData {
-        server_ip_subnet: five_tuple.dst_subnet_str(),
-        transp_proto: five_tuple.transp_proto_str(),
-        sni: (*tls).sni().to_string(),
-        server_cipher: (*tls).cipher().to_string(),
-        extensions: (*tls).server_extensions().join(", "),
-    });
-    let ptr = core_files()[core_id.raw() as usize].load(Ordering::Relaxed);
-    let wtr = unsafe { &mut *ptr };
-    if let Ok(s) = serde_json::to_string(&hndshk) {
-        writeln!(wtr, "{}", s).unwrap();
-    }
+#[filter("tls")]
+fn tls_cb(five_tuple: &FiveTuple, pkts: &PktCount, core_id: &CoreId) {
+    let dst_port = five_tuple.resp.port();
+    let src_port = five_tuple.orig.port();
+    insert_parsed_results(pkts, core_id, String::from("tls"), dst_port, src_port);
 }
 
-#[derive(Serialize, Deserialize, Clone)]
-struct QuicData {
-    pub server_subnet: String,
-    pub transp_proto: String,
-    pub sni: String,
+#[filter("quic")]
+fn quic_cb(five_tuple: &FiveTuple, pkts: &PktCount, core_id: &CoreId) {
+    let dst_port = five_tuple.resp.port();
+    let src_port = five_tuple.orig.port();
+    insert_parsed_results(pkts, core_id, String::from("quic"), dst_port, src_port);
 }
 
-// Look for QUIC connections on unusual ports
-#[filter("quic and udp.port != 443")]
-fn quic_cb(quic: &QuicStream, five_tuple: &FiveTuple, core_id: &CoreId) {
-    let data = ProtoData::Quic(QuicData {
-        server_subnet: five_tuple.dst_subnet_str(),
-        transp_proto: five_tuple.transp_proto_str(),
-        sni: quic.tls.sni().to_string(),
-    });
-    let ptr = core_files()[core_id.raw() as usize].load(Ordering::Relaxed);
-    let wtr = unsafe { &mut *ptr };
-    if let Ok(s) = serde_json::to_string(&data) {
-        writeln!(wtr, "{}", s).unwrap();
-    }
-}
-
+// Combine results for easy serialization
 #[derive(Serialize, Default)]
-struct Results {
-    pub udp_pkts: HashMap<u16, usize>,
-    pub tcp_pkts: HashMap<u16, usize>,
-    pub udp_conns: HashMap<u16, usize>,
-    pub tcp_conns: HashMap<u16, usize>,
-    pub sessions: Vec<ProtoData>,
+struct CombinedResults {
+    pub udp_pkts: PortResults,
+    pub tcp_pkts: PortResults,
+    pub udp_conns: PortResults,
+    pub tcp_conns: PortResults,
+    pub parsed_conns: HashMap<String, PortResults>,
+    pub parsed_pkts: HashMap<String, PortResults>,
+    pub udp_pkt_count: usize,
+    pub udp_conn_count: usize,
+    pub tcp_pkt_count: usize,
+    pub tcp_conn_count: usize,
 }
 
+// TODO combine results with `extend` without weird borrowing stuff
 fn combine_results(outfile: &PathBuf) {
-    let mut results = Results::default();
+    let mut results = CombinedResults::default();
     for core_id in 0..ARR_LEN {
         // TCP per-port packet counts
-        let ptr = tcp_results()[core_id].load(Ordering::SeqCst);
-        let dict = unsafe { &*ptr };
-        results.tcp_pkts.extend(dict);
+        let ptr = tcp_port_counts_pkt()[core_id].load(Ordering::SeqCst);
+        for (key, value) in unsafe { &*ptr } {
+            results
+                .tcp_pkts
+                .entry(*key)
+                .or_insert(PortCounter::default())
+                .extend(value);
+        }
 
         // TCP per-port conn counts
-        let ptr = tcp_conn_results()[core_id].load(Ordering::SeqCst);
-        let dict = unsafe { &*ptr };
-        results.tcp_conns.extend(dict);
+        let ptr = tcp_port_counts_conn()[core_id].load(Ordering::SeqCst);
+        for (key, value) in unsafe { &*ptr } {
+            results
+                .tcp_conns
+                .entry(*key)
+                .or_insert(PortCounter::default())
+                .extend(value);
+        }
 
         // UDP per-port packet counts
-        let ptr = udp_results()[core_id].load(Ordering::SeqCst);
-        let dict = unsafe { &*ptr };
-        results.udp_pkts.extend(dict);
+        let ptr = udp_port_counts_pkt()[core_id].load(Ordering::SeqCst);
+        for (key, value) in unsafe { &*ptr } {
+            results
+                .udp_pkts
+                .entry(*key)
+                .or_insert(PortCounter::default())
+                .extend(value);
+        }
 
         // UDP per-port conn counts
-        let ptr = udp_conn_results()[core_id].load(Ordering::SeqCst);
-        let dict = unsafe { &*ptr };
-        results.udp_conns.extend(dict);
+        let ptr = udp_port_counts_conn()[core_id].load(Ordering::SeqCst);
+        for (key, value) in unsafe { &*ptr } {
+            results
+                .udp_conns
+                .entry(*key)
+                .or_insert(PortCounter::default())
+                .extend(value);
+        }
 
-        // Sessions on unexpected ports
-        let ptr = core_files()[core_id].load(Ordering::Relaxed);
-        let wtr = unsafe { &mut *ptr };
-        wtr.flush().unwrap();
-        let fp = String::from(OUTFILE_PREFIX) + &format!("{}", core_id) + ".jsonl";
-        let rdr = BufReader::new(File::open(fp.clone()).unwrap());
-        let sessions: Vec<ProtoData> = rdr
-            .lines()
-            .map(|line| serde_json::from_str(&line.unwrap()).unwrap())
-            .collect();
-        results.sessions.extend_from_slice(&sessions);
-        std::fs::remove_file(fp).unwrap();
+        // Session per-port pkt counts
+        let ptr = parsed_port_counts_pkt()[core_id].load(Ordering::Relaxed);
+        for (key, value) in unsafe { &*ptr } {
+            let entry = results
+                .parsed_pkts
+                .entry(key.clone())
+                .or_insert(PortResults::default());
+
+            for (port, counters) in value {
+                entry
+                    .entry(*port)
+                    .or_insert(PortCounter::default())
+                    .extend(counters);
+            }
+        }
+
+        // Session per-port conn counts
+        let ptr = parsed_port_counts_conn()[core_id].load(Ordering::Relaxed);
+        for (key, value) in unsafe { &*ptr } {
+            let entry = results
+                .parsed_conns
+                .entry(key.clone())
+                .or_insert(PortResults::default());
+            for (port, counters) in value {
+                entry
+                    .entry(*port)
+                    .or_insert(PortCounter::default())
+                    .extend(counters);
+            }
+        }
     }
+    results.udp_pkt_count = UDP_PKT_CNT.load(Ordering::SeqCst);
+    results.tcp_pkt_count = TCP_PKT_CNT.load(Ordering::SeqCst);
+    results.udp_conn_count = UDP_CONN_CNT.load(Ordering::SeqCst);
+    results.tcp_conn_count = TCP_CONN_CNT.load(Ordering::SeqCst);
     let mut file = std::fs::File::create(outfile).unwrap();
     let results = serde_json::to_string(&results).unwrap();
     file.write_all(results.as_bytes()).unwrap();
 }
 
-#[retina_main(8)]
+#[retina_main(9)]
 fn main() {
     init();
     let args = Args::parse();
@@ -342,8 +404,10 @@ fn main() {
     runtime.run();
     combine_results(&args.outfile);
     println!(
-        "Got {} tcp, {} udp packets",
-        TCP_CNT.load(Ordering::SeqCst),
-        UDP_CNT.load(Ordering::SeqCst)
+        "Got {} tcp, {} udp packets; {} tcp, {} udp conns",
+        TCP_PKT_CNT.load(Ordering::SeqCst),
+        UDP_PKT_CNT.load(Ordering::SeqCst),
+        TCP_CONN_CNT.load(Ordering::SeqCst),
+        UDP_CONN_CNT.load(Ordering::SeqCst)
     );
 }
