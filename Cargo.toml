@@ -4,7 +4,7 @@ members = [
     "datatypes",
     "examples/websites",
     "examples/proto_counts",
-    # "examples/filter_stats",
+    "examples/filter_stats",
 ]
 resolver = "2"
 

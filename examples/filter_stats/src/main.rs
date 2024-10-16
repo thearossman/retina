@@ -34,7 +34,7 @@ lazy_static! {
 }
 
 fn init() {
-    println("Initializing {} results", RESULTS.len());
+    println!("Initializing {} results", RESULTS.len());
 }
 
 #[derive(Parser, Debug)]
@@ -103,7 +103,7 @@ fn combine_results(outfile: &PathBuf) {
     file.write_all(&results).unwrap();
 }
 
-#[subscription("./examples/scale/spec.toml")]
+#[subscription("./examples/filter_stats/spec.toml")]
 fn main() {
     init();
     let args = Args::parse();
