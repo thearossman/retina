@@ -18,7 +18,7 @@ const NUM_CORES: usize = 16;
 // Add 1 for ARR_LEN to avoid overflow; one core is used as main_core
 const ARR_LEN: usize = NUM_CORES + 1;
 // Temporary per-core files
-const OUTFILE_PREFIX: &str = "websites_";
+const OUTFILE_PREFIX: &str = "filter_stats_";
 
 lazy_static! {
     static ref RESULTS: [AtomicPtr<BufWriter<File>>; ARR_LEN] = {
@@ -46,7 +46,7 @@ struct Args {
         long,
         parse(from_os_str),
         value_name = "FILE",
-        default_value = "websites.jsonl"
+        default_value = "filter_stats.jsonl"
     )]
     outfile: PathBuf,
 }
