@@ -8234,15 +8234,6 @@ datatypes = [
 callback = "http_cb"
 
 [[subscriptions]]
-filter = "(http.uri = '/') and tcp and http and ((tcp.dst_port = 80 or tcp.dst_port = 8080))"
-datatypes = [
-    "HttpTransaction",
-    "CoreId",
-    "FilterStr",
-]
-callback = "http_cb"
-
-[[subscriptions]]
 filter = "(http.uri = 'yoO4TAbn2tpl5DltCfASJIZ2spEJPLSn') and tcp and http and ((tcp.dst_port = 80 or tcp.dst_port = 8080))"
 datatypes = [
     "HttpTransaction",
