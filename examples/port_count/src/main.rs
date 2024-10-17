@@ -25,7 +25,7 @@ struct Args {
         long,
         parse(from_os_str),
         value_name = "FILE",
-        default_value = "protos.jsonl"
+        default_value = "ports.jsonl"
     )]
     outfile: PathBuf,
 }
