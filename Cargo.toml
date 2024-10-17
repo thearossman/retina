@@ -3,7 +3,7 @@ members = [
     "core",
     "datatypes",
     "examples/websites",
-    "examples/proto_counts",
+    "examples/port_count",
     "examples/filter_stats",
 ]
 resolver = "2"
