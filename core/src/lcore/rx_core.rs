@@ -110,6 +110,7 @@ where
                 }
             }
             conn_table.check_inactive(&self.subscription);
+            conn_table.check_callbacks();
         }
 
         // // Deliver remaining data in table from unfinished connections

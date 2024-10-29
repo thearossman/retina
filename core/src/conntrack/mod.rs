@@ -8,10 +8,12 @@ pub mod conn;
 pub mod conn_id;
 pub mod pdu;
 mod timerwheel;
+mod receiver;
 
 use self::conn::{Conn, L4Conn};
 use self::conn_id::ConnId;
 use self::pdu::{L4Context, L4Pdu};
+use self::receiver::{CallbackTimer, CallbackTimerWheel};
 use self::timerwheel::TimerWheel;
 use crate::config::ConnTrackConfig;
 use crate::lcore::CoreId;
@@ -21,8 +23,10 @@ use crate::protocols::packet::udp::UDP_PROTOCOL;
 use crate::protocols::stream::ParserRegistry;
 use crate::subscription::{Subscription, Trackable};
 
+use rand::Rng;
 use std::cmp;
-use std::time::Instant;
+use std::time::{Duration, Instant};
+use std::any::Any;
 
 use anyhow::anyhow;
 use hashlink::linked_hash_map::{LinkedHashMap, RawEntryMut};
@@ -45,6 +49,8 @@ where
     table: LinkedHashMap<ConnId, Conn<T>>,
     /// Manages connection timeouts.
     timerwheel: TimerWheel,
+    /// Manages periodic callbacks for connections.
+    callback_timers: CallbackTimerWheel<T>,
     /// ID of the core that the table is assigned to.
     core_id: CoreId,
 }
@@ -60,11 +66,14 @@ where
             cmp::max(config.tcp_inactivity_timeout, config.udp_inactivity_timeout),
             config.timeout_resolution,
         );
+        // tmp - use same timeout resolution as TimerWheel
+        let callback_timers = CallbackTimerWheel::new(config.timeout_resolution);
         ConnTracker {
             config,
             registry,
             table,
             timerwheel,
+            callback_timers,
             core_id,
         }
     }
@@ -117,6 +126,11 @@ where
                 } else if conn.terminated() {
                     conn.terminate(subscription);
                     occupied.remove();
+                } else {
+                    let mut rng = rand::thread_rng();
+                    if rng.gen_bool(0.2) {
+                        self.insert_random_cb(conn_id);
+                    }
                 }
             }
             RawEntryMut::Vacant(_) => {
@@ -169,6 +183,30 @@ where
     pub(crate) fn check_inactive(&mut self, subscription: &Subscription<T::Subscribed>) {
         self.timerwheel
             .check_inactive(&mut self.table, subscription);
+    }
+
+    /// Checks for and invokes callbacks that are on a timer.
+    pub(crate) fn check_callbacks(&mut self) {
+        self.callback_timers.try_invoke(&mut self.table, &self.core_id);
+    }
+
+    fn insert_random_cb(&mut self, conn_id: ConnId)
+    {
+        let callback = |_: &T, scratch: &mut dyn Any, _: &CoreId| -> bool {
+            let mut rng = rand::thread_rng();
+            if let Some(scratch) = scratch.downcast_mut::<usize>() {
+                // Callback would actually be invoked here
+                *scratch += 1;
+            }
+            rng.gen_bool(0.7)
+        };
+        let timer = CallbackTimer::new(
+            Duration::from_millis(1000),
+            Box::new(callback),
+            Box::new(0),
+            conn_id,
+        );
+        self.callback_timers.insert(timer);
     }
 }
 
