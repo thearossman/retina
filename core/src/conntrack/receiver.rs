@@ -95,18 +95,29 @@ where
     ticker: Receiver<Instant>,
     /// Active timers, ordered by next invocation time
     /// Matched connections that have not terminated
-    timers: BinaryHeap<Reverse<CallbackTimer<T>>>,
+    timers: Vec<BinaryHeap<Reverse<CallbackTimer<T>>>>,
+    /// Start time of the timer wheel
+    start_ts: Instant,
+    /// Duration for each "bucket"
+    bucket_duration: usize,
+    /// Next bucket to check for callbacks
+    next_bucket: usize,
 }
 
 impl<T> CallbackTimerWheel<T>
 where
     T: Trackable
 {
-    pub(crate) fn new(timeout_resolution: usize) -> Self {
+    pub(crate) fn new(timeout_resolution: usize, max_timeout_ms: usize) -> Self {
         let ticker = tick(Duration::from_millis(timeout_resolution as u64));
+        let bucket_duration = timeout_resolution;
+        let n_buckets = usize::div_ceil(max_timeout_ms, bucket_duration);
         CallbackTimerWheel {
             ticker,
-            timers: BinaryHeap::new(),
+            timers: (0..n_buckets).map(|_| BinaryHeap::new()).collect(),
+            start_ts: Instant::now(),
+            bucket_duration,
+            next_bucket: 0,
         }
     }
 
@@ -115,9 +126,19 @@ where
     where
         T: Trackable
     {
-        self.timers.push(
+        let bucket = self.bucket(&timer.invoke_at);
+        self.timers[bucket].push(
             Reverse(timer)
         );
+    }
+
+    fn bucket(&self, time: &Instant) -> usize {
+        // Bucket based on (invocation time - start time)
+        let time_since_start = time.duration_since(self.start_ts).as_millis();
+        // ...rounded down to closest bucket
+        let nearest_period = time_since_start as usize / self.bucket_duration;
+        // ...sized to fit the table
+        nearest_period % self.timers.len()
     }
 
     /// Checks for and invokes callbacks
@@ -129,23 +150,25 @@ where
         T: Trackable
     {
         if let Ok(now) = self.ticker.try_recv() {
-            while let Some(timer) = self.timers.peek() {
-                if timer.0.invoke_at > now {
-                    break;
-                }
-                let mut timer = self.timers.pop().unwrap().0;
-                let conn_id = &timer.conn_id;
-                if let RawEntryMut::Occupied(mut occupied) = table.raw_entry_mut().from_key(conn_id) {
-                    let conn = occupied.get_mut();
-                    if (timer.callback)(&conn.info.sdata, &mut timer.scratch, core_id) {
-                        timer.reset();
-                        self.timers.push(
-                            Reverse(timer)
-                        );
+            let bucket_end = self.bucket(&Instant::now());
+            for bucket in self.next_bucket..bucket_end {
+                while let Some(timer) = self.timers[bucket].peek() {
+                    if timer.0.invoke_at > now {
+                        self.next_bucket = bucket;
+                        return; // STOP all iterations
+                    }
+                    let mut timer = self.timers[bucket].pop().unwrap().0;
+                    let conn_id = &timer.conn_id;
+                    if let RawEntryMut::Occupied(mut occupied) = table.raw_entry_mut().from_key(conn_id) {
+                        let conn = occupied.get_mut();
+                        if conn.drop_pdu() { continue; }
+                        if (timer.callback)(&conn.info.sdata, &mut timer.scratch, core_id) {
+                            timer.reset();
+                            self.insert(timer);
+                        }
                     }
                 }
             }
         }
     }
-
 }

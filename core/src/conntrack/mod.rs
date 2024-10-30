@@ -67,7 +67,7 @@ where
             config.timeout_resolution,
         );
         // tmp - use same timeout resolution as TimerWheel
-        let callback_timers = CallbackTimerWheel::new(config.timeout_resolution);
+        let callback_timers = CallbackTimerWheel::new(config.timeout_resolution, 1000);
         ConnTracker {
             config,
             registry,
@@ -201,7 +201,7 @@ where
             rng.gen_bool(0.7)
         };
         let timer = CallbackTimer::new(
-            Duration::from_millis(1000),
+            Duration::from_millis(1000), // tmp
             Box::new(callback),
             Box::new(0),
             conn_id,
