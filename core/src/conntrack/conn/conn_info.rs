@@ -5,7 +5,7 @@
 // Probe, parse, etc.
 
 use crate::conntrack::pdu::L4Pdu;
-use crate::filter::Actions;
+use crate::filter::{Actions, StreamingCbWrapper};
 use crate::lcore::CoreId;
 use crate::protocols::packet::tcp::TCP_PROTOCOL;
 use crate::protocols::stream::{
@@ -13,6 +13,7 @@ use crate::protocols::stream::{
 };
 use crate::subscription::{Subscription, Trackable};
 use crate::FiveTuple;
+use derive_more::Debug;
 
 #[derive(Debug)]
 pub(crate) struct ConnInfo<T>
@@ -25,6 +26,11 @@ where
     pub(crate) cdata: ConnData,
     /// Subscription data (for delivering)
     pub(crate) sdata: T,
+
+    pub(crate) npkts: usize,
+    /// Streaming (N packets) CBs
+    #[debug(ignore)]
+    pub(crate) streaming_cbs: Vec<StreamingCbWrapper<T>>
 }
 
 impl<T> ConnInfo<T>
@@ -37,6 +43,8 @@ where
             actions: Actions::new(),
             cdata: ConnData::new(five_tuple),
             sdata: T::new(pdu, core_id),
+            npkts: 0,
+            streaming_cbs: vec![],
         }
     }
 
@@ -46,8 +54,7 @@ where
         subscription: &Subscription<T::Subscribed>,
     ) {
         assert!(self.actions.drop());
-        let pkt_actions = subscription.filter_packet(pdu.mbuf_ref(), &self.sdata);
-        self.actions = pkt_actions;
+        (self.actions, self.streaming_cbs) = subscription.filter_packet(pdu.mbuf_ref(), &self.sdata);
     }
 
     pub(crate) fn consume_pdu(
@@ -60,6 +67,7 @@ where
             drop(pdu);
             return;
         }
+        self.npkts += 1;
 
         if self.actions.parse_any() {
             self.handle_parse(&pdu, subscription, registry);
@@ -79,6 +87,8 @@ where
             // Track frame for (potential) future delivery
             self.sdata.track_packet(pdu.mbuf_own());
         }
+
+        subscription.filter_stream(&self.sdata, &mut self.streaming_cbs, self.npkts, &self.cdata);
     }
 
     fn handle_parse(
@@ -127,7 +137,7 @@ where
             }
         }
         if self.actions.apply_proto_filter() {
-            let actions = subscription.filter_protocol(&self.cdata, &self.sdata);
+            let actions = subscription.filter_protocol(&self.cdata, &self.sdata, &mut self.streaming_cbs);
             self.clear_stale_data(&actions);
             self.actions.update(&actions);
         }

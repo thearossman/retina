@@ -58,6 +58,7 @@ where
     session_filter: SessionFilterFn<S::Tracked>,
     packet_deliver: PacketDeliverFn<S::Tracked>,
     conn_deliver: ConnDeliverFn<S::Tracked>,
+    stream_filter: StreamFilterFn<S::Tracked>,
     #[cfg(feature = "timing")]
     pub(crate) timers: Timers,
 }
@@ -74,6 +75,7 @@ where
             session_filter: factory.session_filter,
             packet_deliver: factory.packet_deliver,
             conn_deliver: factory.conn_deliver,
+            stream_filter: factory.stream_filter,
             #[cfg(feature = "timing")]
             timers: Timers::new(),
         }
@@ -105,14 +107,14 @@ where
 
     /// Invokes the five-tuple filter.
     /// Applied to the first packet in the connection.
-    pub fn filter_packet(&self, mbuf: &Mbuf, tracked: &S::Tracked) -> Actions {
+    pub fn filter_packet(&self, mbuf: &Mbuf, tracked: &S::Tracked) -> (Actions, Vec<StreamingCbWrapper<S::Tracked>>) {
         (self.packet_filter)(mbuf, tracked)
     }
 
     /// Invokes the end-to-end protocol filter.
     /// Applied once a parser identifies the application-layer protocol.
-    pub fn filter_protocol(&self, conn: &ConnData, tracked: &S::Tracked) -> Actions {
-        (self.proto_filter)(conn, tracked)
+    pub fn filter_protocol(&self, conn: &ConnData, tracked: &S::Tracked, cbs: &mut Vec<StreamingCbWrapper<S::Tracked>>) -> Actions {
+        (self.proto_filter)(conn, tracked, cbs)
     }
 
     /// Invokes the application-layer session filter.
@@ -135,4 +137,12 @@ where
     pub fn deliver_conn(&self, conn_data: &ConnData, tracked: &S::Tracked) {
         (self.conn_deliver)(conn_data, tracked)
     }
+
+    pub fn filter_stream(&self, tracked: &S::Tracked, stream_cbs: &mut Vec<StreamingCbWrapper<S::Tracked>>, npkts: usize, conn_data: &ConnData) {
+        if npkts == 0 || stream_cbs.is_empty() {
+            return;
+        }
+        (self.stream_filter)(tracked, stream_cbs, npkts, conn_data);
+    }
+
 }

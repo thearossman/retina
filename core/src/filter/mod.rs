@@ -31,8 +31,8 @@ use thiserror::Error;
 
 /// Filter types
 pub type PacketContFn = fn(&Mbuf, &CoreId) -> Actions;
-pub type PacketFilterFn<T> = fn(&Mbuf, &T) -> Actions;
-pub type ProtoFilterFn<T> = fn(&ConnData, &T) -> Actions;
+pub type PacketFilterFn<T> = fn(&Mbuf, &T) -> (Actions, Vec<StreamingCbWrapper<T>>);
+pub type ProtoFilterFn<T> = fn(&ConnData, &T, &mut Vec<StreamingCbWrapper<T>>) -> Actions;
 
 // Will apply session filter and potentially deliver or store session
 pub type SessionFilterFn<T> = fn(&Session, &ConnData, &T) -> Actions;
@@ -42,6 +42,14 @@ pub type SessionFilterFn<T> = fn(&Session, &ConnData, &T) -> Actions;
 //       but T should implement Tracked.
 pub type PacketDeliverFn<T> = fn(&Mbuf, &ConnData, &T);
 pub type ConnDeliverFn<T> = fn(&ConnData, &T);
+
+pub type StreamFilterFn<T> = fn(&T, &mut Vec<StreamingCbWrapper<T>>, usize, &ConnData);
+
+pub type StreamingCb<T> = dyn FnMut(&T, &CoreId) -> bool;
+pub struct StreamingCbWrapper<T> {
+    pub cbs: Box<StreamingCb<T>>,
+    pub n: usize,
+}
 
 pub struct FilterFactory<T>
 where
@@ -54,6 +62,7 @@ where
     pub session_filter: SessionFilterFn<T>,
     pub packet_deliver: PacketDeliverFn<T>,
     pub conn_deliver: ConnDeliverFn<T>,
+    pub stream_filter: StreamFilterFn<T>,
 }
 
 impl<T> FilterFactory<T>
@@ -68,6 +77,7 @@ where
         session_filter: SessionFilterFn<T>,
         packet_deliver: PacketDeliverFn<T>,
         conn_deliver: ConnDeliverFn<T>,
+        stream_filter: StreamFilterFn<T>,
     ) -> Self {
         FilterFactory {
             filter_str: filter_str.to_string(),
@@ -77,6 +87,7 @@ where
             session_filter,
             packet_deliver,
             conn_deliver,
+            stream_filter,
         }
     }
 }

@@ -163,12 +163,6 @@ pub fn filter() -> retina_core::filter::FilterFactory<TrackedWrapper> {
                 if let Ok(tcp) = &retina_core::protocols::packet::Packet::parse_to::<
                     retina_core::protocols::packet::tcp::Tcp,
                 >(ipv4) {
-                    dyn_cbs.push(
-                        StreamingCbWrapper {
-                            cbs: Box::new(npkts_cb_tcp),
-                            n: 5,
-                        }
-                    );
 
                     result
                         .push(
@@ -180,12 +174,6 @@ pub fn filter() -> retina_core::filter::FilterFactory<TrackedWrapper> {
                 } else if let Ok(udp) = &retina_core::protocols::packet::Packet::parse_to::<
                     retina_core::protocols::packet::udp::Udp,
                 >(ipv4) {
-                    dyn_cbs.push(
-                        StreamingCbWrapper {
-                            cbs: Box::new(npkts_cb_udp),
-                            n: 10,
-                        }
-                    );
                     result
                         .push(
                             &Actions {
@@ -200,12 +188,6 @@ pub fn filter() -> retina_core::filter::FilterFactory<TrackedWrapper> {
                 if let Ok(tcp) = &retina_core::protocols::packet::Packet::parse_to::<
                     retina_core::protocols::packet::tcp::Tcp,
                 >(ipv6) {
-                    dyn_cbs.push(
-                        StreamingCbWrapper {
-                            cbs: Box::new(npkts_cb_tcp),
-                            n: 5,
-                        }
-                    );
                     result
                         .push(
                             &Actions {
@@ -216,12 +198,6 @@ pub fn filter() -> retina_core::filter::FilterFactory<TrackedWrapper> {
                 } else if let Ok(udp) = &retina_core::protocols::packet::Packet::parse_to::<
                     retina_core::protocols::packet::udp::Udp,
                 >(ipv6) {
-                    dyn_cbs.push(
-                        StreamingCbWrapper {
-                            cbs: Box::new(npkts_cb_udp),
-                            n: 10,
-                        }
-                    );
                     result
                         .push(
                             &Actions {
@@ -247,13 +223,6 @@ pub fn filter() -> retina_core::filter::FilterFactory<TrackedWrapper> {
                 retina_core::protocols::stream::ConnParser::Dns { .. } => true,
                 _ => false,
             } {
-                stream_cbs.push(
-                    StreamingCbWrapper {
-                        cbs: Box::new(npkts_cb_dns),
-                        n: 50,
-
-                    }
-                );
                 result
                     .push(
                         &Actions {
@@ -265,13 +234,6 @@ pub fn filter() -> retina_core::filter::FilterFactory<TrackedWrapper> {
                 retina_core::protocols::stream::ConnParser::Tls { .. } => true,
                 _ => false,
             } {
-                stream_cbs.push(
-                    StreamingCbWrapper {
-                        cbs: Box::new(npkts_cb_tls),
-                        n: 50,
-
-                    }
-                );
                 result
                     .push(
                         &Actions {
@@ -287,13 +249,6 @@ pub fn filter() -> retina_core::filter::FilterFactory<TrackedWrapper> {
                 retina_core::protocols::stream::ConnParser::Dns { .. } => true,
                 _ => false,
             } {
-                stream_cbs.push(
-                    StreamingCbWrapper {
-                        cbs: Box::new(npkts_cb_dns),
-                        n: 50,
-
-                    }
-                );
                 result
                     .push(
                         &Actions {
@@ -354,18 +309,37 @@ pub fn filter() -> retina_core::filter::FilterFactory<TrackedWrapper> {
         }
     }
 
-    fn stream_filter(tracked: &TrackedWrapper, stream_cbs: &mut Vec<StreamingCbWrapper<TrackedWrapper>>,
-                     npkts: usize, _cdata: &retina_core::protocols::ConnData) {
-        let mut remove = vec![];
-        for i in 0..stream_cbs.len() {
-            if npkts % stream_cbs[i].n == 0 {
-                if !(stream_cbs[i].cbs)(tracked, tracked.core_id()) {
-                    remove.push(i);
-                }
+    fn stream_filter(tracked: &TrackedWrapper, _stream_cbs: &mut Vec<StreamingCbWrapper<TrackedWrapper>>, npkts: usize,
+                     conn: &retina_core::protocols::ConnData)
+    {
+        // TODO would have to figure out how to store "unsubscribe"
+        if npkts % 5 == 0 {
+            if let Ok(tcp) = &retina_core::protocols::stream::ConnData::parse_to::<
+            retina_core::protocols::stream::conn::TcpCData,
+            >(conn) {
+                npkts_cb_tcp(tracked, tracked.core_id());
             }
         }
-        for i in remove {
-            stream_cbs.swap_remove(i);
+        if npkts % 10 == 0 {
+            if let Ok(udp) = &retina_core::protocols::stream::ConnData::parse_to::<
+            retina_core::protocols::stream::conn::UdpCData,
+            >(conn) {
+                npkts_cb_udp(tracked, tracked.core_id());
+            }
+        }
+        if npkts % 50 == 0 {
+            if match conn.service() {
+                retina_core::protocols::stream::ConnParser::Dns { .. } => true,
+                _ => false,
+            } {
+                npkts_cb_dns(tracked, tracked.core_id());
+            }
+            if match conn.service() {
+                retina_core::protocols::stream::ConnParser::Tls { .. } => true,
+                _ => false,
+            } {
+                npkts_cb_tls(tracked, tracked.core_id());
+            }
         }
     }
 
