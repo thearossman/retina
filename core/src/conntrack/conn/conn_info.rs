@@ -77,7 +77,7 @@ where
         }
         if self.actions.buffer_frame() {
             // Track frame for (potential) future delivery
-            self.sdata.track_packet(pdu.mbuf_own());
+            self.sdata.track_packet(pdu);
         }
     }
 

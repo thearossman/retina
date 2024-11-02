@@ -109,9 +109,6 @@ lazy_static! {
     pub static ref FILTER_STR: &'static str = "FilterStr";
 }
 
-/// A list of all packets (zero-copy) seen in the connection.
-/// For TCP connections, these packets will be in post-reassembly order.
-pub type PacketList = Vec<Mbuf>;
 /// A list of all sessions (zero-copy) parsed in the connection.
 pub type SessionList = Vec<Session>;
 
@@ -122,5 +119,21 @@ impl<'a> FromSubscription for FilterStr<'a> {
     fn from_subscription(spec: &SubscriptionSpec) -> proc_macro2::TokenStream {
         let str = syn::LitStr::new(&spec.filter, Span::call_site());
         quote! { &#str }
+    }
+}
+
+/// A list of all packets (zero-copy) seen in the connection.
+/// For TCP connections, these packets will be in post-reassembly order.
+/// For UDP connections `orig` is whichever direction was seen first.
+#[derive(Debug, Default)]
+pub struct PacketList {
+    pub orig: Vec<Mbuf>,
+    pub resp: Vec<Mbuf>,
+}
+
+impl PacketList {
+    pub fn clear(&mut self) {
+        self.orig = vec![];
+        self.resp = vec![];
     }
 }

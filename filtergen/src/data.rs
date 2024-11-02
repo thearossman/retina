@@ -103,7 +103,7 @@ impl TrackedDataBuilder {
         quote! {
             pub struct TrackedWrapper {
                 sessions: Vec<retina_core::protocols::Session>,
-                mbufs: Vec<retina_core::Mbuf>,
+                mbufs: retina_datatypes::PacketList,
                 core_id: retina_core::CoreId,
                 #( #def )*
             }
@@ -115,7 +115,7 @@ impl TrackedDataBuilder {
                        core_id: retina_core::CoreId) -> Self {
                     Self {
                         sessions: vec![],
-                        mbufs: vec![],
+                        mbufs: retina_datatypes::PacketList::default(),
                         core_id,
                         #( #new )*
                     }
@@ -132,16 +132,22 @@ impl TrackedDataBuilder {
                     &self.core_id
                 }
 
-                fn track_packet(&mut self, mbuf: retina_core::Mbuf) {
-                    self.mbufs.push(mbuf);
+                fn track_packet(&mut self, pdu: retina_core::L4Pdu) {
+                    match pdu.dir {
+                        true => self.mbufs.orig.push(pdu.mbuf_own()),
+                        false => self.mbufs.resp.push(pdu.mbuf_own()),
+                    }
                 }
 
-                fn packets(&self) -> &Vec<retina_core::Mbuf> {
-                    &self.mbufs
+                fn packets(&self, dir: bool) -> &Vec<retina_core::Mbuf> {
+                    match dir {
+                        true => &self.mbufs.orig,
+                        false => &self.mbufs.resp,
+                    }
                 }
 
                 fn drain_packets(&mut self) {
-                    self.mbufs = vec![];
+                    self.mbufs.clear();
                 }
 
                 fn clear(&mut self) {
@@ -230,7 +236,12 @@ pub(crate) fn build_packet_callback(
         _ => {
             // Drain existing tracked packets
             quote! {
-                for mbuf in tracked.packets() {
+                for mbuf in tracked.packets(true) {
+                    if #condition {
+                        #callback(#( #params ),*);
+                    }
+                }
+                for mbuf in tracked.packets(false) {
                     if #condition {
                         #callback(#( #params ),*);
                     }
