@@ -57,11 +57,11 @@ where
         pdu: &L4Pdu,
         core_id: CoreId,
     ) -> Result<Self> {
-        let tcp_conn = if pdu.ctxt.flags & SYN != 0
-            && pdu.ctxt.flags & ACK == 0
-            && pdu.ctxt.flags & RST == 0
+        let tcp_conn = if pdu.flags() & SYN != 0
+            && pdu.flags() & ACK == 0
+            && pdu.flags() & RST == 0
         {
-            TcpConn::new_on_syn(pdu.ctxt, max_ooo)
+            TcpConn::new_on_syn(pdu.ctxt(), max_ooo)
         } else {
             bail!("Not SYN")
         };

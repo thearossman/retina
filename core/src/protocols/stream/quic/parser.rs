@@ -45,7 +45,7 @@ impl ConnParsable for QuicParser {
 
         if let Ok(data) = (pdu.mbuf_ref()).get_data_slice(offset, length) {
             if !self.sessions.is_empty() {
-                return self.sessions[0].parse_packet(data, pdu.dir);
+                return self.sessions[0].parse_packet(data, pdu.dir());
             }
             ParseResult::Skipped
         } else {
@@ -62,7 +62,7 @@ impl ConnParsable for QuicParser {
         let offset = pdu.offset();
         let length = pdu.length();
 
-        if let Ok(data) = (pdu.mbuf).get_data_slice(offset, length) {
+        if let Ok(data) = (pdu.mbuf_ref()).get_data_slice(offset, length) {
             // Check if Fixed Bit is set
             if (data[0] & 0x40) == 0 {
                 return ProbeResult::NotForUs;

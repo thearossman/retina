@@ -32,7 +32,7 @@ where
     T: Trackable,
 {
     pub(super) fn new(pdu: &L4Pdu, core_id: CoreId) -> Self {
-        let five_tuple = FiveTuple::from_ctxt(pdu.ctxt);
+        let five_tuple = FiveTuple::from_ctxt(pdu.ctxt());
         ConnInfo {
             actions: Actions::new(),
             cdata: ConnData::new(five_tuple),
@@ -66,7 +66,7 @@ where
         }
 
         // Post-reassembly `update`
-        if self.actions.update_pdu_reassembled() && pdu.ctxt.proto == TCP_PROTOCOL {
+        if self.actions.update_pdu_reassembled() && pdu.ctxt().proto == TCP_PROTOCOL {
             // Forward PDU to any subscriptions that require
             // tracking ongoing connection data post-reassembly
             self.sdata.update(&pdu, true);
@@ -75,9 +75,10 @@ where
             // Delivering all remaining packets in connection
             subscription.deliver_packet(pdu.mbuf_ref(), &self.cdata, &self.sdata);
         }
+
         if self.actions.buffer_frame() {
             // Track frame for (potential) future delivery
-            self.sdata.track_packet(pdu.mbuf_own());
+            self.sdata.track_packet(pdu);
         }
     }
 

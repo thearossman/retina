@@ -188,7 +188,7 @@ impl ConnRecord {
         }
         self.last_seen_ts = now;
 
-        if segment.dir {
+        if segment.dir() {
             update_history(&mut self.history, segment, 0x0);
             // TODO need a separate `update` for `update_owned`
             // Cloning segment is a non-starter.
@@ -206,7 +206,7 @@ impl ConnRecord {
 
 impl Tracked for ConnRecord {
     fn new(first_pkt: &L4Pdu) -> Self {
-        let five_tuple = FiveTuple::from_ctxt(first_pkt.ctxt);
+        let five_tuple = FiveTuple::from_ctxt(first_pkt.ctxt());
         let now = Instant::now();
         Self {
             five_tuple,
@@ -300,8 +300,8 @@ impl Flow {
     fn insert_segment(&mut self, segment: &L4Pdu) {
         self.nb_pkts += 1;
 
-        if segment.offset() > segment.mbuf.data_len()
-            || (segment.offset() + segment.length()) > segment.mbuf.data_len()
+        if segment.offset() > segment.mbuf_ref().data_len()
+            || (segment.offset() + segment.length()) > segment.mbuf_ref().data_len()
         {
             self.nb_malformed_pkts += 1;
             return;

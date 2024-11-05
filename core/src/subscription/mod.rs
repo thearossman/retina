@@ -29,10 +29,10 @@ pub trait Trackable {
     fn track_session(&mut self, session: Session);
 
     /// Store packets for (possible) future delivery
-    fn track_packet(&mut self, mbuf: Mbuf);
+    fn track_packet(&mut self, pdu: L4Pdu);
 
     /// Get reference to stored packets
-    fn packets(&self) -> &Vec<Mbuf>;
+    fn packets(&self) -> &Vec<L4Pdu>;
 
     /// Drain vector of mbufs
     fn drain_packets(&mut self);

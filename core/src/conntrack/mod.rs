@@ -106,7 +106,7 @@ where
                 if conn.info.actions.update_conn() {
                     conn.update(pdu, subscription, &self.registry);
                 } else {
-                    conn.update_tcp_flags(pdu.flags(), pdu.dir);
+                    conn.update_tcp_flags(pdu.flags(), pdu.dir());
                 }
 
                 // Delete stale data for connections no longer matching

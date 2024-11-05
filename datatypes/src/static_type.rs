@@ -10,7 +10,7 @@ use retina_core::conntrack::pdu::L4Pdu;
 /// Subscribable alias for [`retina_core::FiveTuple`]
 impl StaticData for FiveTuple {
     fn new(first_pkt: &L4Pdu) -> Self {
-        FiveTuple::from_ctxt(first_pkt.ctxt)
+        FiveTuple::from_ctxt(first_pkt.ctxt())
     }
 }
 

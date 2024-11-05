@@ -111,7 +111,7 @@ lazy_static! {
 
 /// A list of all packets (zero-copy) seen in the connection.
 /// For TCP connections, these packets will be in post-reassembly order.
-pub type PacketList = Vec<Mbuf>;
+pub type PacketList = Vec<L4Pdu>;
 /// A list of all sessions (zero-copy) parsed in the connection.
 pub type SessionList = Vec<Session>;
 

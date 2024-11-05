@@ -250,8 +250,8 @@ fn overlap(segment: &mut L4Pdu, expected_seq: u32) -> Option<u32> {
         let overlap_data_len = expected_seq.wrapping_sub(cur_seq);
 
         log::debug!("Overlap with new data size : {:#?}", new_data_len);
-        segment.ctxt.offset += overlap_data_len as usize;
-        segment.ctxt.length = new_data_len as usize;
+        segment.set_payload_offset(segment.ctxt().offset + overlap_data_len as usize);
+        segment.set_payload_len(new_data_len as usize);
         Some(end_seq)
     } else {
         None

@@ -13,7 +13,7 @@ pub(crate) struct TcpConn {
 }
 
 impl TcpConn {
-    pub(crate) fn new_on_syn(ctxt: L4Context, max_ooo: usize) -> Self {
+    pub(crate) fn new_on_syn(ctxt: &L4Context, max_ooo: usize) -> Self {
         let flags = ctxt.flags;
         let next_seq = ctxt.seq_no.wrapping_add(1 + ctxt.length as u32);
         TcpConn {
@@ -31,7 +31,7 @@ impl TcpConn {
         subscription: &Subscription<T::Subscribed>,
         registry: &ParserRegistry,
     ) {
-        if segment.dir {
+        if segment.dir() {
             self.ctos
                 .insert_segment::<T>(segment, info, subscription, registry);
         } else {

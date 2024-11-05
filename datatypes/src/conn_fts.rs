@@ -175,7 +175,7 @@ impl Tracked for InterArrivals {
     fn update(&mut self, pdu: &L4Pdu, reassembled: bool) {
         if !reassembled {
             let now = Instant::now();
-            if pdu.dir {
+            if pdu.dir() {
                 self.pkt_count_ctos += 1;
                 if self.pkt_count_ctos > 1 {
                     self.interarrivals_ctos.push(now - self.last_pkt_ctos);
@@ -260,7 +260,7 @@ impl Tracked for ConnHistory {
     #[inline]
     fn update(&mut self, pdu: &L4Pdu, reassembled: bool) {
         if !reassembled {
-            if pdu.dir {
+            if pdu.dir() {
                 update_history(&mut self.history, pdu, 0x0);
             } else {
                 update_history(&mut self.history, pdu, 0x20);

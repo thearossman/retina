@@ -42,8 +42,8 @@ impl ConnParsable for DnsParser {
     }
 
     fn probe(&self, pdu: &L4Pdu) -> ProbeResult {
-        let dst_port = pdu.ctxt.dst.port();
-        let src_port = pdu.ctxt.src.port();
+        let dst_port = pdu.ctxt().dst.port();
+        let src_port = pdu.ctxt().src.port();
         if src_port == 137 || dst_port == 137 {
             // NetBIOS NBSS looks like DNS, but parser will fail on labels
             return ProbeResult::NotForUs;
@@ -54,7 +54,7 @@ impl ConnParsable for DnsParser {
             return ProbeResult::Unsure;
         }
 
-        if let Ok(data) = (pdu.mbuf).get_data_slice(offset, length) {
+        if let Ok(data) = (pdu.mbuf_ref()).get_data_slice(offset, length) {
             match dns_parser::Packet::parse(data) {
                 Ok(packet) => {
                     if packet.header.query {

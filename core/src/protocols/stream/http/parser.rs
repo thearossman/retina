@@ -53,7 +53,7 @@ impl HttpParser {
                 // ParseResult::Done immediately on Response start-line
                 ParseResult::Done(self.current_trans)
             } else {
-                log::warn!("HTTP response without oustanding request: {:?}", pdu.ctxt);
+                log::warn!("HTTP response without oustanding request: {:?}", pdu.ctxt());
                 ParseResult::Skipped
             }
         } else {
@@ -73,7 +73,7 @@ impl ConnParsable for HttpParser {
         }
 
         if let Ok(data) = (pdu.mbuf_ref()).get_data_slice(offset, length) {
-            if pdu.dir {
+            if pdu.dir() {
                 self.process_ctos(data)
             } else {
                 self.process_stoc(data, pdu)

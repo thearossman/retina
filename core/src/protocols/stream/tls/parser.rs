@@ -47,7 +47,7 @@ impl ConnParsable for TlsParser {
         }
 
         if let Ok(data) = (pdu.mbuf_ref()).get_data_slice(offset, length) {
-            self.sessions[0].parse_tcp_level(data, pdu.dir)
+            self.sessions[0].parse_tcp_level(data, pdu.dir())
         } else {
             log::warn!("Malformed packet");
             ParseResult::Skipped

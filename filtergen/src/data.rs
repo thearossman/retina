@@ -103,7 +103,7 @@ impl TrackedDataBuilder {
         quote! {
             pub struct TrackedWrapper {
                 sessions: Vec<retina_core::protocols::Session>,
-                mbufs: Vec<retina_core::Mbuf>,
+                packets: Vec<retina_core::L4Pdu>,
                 core_id: retina_core::CoreId,
                 #( #def )*
             }
@@ -115,7 +115,7 @@ impl TrackedDataBuilder {
                        core_id: retina_core::CoreId) -> Self {
                     Self {
                         sessions: vec![],
-                        mbufs: vec![],
+                        packets: vec![],
                         core_id,
                         #( #new )*
                     }
@@ -132,16 +132,16 @@ impl TrackedDataBuilder {
                     &self.core_id
                 }
 
-                fn track_packet(&mut self, mbuf: retina_core::Mbuf) {
-                    self.mbufs.push(mbuf);
+                fn track_packet(&mut self, pdu: retina_core::L4Pdu) {
+                    self.packets.push(pdu);
                 }
 
-                fn packets(&self) -> &Vec<retina_core::Mbuf> {
-                    &self.mbufs
+                fn packets(&self) -> &Vec<retina_core::L4Pdu> {
+                    &self.packets
                 }
 
                 fn drain_packets(&mut self) {
-                    self.mbufs = vec![];
+                    self.packets = vec![];
                 }
 
                 fn clear(&mut self) {
@@ -230,7 +230,8 @@ pub(crate) fn build_packet_callback(
         _ => {
             // Drain existing tracked packets
             quote! {
-                for mbuf in tracked.packets() {
+                for pdu in tracked.packets() {
+                    let mbuf = pdu.mbuf_ref();
                     if #condition {
                         #callback(#( #params ),*);
                     }

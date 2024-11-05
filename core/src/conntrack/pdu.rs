@@ -10,51 +10,86 @@ use anyhow::{bail, Result};
 
 use std::net::{IpAddr, SocketAddr};
 
+use std::rc::Rc;
+
+pub struct L4Pdu {
+    data: Rc<L4PduData>,
+}
+
+impl L4Pdu {
+    pub(crate) fn new(mbuf: Mbuf, ctxt: L4Context, dir: bool) -> Self {
+        Self {
+            data: Rc::new(L4PduData { mbuf, ctxt, dir })
+        }
+    }
+
+    #[inline]
+    pub fn ctxt(&self) -> &L4Context {
+        &self.data.ctxt
+    }
+
+    #[inline]
+    pub fn dir(&self) -> bool {
+        self.data.dir
+    }
+
+    #[inline]
+    pub fn mbuf_ref(&self) -> &Mbuf {
+        &self.data.mbuf
+    }
+
+    #[inline]
+    pub fn offset(&self) -> usize {
+        self.data.ctxt.offset
+    }
+
+    #[inline]
+    pub fn length(&self) -> usize {
+        self.data.ctxt.length
+    }
+
+    #[inline]
+    pub fn seq_no(&self) -> u32 {
+        self.data.ctxt.seq_no
+    }
+
+    #[inline]
+    pub fn flags(&self) -> u8 {
+        self.data.ctxt.flags
+    }
+
+    #[inline]
+    pub fn set_payload_offset(&mut self, new_data_offset: usize) {
+        let ptr = Rc::as_ptr(&self.data) as *mut L4Context;
+        unsafe {
+            (*ptr).offset = new_data_offset;
+        };
+    }
+
+    #[inline]
+    pub fn set_payload_len(&mut self, new_data_len: usize) {
+        let ptr = Rc::as_ptr(&self.data) as *mut L4Context;
+        unsafe {
+            (*ptr).length = new_data_len;
+        };
+    }
+}
+
+impl std::fmt::Debug for L4Pdu {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "L4Pdu {{ {:?} }}", self.data)
+    }
+}
+
 /// Transport-layer protocol data unit for stream reassembly and application-layer protocol parsing.
 #[derive(Debug, Clone)]
-pub struct L4Pdu {
+struct L4PduData {
     /// Internal packet buffer containing frame data.
     pub mbuf: Mbuf,
     /// Transport layer context.
     pub ctxt: L4Context,
     /// `true` if segment is in the direction of orig -> resp.
     pub dir: bool,
-}
-
-impl L4Pdu {
-    pub(crate) fn new(mbuf: Mbuf, ctxt: L4Context, dir: bool) -> Self {
-        L4Pdu { mbuf, ctxt, dir }
-    }
-
-    #[inline]
-    pub fn mbuf_own(self) -> Mbuf {
-        self.mbuf
-    }
-
-    #[inline]
-    pub fn mbuf_ref(&self) -> &Mbuf {
-        &self.mbuf
-    }
-
-    #[inline]
-    pub fn offset(&self) -> usize {
-        self.ctxt.offset
-    }
-
-    #[inline]
-    pub fn length(&self) -> usize {
-        self.ctxt.length
-    }
-
-    #[inline]
-    pub fn seq_no(&self) -> u32 {
-        self.ctxt.seq_no
-    }
-
-    #[inline]
-    pub fn flags(&self) -> u8 {
-        self.ctxt.flags
-    }
 }
 
 /// Parsed transport-layer context from the packet used for connection tracking.
