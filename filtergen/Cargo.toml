@@ -17,6 +17,6 @@ syn = { version = "2.0.15", features = ["full", "extra-traits"] }
 serde_yaml = "0.9.3"
 serde_with = "1.6.1"
 serde = { version = "1.0", features = ["derive"] }
+serde_json = "1.0"
 toml = "0.5.11"
-retina-datatypes = { path = "../datatypes" }
 lazy_static = "1.4.0"

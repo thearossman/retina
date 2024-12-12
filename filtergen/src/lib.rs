@@ -182,12 +182,14 @@
 //! approximated using the `!=` binary comparison operator, taking the above mentioned pitfall into
 //! consideration.
 
+use datatypes::add_properties;
 use proc_macro::TokenStream;
 use quote::quote;
 use retina_core::filter::ptree::*;
 use retina_core::filter::*;
 use std::str::FromStr;
 use syn::parse_macro_input;
+use syn::Item;
 use utils::DELIVER;
 
 #[macro_use]
@@ -195,6 +197,7 @@ extern crate lazy_static;
 
 mod cache;
 mod data;
+mod datatypes; // TODO COMBINE THESE
 mod deliver_filter;
 mod packet_filter;
 mod parse;
@@ -416,4 +419,19 @@ pub fn retina_main(args: TokenStream, input: TokenStream) -> TokenStream {
     let config = SubscriptionConfig::from_raw(&CACHED_SUBSCRIPTIONS.lock().unwrap());
 
     generate(input, config)
+}
+
+#[proc_macro_attribute]
+pub fn properties(args: TokenStream, input: TokenStream) -> TokenStream {
+    let args = parse_macro_input!(args as syn::LitStr).value();
+    let inp = input.clone(); // can't call clone in parse_macro_input
+    let datatype = match parse_macro_input!(inp as syn::Item) {
+        Item::Struct(as_struct) => as_struct.ident.to_string(),
+        Item::Type(as_type) => as_type.ident.to_string(),
+        Item::Enum(as_enum) => as_enum.ident.to_string(),
+        Item::Union(as_union) => as_union.ident.to_string(),
+        _ => panic!("Invalid datatype definition"),
+    };
+    add_properties(&datatype, &args);
+    input
 }

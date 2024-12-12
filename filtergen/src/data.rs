@@ -1,7 +1,7 @@
+use crate::parse::*;
 use proc_macro2::{Ident, Span};
 use retina_core::filter::{ptree::FilterLayer, Level, SubscriptionSpec};
 use retina_core::protocols::stream::ConnParser;
-use retina_datatypes::*;
 use std::collections::HashSet;
 
 use quote::quote;
@@ -15,8 +15,8 @@ pub(crate) struct TrackedDataBuilder {
     new: Vec<proc_macro2::TokenStream>,
     clear: Vec<proc_macro2::TokenStream>,
     pkts_clear: Vec<proc_macro2::TokenStream>,
-    stream_protocols: HashSet<&'static str>,
-    datatypes: HashSet<&'static str>,
+    stream_protocols: HashSet<String>,
+    datatypes: HashSet<String>,
 }
 
 impl TrackedDataBuilder {
@@ -37,23 +37,26 @@ impl TrackedDataBuilder {
 
     pub(crate) fn build(&mut self, subscribed_data: &SubscriptionConfig) {
         for spec in &subscribed_data.subscriptions {
-            self.stream_protocols
-                .extend(ConnParser::requires_parsing(&spec.filter));
+            self.stream_protocols.extend(
+                ConnParser::requires_parsing(&spec.filter)
+                    .iter()
+                    .map(|s| s.to_string()),
+            );
             for datatype in &spec.datatypes {
-                let name = datatype.as_str;
-                if self.datatypes.contains(name) || name == *FILTER_STR {
+                let name = &datatype.as_str;
+                if self.datatypes.contains(name.as_str()) || name == "FilterStr" {
                     continue;
                 }
-                self.datatypes.insert(name);
-                self.stream_protocols.extend(&datatype.stream_protos);
+                self.datatypes.insert(name.clone());
+                self.stream_protocols.extend(datatype.stream_protos.clone());
                 if matches!(datatype.level, Level::Session)
                     || matches!(datatype.level, Level::Packet)
-                    || DIRECTLY_TRACKED.contains_key(name)
+                    || DIRECTLY_TRACKED.contains_key(name.as_str())
                 {
                     // Data built directly from packet or session isn't tracked
                     continue;
                 }
-                let type_name = Ident::new(name, Span::call_site());
+                let type_name = Ident::new(name.as_str(), Span::call_site());
                 let field_name = Ident::new(&name.to_lowercase(), Span::call_site());
 
                 self.struct_def.push(quote! {
@@ -201,14 +204,14 @@ pub(crate) fn build_packet_params(
     for datatype in &spec.datatypes {
         if matches!(datatype.level, Level::Packet) {
             params.push(quote! { p });
-            type_ident = Some(Ident::new(datatype.as_str, Span::call_site()));
+            type_ident = Some(Ident::new(&datatype.as_str, Span::call_site()));
         }
         // Spacial cases - can't be extracted from the packet data, so are
         // permitted in packet-layer callbacks
 
         // Literal string in code
         else if datatype.as_str == *FILTER_STR {
-            params.push(retina_datatypes::FilterStr::from_subscription(spec));
+            params.push(quote! {&"raw_string"}); // TMP THIS SHOULD BE THE RAW STRING
         }
         // passed as a parameter to the packet filter, accessed directly
         // or pulled from directly tracked data
@@ -274,21 +277,21 @@ pub(crate) fn build_callback(
     let mut condition = quote! {};
 
     for datatype in &spec.datatypes {
-        if DIRECTLY_TRACKED.contains_key(datatype.as_str) {
+        if DIRECTLY_TRACKED.contains_key(datatype.as_str.as_str()) {
             let accessor = Ident::new(
-                DIRECTLY_TRACKED.get(&datatype.as_str).unwrap(),
+                DIRECTLY_TRACKED.get(datatype.as_str.as_str()).unwrap(),
                 Span::call_site(),
             );
             params.push(quote! { tracked.#accessor() });
             continue;
         }
         if datatype.as_str == *FILTER_STR {
-            params.push(retina_datatypes::FilterStr::from_subscription(spec));
+            params.push(quote! {&"raw string"}); // TMP THIS SHOULD BE RAW FILTERSTR
             continue;
         }
         if matches!(datatype.level, Level::Session) && matches!(filter_layer, FilterLayer::Session)
         {
-            let type_ident = Ident::new(datatype.as_str, Span::call_site());
+            let type_ident = Ident::new(&datatype.as_str, Span::call_site());
             condition = quote! { if let Some(s) = #type_ident::from_session(session) };
             params.push(quote! { s });
         } else if matches!(datatype.level, Level::Static | Level::Connection) {
@@ -298,7 +301,7 @@ pub(crate) fn build_callback(
         } else if matches!(datatype.level, Level::Session)
             && matches!(filter_layer, FilterLayer::ConnectionDeliver)
         {
-            let type_ident = Ident::new(datatype.as_str, Span::call_site());
+            let type_ident = Ident::new(&datatype.as_str, Span::call_site());
             condition =
                 quote! { if let Some(s) = #type_ident::from_sessionlist(tracked.sessions()) };
             params.push(quote! { s });

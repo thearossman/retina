@@ -6,6 +6,9 @@ use retina_core::protocols::stream::{Session, SessionData};
 
 use super::{FromSession, SessionList};
 
+use retina_filtergen::properties;
+
+#[properties("Level=Session;Parsers=tls;Properties=needs_parse")]
 pub type TlsHandshake = Box<Tls>;
 
 impl FromSession for TlsHandshake {

@@ -2,11 +2,12 @@
 
 use super::ast::Predicate;
 use super::ptree::FilterLayer;
-use super::{ActionData, Actions};
+use super::{parser, ActionData, Actions};
+use serde::{Deserialize, Serialize};
 
 /// The abstraction levels for subscribable datatypes
 /// These essentially dictate at what point a datatype can/should be delivered
-#[derive(Clone, Debug, Copy)]
+#[derive(Clone, Debug, Copy, Serialize, Deserialize, PartialEq, Eq)]
 pub enum Level {
     /// Deliver per-packet
     /// If needed, packets will be cached by the framework until filter match
@@ -44,7 +45,7 @@ pub struct SubscriptionSpec {
 }
 
 /// Describes a single subscribable datatype and the operations it requires
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
 pub struct DataType {
     /// The Level of this DataType
     pub level: Level,
@@ -55,17 +56,64 @@ pub struct DataType {
     /// True if the datatype requires invoking `update` method before reassembly
     pub needs_update: bool,
     /// True if the datatype requires reassembly (for `track_packets` or `update`)
+    /// Note parsed datatypes will require reassembly regardless of this flag
     pub needs_reassembly: bool,
     /// True if the datatype requires tracking packets
     pub needs_packet_track: bool,
     /// A vector of the application-layer parsers required by this datatype
     /// Retina loads the union of parsers required by all datatypes and filters
-    pub stream_protos: Vec<&'static str>,
+    pub stream_protos: Vec<String>,
     /// The name of the datatype as a string, used in code generation and Display.
-    pub as_str: &'static str,
+    pub as_str: String,
 }
 
 impl DataType {
+
+    /// Creates a datatype from a strings representing the Level,
+    /// properties, and parsers (optional)
+    pub fn from_strings(level: String, ops: Vec<String>,
+                        parsers: Option<Vec<String>>, name: &str) -> Self {
+        let level = match level.to_lowercase().as_str() {
+            "packet" => Level::Packet,
+            "connection" => Level::Connection,
+            "session" => Level::Session,
+            "static" => Level::Static,
+            _ => panic!("Invalid level: {}", level),
+        };
+        let mut needs_parse = false;
+        let mut track_sessions = false;
+        let mut needs_update = false;
+        let mut needs_reassembly = false;
+        let mut needs_packet_track = false;
+        for op in ops {
+            // TODO specify format for operations
+            // TODO allow things like default_XX
+            match op.to_lowercase().as_str() {
+                "needs_parse" => needs_parse = true,
+                "track_sessions" => track_sessions = true,
+                "needs_update" => needs_update = true,
+                "needs_reassembly" => needs_reassembly = true,
+                "needs_packet_track" => needs_packet_track = true,
+                _ => panic!("Invalid op: {}", op),
+            }
+        }
+        let stream_protos = match parsers {
+            Some(p) => p,
+            None => vec![],
+        };
+        Self {
+            level,
+            needs_parse,
+            track_sessions,
+            needs_update,
+            needs_reassembly,
+            needs_packet_track,
+            stream_protos,
+            as_str: name.to_string()
+        }
+    }
+
+
     /// Creates a typical datatype for tracking per-connection statistics.
     /// (Connection-level, no parsing, pre-reassembly updates required)
     pub fn new_default_connection(as_str: &'static str) -> Self {
@@ -77,7 +125,7 @@ impl DataType {
             needs_reassembly: false,
             needs_packet_track: false,
             stream_protos: vec![],
-            as_str,
+            as_str: as_str.to_string(),
         }
     }
 
@@ -91,8 +139,8 @@ impl DataType {
             needs_update: false,
             needs_reassembly: false,
             needs_packet_track: false,
-            stream_protos,
-            as_str,
+            stream_protos: stream_protos.iter().map(|&s| s.to_string()).collect(),
+            as_str: String::from(as_str),
         }
     }
 
@@ -107,7 +155,7 @@ impl DataType {
             needs_reassembly: false,
             needs_packet_track: false,
             stream_protos: vec![],
-            as_str,
+            as_str: as_str.to_string(),
         }
     }
 
@@ -122,7 +170,7 @@ impl DataType {
             needs_reassembly: false,
             needs_packet_track: false,
             stream_protos: vec![],
-            as_str,
+            as_str: as_str.to_string(),
         }
     }
 
@@ -137,7 +185,7 @@ impl DataType {
             needs_reassembly,
             needs_packet_track: true,
             stream_protos: vec![],
-            as_str,
+            as_str: as_str.to_string(),
         }
     }
 
@@ -468,7 +516,7 @@ impl SubscriptionSpec {
 
     // Format subscription as "callback(datatypes)"
     pub fn as_str(&self) -> String {
-        let datatype_str: Vec<&'static str> = self.datatypes.iter().map(|d| d.as_str).collect();
+        let datatype_str: Vec<String> = self.datatypes.iter().map(|d| d.as_str.clone()).collect();
         format!("{}({})", self.callback, datatype_str.join(", ")).to_string()
     }
 
