@@ -18,7 +18,7 @@ impl TcpConn {
         let next_seq = ctxt.seq_no.wrapping_add(1 + ctxt.length as u32);
         let ack = ctxt.ack_no;
         TcpConn {
-            ctos: TcpFlow::new(max_ooo, next_seq, flags, ack),
+            ctos: TcpFlow::new(max_ooo, next_seq, flags, ack, true),
             stoc: TcpFlow::default(max_ooo),
         }
     }

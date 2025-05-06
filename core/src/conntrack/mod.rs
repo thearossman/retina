@@ -9,6 +9,8 @@ pub mod conn_id;
 pub mod pdu;
 mod timerwheel;
 
+pub use conn::ConnInfo;
+
 use self::conn::{Conn, L4Conn};
 use self::conn_id::ConnId;
 use self::pdu::{L4Context, L4Pdu};
@@ -101,9 +103,9 @@ where
                     return;
                 }
                 let pdu = L4Pdu::new(mbuf, ctxt, dir);
-                conn.info.update_sdata(&pdu, subscription, false);
+                conn.info.new_packet(&pdu, subscription);
                 // Consume PDU for reassembly or parsing
-                if conn.info.actions.reassemble() {
+                if conn.info.needs_parse() || conn.info.needs_reassembly() {
                     conn.update(pdu, subscription, &self.registry);
                 } else {
                     // Ensure FIN is handled, if appl.
@@ -139,9 +141,10 @@ where
                     };
                     if let Ok(mut conn) = conn {
                         conn.info.filter_first_packet(&pdu, subscription);
-                        conn.info.update_sdata(&pdu, subscription, false);
-                        if conn.info.actions.reassemble() {
-                            conn.info.consume_pdu(pdu, subscription, &self.registry);
+                        conn.info.new_packet(&pdu, subscription);
+                        if conn.info.needs_parse() {
+                            conn.info.consume_pdu(&pdu, subscription, &self.registry);
+                            drop(pdu);
                         }
                         if !conn.remove_from_table() {
                             self.timerwheel.insert(

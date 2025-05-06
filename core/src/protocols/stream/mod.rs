@@ -134,7 +134,7 @@ pub(crate) trait ConnParsable {
     fn session_parsed_state(&self) -> ParsingState;
 }
 
-/// Data required to filter on connections.
+/// Data required to filter on Five-Tuple fields after the first packet.
 ///
 /// ## Note
 /// This must have `pub` visibility because it needs to be accessible by the
@@ -146,10 +146,9 @@ pub(crate) trait ConnParsable {
 pub struct ConnData {
     /// The connection 5-tuple.
     pub five_tuple: FiveTuple,
-    /// The protocol parser associated with the connection.
-    pub conn_parser: ConnParser,
 }
 
+// TODO get rid of ConnData - likely no longer needed
 impl ConnData {
     pub(crate) fn supported_fields() -> Vec<&'static str> {
         let mut v: Vec<_> = TcpCData::supported_fields()
@@ -171,17 +170,7 @@ impl ConnData {
     pub(crate) fn new(five_tuple: FiveTuple) -> Self {
         ConnData {
             five_tuple,
-            conn_parser: ConnParser::Unknown,
         }
-    }
-
-    pub(crate) fn clear(&mut self) {
-        self.conn_parser = ConnParser::Unknown;
-    }
-
-    /// Returns the application-layer protocol parser associated with the connection.
-    pub fn service(&self) -> &ConnParser {
-        &self.conn_parser
     }
 
     /// Parses the `ConnData`'s FiveTuple into sub-protocol metadata

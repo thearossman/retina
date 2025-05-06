@@ -4,246 +4,220 @@
 // Terminate handler
 // Probe, parse, etc.
 
-use crate::conntrack::pdu::L4Pdu;
-use crate::filter::Actions;
+use crate::L4Pdu;
+use super::conn_actions::TrackedActions;
 use crate::lcore::CoreId;
-use crate::protocols::stream::{
-    ConnData, ParseResult, ParserRegistry, ParsingState, ProbeRegistryResult,
-};
+use crate::protocols::stream::{ConnData, ParserRegistry};
 use crate::subscription::{Subscription, Trackable};
 use crate::FiveTuple;
+use crate::protocols::packet::{tcp::TCP_PROTOCOL, udp::UDP_PROTOCOL};
 
+use super::{conn_state::*, conn_layers::*};
+
+/// Per-connection struct. Tracks all subscription-requested
+/// datatypes (`tracked` data). Maintains the State of the connection
+/// at each layer, including the `Actions` to execute when new
+/// packets are received.
 #[derive(Debug)]
-pub(crate) struct ConnInfo<T>
+pub struct ConnInfo<T>
 where
     T: Trackable,
 {
-    /// Actions to perform (connection state)
-    pub(crate) actions: Actions,
-    /// Connection data (for filtering)
+    /// Actions and state from the perspective of L4.
+    /// "Headers" refers to the TCP handshake.
+    pub(crate) linfo: LayerInfo,
+    /// Connection five-tuple for filtering and determining directionality
+    /// of future packets.
     pub(crate) cdata: ConnData,
+    /// Additional Layers that the L4 conn. should pass
+    /// data to.
+    pub(crate) layers: [Layer; NUM_LAYERS],
     /// Subscription data (for delivering)
-    pub(crate) sdata: T,
+    pub(crate) tracked: T,
 }
 
 impl<T> ConnInfo<T>
 where
     T: Trackable,
 {
+
     pub(super) fn new(pdu: &L4Pdu, core_id: CoreId) -> Self {
         let five_tuple = FiveTuple::from_ctxt(pdu.ctxt);
+        let l4_state = match pdu.ctxt.proto {
+            TCP_PROTOCOL => LayerState::Headers,
+            UDP_PROTOCOL => LayerState::Payload,
+            _ => panic!("Unsupported protocol"),
+        };
         ConnInfo {
-            actions: Actions::new(),
+            linfo: LayerInfo {
+                state: l4_state,
+                actions: TrackedActions::new(),
+            },
             cdata: ConnData::new(five_tuple),
-            sdata: T::new(pdu, core_id),
+            layers: [Layer::L7(L7Session::new())],
+            tracked: T::new(pdu, core_id),
         }
     }
 
+    /// Initializes actions at all layers when first packet
+    /// in L4 connection is observed.
     pub(crate) fn filter_first_packet(
         &mut self,
         pdu: &L4Pdu,
         subscription: &Subscription<T::Subscribed>,
     ) {
-        assert!(self.actions.drop());
-        let pkt_actions = subscription.filter_packet(pdu.mbuf_ref(), &mut self.sdata);
-        self.actions = pkt_actions;
+        subscription.filter_packet(self, pdu.mbuf_ref());
     }
 
-    // TODO move this to precompiled TrackedWrapper; only include actions
-    // that have a chance of being invoked
-    #[inline]
-    pub(crate) fn update_sdata(
-        &mut self,
-        pdu: &L4Pdu,
-        subscription: &Subscription<T::Subscribed>,
-        reassembled: bool,
-    ) {
-        // Typically use for calculating connection metrics
-        if self.actions.update_pdu() {
-            self.sdata.update(pdu, reassembled);
-        }
-        // Used for non-terminal matches on packet datatypes (`PacketCache` action,
-        // pre-reassembly only) and for datatypes that require tracking packets
-        // (`PacketTrack`, pre- and/or post-reassembly).
-        if self.actions.buffer_packet(reassembled) {
-            self.sdata.buffer_packet(pdu, &self.actions, reassembled);
-        }
-        // Packet-level subscriptions ready for delivery should be
-        // delivered 1x (before reassembly).
-        if !reassembled && self.actions.packet_deliver() {
-            // Delivering all remaining packets in connection
-            subscription.deliver_packet(pdu.mbuf_ref(), &self.cdata, &self.sdata);
-        }
-        // Streaming subscriptions
-        if self.actions.stream_deliver() {
-            // Pass actions to support "unsubscribing"
-            self.sdata.stream_deliver(&mut self.actions, pdu);
-        }
-    }
-
-    pub(crate) fn consume_pdu(
-        &mut self,
-        pdu: L4Pdu,
-        subscription: &Subscription<T::Subscribed>,
-        registry: &ParserRegistry,
-    ) {
-        if self.actions.drop() {
-            drop(pdu);
-            return;
-        }
-
-        if self.actions.parse_any() {
-            self.handle_parse(&pdu, subscription, registry);
-        }
-
-        self.update_sdata(&pdu, subscription, true);
-    }
-
-    fn handle_parse(
-        &mut self,
-        pdu: &L4Pdu,
-        subscription: &Subscription<T::Subscribed>,
-        registry: &ParserRegistry,
-    ) {
-        // In probing stage: application-layer protocol unknown
-        if self.actions.session_probe() {
-            self.on_probe(pdu, subscription, registry);
-        }
-
-        // Parsing ongoing: application-layer protocol known
-        if self.actions.session_parse() {
-            self.on_parse(pdu, subscription);
-        }
-    }
-
-    fn on_probe(
-        &mut self,
-        pdu: &L4Pdu,
-        subscription: &Subscription<T::Subscribed>,
-        registry: &ParserRegistry,
-    ) {
-        match registry.probe_all(pdu) {
-            ProbeRegistryResult::Some(conn_parser) => {
-                // Application-layer protocol known
-                self.cdata.conn_parser = conn_parser;
-                self.done_probe(subscription);
-            }
-            ProbeRegistryResult::None => {
-                // All relevant parsers have failed to match
-                // Handle connection state change
-                self.done_probe(subscription);
-            }
-            ProbeRegistryResult::Unsure => { /* Continue */ }
-        }
-    }
-
-    fn done_probe(&mut self, subscription: &Subscription<T::Subscribed>) {
-        #[cfg(debug_assertions)]
+    /// New packet associated with the connection observed.
+    /// Updates tracked data.
+    /// Note that InHandshake is processed post-reassembly.
+    pub(crate) fn new_packet(&mut self, pdu: &L4Pdu,
+                             subscription: &Subscription<T::Subscribed>) {
+        let frame_order = match pdu.ctxt.proto {
+            TCP_PROTOCOL => L4Order::Received,
+            _ => L4Order::None,
+        };
+        if self.linfo.state == LayerState::Payload &&
+           self.linfo.actions.update() &&
+           self.tracked.update_l4_payload(pdu, frame_order)
         {
-            if !self.actions.apply_proto_filter() {
-                assert!(self.actions.drop() || !self.actions.terminal_actions.is_none());
-            }
+            self.exec_state_tx(StateTransition::L4InPayload, subscription);
         }
-        if self.actions.apply_proto_filter() {
-            let actions = subscription.filter_protocol(&self.cdata, &mut self.sdata);
-            self.clear_stale_data(&actions);
-            self.actions.update(&actions);
-        }
-        self.actions.session_done_probe();
-    }
 
-    fn on_parse(&mut self, pdu: &L4Pdu, subscription: &Subscription<T::Subscribed>) {
-        match self.cdata.conn_parser.parse(pdu) {
-            ParseResult::Done(id) => self.handle_session(subscription, id),
-            ParseResult::None => self.session_done_parse(subscription),
-            _ => {} //
+        if pdu.ctxt.proto == TCP_PROTOCOL {
+            let tx_ = self.layers[0].new_packet(pdu, &mut self.tracked, registry);
+            for tx in tx_ {
+                self.exec_state_tx(tx, subscription);
+            }
         }
     }
 
-    fn handle_session(&mut self, subscription: &Subscription<T::Subscribed>, id: usize) {
-        if let Some(session) = self.cdata.conn_parser.remove_session(id) {
-            // Check if session was matched (to be tracked) at protocol level
-            // (e.g., "tls" filter), but ensure tracking only happens once
-            let session_track = self.actions.session_track();
-            if self.actions.apply_session_filter() {
-                let actions = subscription.filter_session(&session, &self.cdata, &mut self.sdata);
-                self.clear_stale_data(&actions);
-                self.actions.update(&actions);
-            }
-            if session_track || self.actions.session_track() {
-                self.sdata.track_session(session);
-            }
-        } else {
-            log::error!("Done parsing but no session found");
-        }
-        self.session_done_parse(subscription);
-    }
-
-    fn session_done_parse(&mut self, subscription: &Subscription<T::Subscribed>) {
-        match self.cdata.conn_parser.session_parsed_state() {
-            ParsingState::Probing => {
-                // Re-apply the protocol filter to update actions
-                self.actions.session_set_probe();
-            }
-            ParsingState::Stop => {
-                // Done parsing: we expect no more sessions for this connection.
-                self.actions.session_clear_parse();
-                // If the only remaining thing to do is deliver the connection --
-                // i.e., no more `updates` are required -- then we can deliver now,
-                // as no more session parsing is expected.
-                if self.actions.conn_deliver_only() {
-                    self.handle_terminate(subscription);
-                    self.actions.clear();
+    /// Only invoked for TCP connections. Post-reassembly.
+    /// New transport-layer packet has been reassembled.
+    /// Updates tracked data.
+    pub(crate) fn new_reassembled_packet(&mut self, pdu: &L4Pdu,
+                                         subscription: &Subscription<T::Subscribed>) {
+        match self.linfo.state {
+            LayerState::Payload => {
+                if self.linfo.actions.update_reassembled() &&
+                   self.tracked.update_l4_reassembled(pdu) {
+                    self.exec_state_tx(StateTransition::L4InStream, subscription);
                 }
             }
-            ParsingState::Parsing => {
-                // SessionFilter, Track, and Delivery will be terminal actions if needed.
+            LayerState::Headers => {
+                if self.linfo.actions.update_any() &&
+                   self.tracked.update_in_handshake(pdu) {
+                    self.exec_state_tx(StateTransition::L4InTcpHshk, subscription);
+                }
+            },
+            LayerState::Discovery | LayerState::None => {},
+        }
+    }
+
+    /// Invoked by reassembly infrastructure when the TCP handshake is completed.
+    /// TODO INVOKE THIS
+    pub(super) fn handshake_done(&mut self, subscription: &Subscription<T::Subscribed>) {
+        self.linfo.state = LayerState::Payload;
+        self.exec_state_tx(StateTransition::L4EndHshk, subscription);
+    }
+
+    /// Invoked by transport layer to update data for encapsulated layers.
+    /// This is invoked in reassembled order for TCP and received order for UDP.
+    pub(crate) fn consume_stream(
+        &mut self,
+        pdu: &L4Pdu,
+        subscription: &Subscription<T::Subscribed>,
+        registry: &ParserRegistry)
+    {
+        if pdu.ctxt.proto == TCP_PROTOCOL {
+            self.new_reassembled_packet(pdu, subscription);
+        }
+
+        let tx_ = self.layers[0].process_stream(pdu, &mut self.tracked, registry);
+        for tx in tx_ {
+            self.exec_state_tx(tx, subscription);
+            if self.layers[0].needs_process(tx) {
+                self.layers[0].process_stream(pdu, &mut self.tracked, registry);
             }
         }
     }
 
+    /// Drop the connection, e.g. due to timeout
+    /// TODO make sure this is invoked if all actions are none after state tx
+    pub(crate) fn exec_drop(&mut self) {
+        self.linfo.state = LayerState::None
+    }
+
+    /// Returns true if the connection should be dropped
+    pub(crate) fn drop(&self) -> bool {
+        self.linfo.state == LayerState::None
+    }
+
+    /// Invoked when the connection has terminated (by timeout or TCP FIN/ACK sequence)
+    /// Delivers any "end of connection" data.
     pub(crate) fn handle_terminate(&mut self, subscription: &Subscription<T::Subscribed>) {
-        // Session parsing is ongoing: drain any remaining sessions
-        if self.actions.session_parse() {
-            for session in self.cdata.conn_parser.drain_sessions() {
-                let session_track = self.actions.session_track();
-                if self.actions.apply_session_filter() {
-                    let actions =
-                        subscription.filter_session(&session, &self.cdata, &mut self.sdata);
-                    self.actions.update(&actions);
-                }
-                if session_track || self.actions.session_track() {
-                    self.sdata.track_session(session);
-                }
-            }
-        }
-
-        if self.actions.connection_matched() {
-            subscription.deliver_conn(&self.cdata, &self.sdata)
-        }
-
-        self.actions.clear();
+        self.exec_state_tx(StateTransition::L4Terminated, subscription);
     }
 
-    // Helper to be used after applying protocol or session filter
-    pub(crate) fn clear_stale_data(&mut self, new_actions: &Actions) {
-        if !self.actions.drop() {
-            if self.actions.cache_packet() && !new_actions.cache_packet() {
-                self.sdata.drain_cached_packets();
-            }
-            if self.actions.buffer_packet(true) && !new_actions.buffer_packet(true) {
-                self.sdata.drain_tracked_packets();
-            }
+    /// Update subscription data and current state, including actions,
+    /// upon state transition.
+    fn exec_state_tx(&mut self, tx: StateTransition,
+                     subscription: &Subscription<T::Subscribed>) {
+        self.linfo.reset_actions(tx);
+        for layer in self.layers.iter_mut() {
+            layer.reset_actions(tx);
         }
-        // Don't clear sessions, as SessionTrack is never
-        // a terminal action at the protocol stage
-        // (should be re-calculated per session).
+        match tx {
+            StateTransition::L4InTcpHshk => {
+                subscription.in_handshake(self);
+            }
+            StateTransition::L4EndHshk => {
+                subscription.handshake_done(self);
+            }
+            StateTransition::L4InPayload => {
+                subscription.in_l4_payload(self);
+            }
+            StateTransition::L4InStream => {
+                subscription.in_tcp_stream(self);
+            }
+            StateTransition::L4Terminated => {
+                subscription.connection_terminated(self);
+            }
+            StateTransition::L7OnDisc => {
+                subscription.l7_identified(self);
+            }
+            StateTransition::L7InHdrs => {
+                subscription.in_l7_hdrs(self);
+            }
+            StateTransition::L7EndHdrs => {
+                subscription.l7_hdrs_parsed(self);
+            }
+            StateTransition::L7InPayload => {
+                subscription.l7_in_payload(self);
+            }
+            StateTransition::L7EndPayload => {
+                subscription.l7_payload_done(self);
+            }
+            _ => { }
+        }
+
+        if self.linfo.drop() &&
+           self.layers.iter().all(|l| l.drop()) {
+            self.exec_drop();
+        }
     }
 
-    // Helper to clear all data
-    // Used for keeping empty UDP connections in the table until they age out
     pub(crate) fn clear(&mut self) {
-        self.cdata.clear();
-        self.sdata.clear();
+        // TODO clear other layers?
+        self.tracked.clear();
+    }
+
+    pub(crate) fn needs_parse(&self) -> bool {
+        self.linfo.actions.parse()
+    }
+
+    pub(crate) fn needs_reassembly(&self) -> bool {
+        self.linfo.state == LayerState::Headers || self.linfo.actions.reassemble()
     }
 }

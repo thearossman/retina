@@ -6,11 +6,16 @@
 pub mod conn_info;
 pub mod tcp_conn;
 pub mod udp_conn;
+pub mod conn_state;
+pub mod conn_layers;
+pub mod conn_actions;
 
-use self::conn_info::ConnInfo;
+pub use conn_state::{StateTransition, LayerState};
+
+pub use conn_info::ConnInfo;
+
 use self::tcp_conn::TcpConn;
-use self::udp_conn::UdpConn;
-use crate::conntrack::conn_id::FiveTuple;
+use crate::conntrack::conn::udp_conn::UdpConn;
 use crate::conntrack::pdu::{L4Context, L4Pdu};
 use crate::lcore::CoreId;
 use crate::protocols::packet::tcp::{ACK, RST, SYN};
@@ -102,8 +107,9 @@ where
             L4Conn::Tcp(tcp_conn) => {
                 tcp_conn.reassemble(pdu, &mut self.info, subscription, registry);
                 // Check if, after actions update, the framework/subscriptions no longer require
-                // receiving reassembled traffic
-                if !self.info.actions.reassemble() {
+                // receiving reassembled traffic. Note that this is only invoked if the
+                // `reassemble` action is set.
+                if !self.info.needs_reassembly() {
                     // Safe to discard out-of-order buffers
                     if tcp_conn.ctos.ooo_buf.len() != 0 {
                         tcp_conn.ctos.ooo_buf.buf.clear();
@@ -113,7 +119,7 @@ where
                     }
                 }
             }
-            L4Conn::Udp(_udp_conn) => self.info.consume_pdu(pdu, subscription, registry),
+            L4Conn::Udp(_) => self.info.consume_pdu(&pdu, subscription, registry),
         }
     }
 
@@ -125,11 +131,6 @@ where
         }
     }
 
-    /// Returns the connection 5-tuple.
-    pub(super) fn five_tuple(&self) -> FiveTuple {
-        self.info.cdata.five_tuple
-    }
-
     /// Returns `true` if the connection should be removed from the conn. table.
     /// Note UDP connections are kept for a buffer period. UDP packets
     /// that pass the packet filter stage are assumed to represent an
@@ -139,13 +140,13 @@ where
     pub(super) fn remove_from_table(&self) -> bool {
         match &self.l4conn {
             L4Conn::Udp(_) => false,
-            _ => self.info.actions.drop(),
+            _ => self.info.drop()
         }
     }
 
     /// Returns `true` if PDUs for this connection should be dropped.
     pub(super) fn drop_pdu(&self) -> bool {
-        self.info.actions.drop()
+        self.info.drop()
     }
 
     /// Returns `true` if the connection has been naturally terminated.
@@ -159,7 +160,7 @@ where
     /// Returns the `true` if the packet represented by `ctxt` is in the direction of originator ->
     /// responder.
     pub(super) fn packet_dir(&self, ctxt: &L4Context) -> bool {
-        self.five_tuple().orig == ctxt.src
+        self.info.cdata.five_tuple.orig == ctxt.src
     }
 
     /// Invokes connection termination tasks that are triggered when any of the following conditions
