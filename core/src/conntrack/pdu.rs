@@ -6,6 +6,8 @@ use crate::protocols::packet::tcp::{Tcp, TCP_PROTOCOL};
 use crate::protocols::packet::udp::{Udp, UDP_PROTOCOL};
 use crate::protocols::packet::Packet;
 
+use std::time::Instant;
+
 use anyhow::{bail, Result};
 
 use std::net::{IpAddr, SocketAddr};
@@ -19,11 +21,21 @@ pub struct L4Pdu {
     pub ctxt: L4Context,
     /// `true` if segment is in the direction of orig -> resp.
     pub dir: bool,
+    /// Time observed from timerwheel.
+    pub ts: Instant,
+    /// Order received in unidirectional flow (i.e., packets in connection
+    /// with same `dir`). None for UDP.
+    pub flow_ord: Option<usize>,
+    /// Order received in connection (bidirectional).
+    /// None for UDP
+    pub conn_ord: Option<usize>,
 }
 
 impl L4Pdu {
-    pub(crate) fn new(mbuf: Mbuf, ctxt: L4Context, dir: bool) -> Self {
-        L4Pdu { mbuf, ctxt, dir }
+    pub(crate) fn new(mbuf: Mbuf, ctxt: L4Context, dir: bool,
+                      ts: Instant, flow_ord: Option<usize>,
+                      conn_ord: Option<usize>) -> Self {
+        L4Pdu { mbuf, ctxt, dir, ts, flow_ord, conn_ord }
     }
 
     #[inline]
@@ -39,6 +51,11 @@ impl L4Pdu {
     #[inline]
     pub fn offset(&self) -> usize {
         self.ctxt.offset
+    }
+
+    #[inline]
+    pub fn app_body_offset(&self) -> Option<usize> {
+        self.ctxt.app_offset
     }
 
     #[inline]
@@ -81,6 +98,10 @@ pub struct L4Context {
     pub ack_no: u32,
     /// TCP flags.
     pub flags: u8,
+    /// If segment contains application-layer body, its offset
+    /// into the payload (after `offset`, i.e. L4 headers).
+    /// None indicates no application-layer body.
+    pub app_offset: Option<usize>,
 }
 
 impl L4Context {
@@ -100,6 +121,7 @@ impl L4Context {
                             seq_no: tcp.seq_no(),
                             ack_no: tcp.ack_no(),
                             flags: tcp.flags(),
+                            app_offset: None,
                         })
                     } else {
                         bail!("Malformed Packet");
@@ -167,6 +189,12 @@ impl L4Context {
             }
         } else {
             bail!("Not Ethernet");
+        }
+    }
+
+    pub set_app_offset(&mut self, offset: usize) {
+        if self.app_offset.is_none() {
+            self.app_offset = Some(offset);
         }
     }
 }

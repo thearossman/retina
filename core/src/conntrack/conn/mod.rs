@@ -76,7 +76,7 @@ where
             bail!("Not SYN")
         };
         Ok(Conn {
-            last_seen_ts: Instant::now(),
+            last_seen_ts: pdu.ts.clone(),
             inactivity_window: initial_timeout,
             l4conn: L4Conn::Tcp(tcp_conn),
             info: ConnInfo::new(pdu, core_id),
@@ -89,11 +89,25 @@ where
     pub(super) fn new_udp(initial_timeout: usize, pdu: &L4Pdu, core_id: CoreId) -> Result<Self> {
         let udp_conn = UdpConn;
         Ok(Conn {
-            last_seen_ts: Instant::now(),
+            last_seen_ts: pdu.ts.clone(),
             inactivity_window: initial_timeout,
             l4conn: L4Conn::Udp(udp_conn),
             info: ConnInfo::new(pdu, core_id),
         })
+    }
+
+    pub(super) fn flow_len(&self, dir: bool) -> Option<usize> {
+        match &self.l4conn {
+            L4Conn::Tcp(tcp_conn) => tcp_conn.flow_len(dir),
+            L4Conn::Udp(_) => None,
+        }
+    }
+
+    pub(super) fn total_len(&self) -> Option<usize> {
+        match &self.l4conn {
+            L4Conn::Tcp(tcp_conn) => tcp_conn.total_len(),
+            L4Conn::Udp(_) => None,
+        }
     }
 
     /// Updates a connection on the arrival of a new packet.

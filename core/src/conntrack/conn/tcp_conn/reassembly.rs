@@ -21,6 +21,8 @@ pub(crate) struct TcpFlow {
     pub(crate) ooo_buf: OutOfOrderBuffer,
     /// Is this the flow originator ("client")
     pub(crate) orig: bool,
+    /// Number observed (not necessarily reassembled) packets
+    pub(crate) observed: usize,
 }
 
 impl TcpFlow {
@@ -33,6 +35,7 @@ impl TcpFlow {
             consumed_flags: 0,
             ooo_buf: OutOfOrderBuffer::new(capacity),
             orig: false,
+            observed: 0,
         }
     }
 
@@ -47,6 +50,7 @@ impl TcpFlow {
             consumed_flags: flags,
             ooo_buf: OutOfOrderBuffer::new(capacity),
             orig,
+            observed: 1,
         }
     }
 
@@ -63,6 +67,7 @@ impl TcpFlow {
     ) {
         let length = segment.length() as u32;
         let cur_seq = segment.seq_no();
+        self.observed += 1;
 
         if let Some(next_seq) = self.next_seq {
             if next_seq == cur_seq {

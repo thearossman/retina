@@ -7,10 +7,8 @@ use super::conn_state::{StateTransition, NUM_STATE_TRANSITIONS};
 pub enum Actions {
     /// Invoke "Update" API
     Update,
-    /// For L4 (TCP): since there are only two Tracked APIs
-    /// tracked by Actions, we include here whether they should
-    /// be invoked post-reassembly (default above is pre-reassembly)
-    ReassUpdate,
+    /// Invoke TCP reassembly module
+    Reassemble,
     /// For L6/L7: probe for protocol or parse session
     Parse,
 }
@@ -52,7 +50,7 @@ impl TrackedActions {
     }
 
     pub fn reassemble(&self) -> bool {
-        self.active.intersects(Actions::ReassUpdate | Actions::Parse)
+        self.active.intersects(Actions::Reassemble | Actions::Parse)
     }
 
     pub fn parse(&self) -> bool {
@@ -61,14 +59,6 @@ impl TrackedActions {
 
     pub fn update(&self) -> bool {
         self.active.contains(Actions::Update)
-    }
-
-    pub fn update_reassembled(&self) -> bool {
-        self.active.contains(Actions::ReassUpdate)
-    }
-
-    pub fn update_any(&self) -> bool {
-        self.active.intersects(Actions::ReassUpdate | Actions::Update)
     }
 
 }

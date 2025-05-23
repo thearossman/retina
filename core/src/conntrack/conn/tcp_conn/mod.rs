@@ -41,6 +41,20 @@ impl TcpConn {
         }
     }
 
+    #[inline]
+    pub(crate) fn flow_len(&self, dir: bool) -> usize {
+        if dir {
+            self.ctos.observed
+        } else {
+            self.stoc.observed
+        }
+    }
+
+    #[inline]
+    pub(crate) fn total_len(&self) -> usize {
+        self.ctos.observed + self.stoc.observed
+    }
+
     /// Returns `true` if the connection should be terminated
     #[inline]
     pub(crate) fn is_terminated(&self) -> bool {

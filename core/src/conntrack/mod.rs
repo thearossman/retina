@@ -102,7 +102,8 @@ where
                     drop(mbuf);
                     return;
                 }
-                let pdu = L4Pdu::new(mbuf, ctxt, dir);
+                let pdu = L4Pdu::new(mbuf, ctxt, dir, conn.last_seen_ts.clone(),
+                                     conn.flow_len(dir), conn.total_len());
                 conn.info.new_packet(&pdu, subscription);
                 // Consume PDU for reassembly or parsing
                 if conn.info.needs_parse() || conn.info.needs_reassembly() {
@@ -124,7 +125,8 @@ where
             }
             RawEntryMut::Vacant(_) => {
                 if self.size() < self.config.max_connections {
-                    let pdu = L4Pdu::new(mbuf, ctxt, true);
+                    let pdu = L4Pdu::new(mbuf, ctxt, dir, Instant::now(),
+                                         0, 0);
                     let conn = match ctxt.proto {
                         TCP_PROTOCOL => Conn::<T>::new_tcp(
                             self.config.tcp_establish_timeout,
@@ -132,11 +134,15 @@ where
                             &pdu,
                             self.core_id,
                         ),
-                        UDP_PROTOCOL => Conn::<T>::new_udp(
-                            self.config.udp_inactivity_timeout,
-                            &pdu,
-                            self.core_id,
-                        ),
+                        UDP_PROTOCOL => {
+                            pdu.flow_ord = None;
+                            pdu.conn_ord = None;
+                            Conn::<T>::new_udp(
+                                self.config.udp_inactivity_timeout,
+                                &pdu,
+                                self.core_id,
+                            ),
+                        }
                         _ => Err(anyhow!("Invalid L4 Protocol")),
                     };
                     if let Ok(mut conn) = conn {
