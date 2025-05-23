@@ -117,12 +117,24 @@ where
         subscription: &Subscription<T::Subscribed>,
         registry: &ParserRegistry,
     ) {
+        // Case 1: no need to pass through parsing/reassembly infrastructure,
+        // but still may need update and still need to track for termination.
+        if !conn.info.actions.needs_reassembly() &&
+           !conn.info.actions.needs_parse() {
+            // Update without reassembly
+            if conn.info.actions.needs_update() {
+                conn.info.new_packet(pdu, subscription);
+            }
+            conn.update_tcp_flags(pdu.flags(), pdu.dir);
+            return;
+        }
+
+        // Case 2: reassembly/parsing needed
         match &mut self.l4conn {
             L4Conn::Tcp(tcp_conn) => {
                 tcp_conn.reassemble(pdu, &mut self.info, subscription, registry);
                 // Check if, after actions update, the framework/subscriptions no longer require
-                // receiving reassembled traffic. Note that this is only invoked if the
-                // `reassemble` action is set.
+                // receiving reassembled traffic.
                 if !self.info.needs_reassembly() {
                     // Safe to discard out-of-order buffers
                     if tcp_conn.ctos.ooo_buf.len() != 0 {
@@ -159,6 +171,10 @@ where
     }
 
     /// Returns `true` if PDUs for this connection should be dropped.
+    /// This happens for UDP connections that no longer require tracking,
+    /// but we keep it around (with no assoc. data) to avoid re-insertion.
+    /// Note - consider in future ways to track removed UDP connections
+    /// in more efficient way.
     pub(super) fn drop_pdu(&self) -> bool {
         self.info.drop()
     }

@@ -26,7 +26,7 @@ pub(crate) trait TrackableLayer {
     /// on the Layer and current State.
     fn process_stream<T: Trackable>(
         &mut self,
-        pdu: &L4Pdu,
+        pdu: &mut L4Pdu,
         tracked: &mut T,
         registry: &ParserRegistry,
     ) -> [StateTransition; 2];
@@ -36,7 +36,7 @@ pub(crate) trait TrackableLayer {
     /// Note that this necessarily is called before state updates happen.
     fn new_packet(
         &mut self,
-        pdu: &L4Pdu,
+        pdu: &mut L4Pdu,
         tracked: &mut impl Trackable,
         registry: &ParserRegistry,
     ) -> StateTransition;
@@ -65,7 +65,7 @@ impl TrackableLayer for Layer {
 
     fn process_stream<T: Trackable>(
         &mut self,
-        pdu: &L4Pdu,
+        pdu: &mut L4Pdu,
         tracked: &mut T,
         registry: &ParserRegistry,
     ) -> [StateTransition; 2] {
@@ -76,7 +76,7 @@ impl TrackableLayer for Layer {
 
     fn new_packet(
         &mut self,
-        pdu: &L4Pdu,
+        pdu: &mut L4Pdu,
         tracked: &mut impl Trackable,
         registry: &ParserRegistry,
     ) -> StateTransition {
@@ -171,7 +171,7 @@ impl TrackableLayer for L7Session {
 
     fn process_state_tx(&mut self,
                         tx: StateTransition,
-                        pdu: &L4Pdu,
+                        pdu: &mut L4Pdu,
                         tracked: &mut T,
                         registry: &ParserRegistry) -> [StateTransition; 2] {
         let mut new_tx = [StateTransition::None; 2];
@@ -200,15 +200,11 @@ impl TrackableLayer for L7Session {
 
     fn process_stream<T: Trackable>(
         &mut self,
-        pdu: &L4Pdu,
+        pdu: &mut L4Pdu,
         tracked: &mut T,
         registry: &ParserRegistry,
     ) -> [StateTransition; 2] {
         let mut state_tx = [StateTransition::None; 2];
-        let frame_order = match pdu.ctxt.proto {
-            TCP_PROTOCOL => L4Order::Reassembled,
-            _ => L4Order::None,
-        };
         match self.linfo.state {
             LayerState::Discovery => {
                 match registry.probe_all(pdu) {
@@ -227,9 +223,6 @@ impl TrackableLayer for L7Session {
                 }
             }
             LayerState::Headers => {
-                if tracked.update_l7_headers(pdu, frame_order) {
-                    state_tx[0] = StateTransition::L7InHdrs;
-                }
                 match self.parser.parse(pdu) {
                     ParseResult::Done(_) => {
                         state_tx[1] = StateTransition::L7EndHdrs;
@@ -239,7 +232,14 @@ impl TrackableLayer for L7Session {
                         state_tx[1] = StateTransition::L7EndHdrs;
                         self.linfo.state = LayerState::None;
                     },
+                    ParseResult::Partial => {
+                        // One direction headers done
+                        pdu.set_app_offset(self.parser.last_offset());
+                    }
                     _ => { /* Continue */ }
+                }
+                if tracked.update_l7_headers(pdu) {
+                    state_tx[0] = StateTransition::L7InHdrs;
                 }
             }
             LayerState::Payload => {
@@ -269,7 +269,7 @@ impl TrackableLayer for L7Session {
 
     fn new_packet(
         &mut self,
-        pdu: &L4Pdu,
+        pdu: &mut L4Pdu,
         tracked: &mut impl Trackable,
         registry: &ParserRegistry,
     ) -> StateTransition {

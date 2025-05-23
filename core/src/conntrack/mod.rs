@@ -90,28 +90,22 @@ where
             RawEntryMut::Occupied(mut occupied) => {
                 let conn = occupied.get_mut();
                 conn.last_seen_ts = Instant::now();
+                if conn.remove_from_table() {
+                    log::error!("Conn in Drop state when occupied in table");
+                    return;
+                }
+                if conn.drop_pdu() {
+                    return;
+                }
                 let dir = conn.packet_dir(&ctxt);
                 conn.inactivity_window = match &conn.l4conn {
                     L4Conn::Tcp(_) => self.config.tcp_inactivity_timeout,
                     L4Conn::Udp(_) => self.config.udp_inactivity_timeout,
                 };
-                if conn.remove_from_table() {
-                    log::error!("Conn in Drop state when occupied in table");
-                }
-                if conn.drop_pdu() {
-                    drop(mbuf);
-                    return;
-                }
                 let pdu = L4Pdu::new(mbuf, ctxt, dir, conn.last_seen_ts.clone(),
                                      conn.flow_len(dir), conn.total_len());
-                conn.info.new_packet(&pdu, subscription);
-                // Consume PDU for reassembly or parsing
-                if conn.info.needs_parse() || conn.info.needs_reassembly() {
-                    conn.update(pdu, subscription, &self.registry);
-                } else {
-                    // Ensure FIN is handled, if appl.
-                    conn.update_tcp_flags(pdu.flags(), pdu.dir);
-                }
+                // Consume PDU for update, reassembly, and/or parsing
+                conn.update(pdu, subscription, &self.registry);
 
                 // Delete stale data for connections no longer matching
                 if conn.remove_from_table() {
@@ -147,10 +141,10 @@ where
                     };
                     if let Ok(mut conn) = conn {
                         conn.info.filter_first_packet(&pdu, subscription);
-                        conn.info.new_packet(&pdu, subscription);
                         if conn.info.needs_parse() {
-                            conn.info.consume_pdu(&pdu, subscription, &self.registry);
-                            drop(pdu);
+                            conn.info.consume_stream(&pdu, subscription, &self.registry);
+                        } else {
+                            conn.info.new_packet(&pdu, subscription);
                         }
                         if !conn.remove_from_table() {
                             self.timerwheel.insert(
@@ -158,6 +152,7 @@ where
                                 conn.last_seen_ts,
                                 conn.inactivity_window,
                             );
+                            self.table.insert(conn_id, conn);
                             match ctxt.proto {
                                 TCP_PROTOCOL => {
                                     TCP_NEW_CONNECTIONS.inc();
@@ -167,7 +162,6 @@ where
                                 }
                                 _ => {}
                             }
-                            self.table.insert(conn_id, conn);
                         }
                     }
                 } else {

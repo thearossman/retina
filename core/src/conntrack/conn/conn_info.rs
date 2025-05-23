@@ -93,28 +93,6 @@ where
         }
     }
 
-    /// Only invoked for TCP connections. Post-reassembly.
-    /// New transport-layer packet has been reassembled.
-    /// Updates tracked data.
-    pub(crate) fn new_reassembled_packet(&mut self, pdu: &L4Pdu,
-                                         subscription: &Subscription<T::Subscribed>) {
-        match self.linfo.state {
-            LayerState::Payload => {
-                if self.linfo.actions.update_reassembled() &&
-                   self.tracked.update_l4_reassembled(pdu) {
-                    self.exec_state_tx(StateTransition::L4InStream, subscription);
-                }
-            }
-            LayerState::Headers => {
-                if self.linfo.actions.update_any() &&
-                   self.tracked.update_in_handshake(pdu) {
-                    self.exec_state_tx(StateTransition::L4InTcpHshk, subscription);
-                }
-            },
-            LayerState::Discovery | LayerState::None => {},
-        }
-    }
-
     /// Invoked by reassembly infrastructure when the TCP handshake is completed.
     /// TODO INVOKE THIS
     pub(super) fn handshake_done(&mut self, subscription: &Subscription<T::Subscribed>) {
@@ -126,14 +104,11 @@ where
     /// This is invoked in reassembled order for TCP and received order for UDP.
     pub(crate) fn consume_stream(
         &mut self,
-        pdu: &L4Pdu,
+        pdu: &mut L4Pdu,
         subscription: &Subscription<T::Subscribed>,
         registry: &ParserRegistry)
     {
-        if pdu.ctxt.proto == TCP_PROTOCOL {
-            self.new_reassembled_packet(pdu, subscription);
-        }
-
+        self.new_packet(pdu, subscription);
         let tx_ = self.layers[0].process_stream(pdu, &mut self.tracked, registry);
         for tx in tx_ {
             self.exec_state_tx(tx, subscription);

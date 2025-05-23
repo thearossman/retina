@@ -68,6 +68,7 @@ impl TcpFlow {
         let length = segment.length() as u32;
         let cur_seq = segment.seq_no();
         self.observed += 1;
+        segment.reassembled = true;
 
         if let Some(next_seq) = self.next_seq {
             if next_seq == cur_seq {
@@ -93,7 +94,6 @@ impl TcpFlow {
             } else if let Some(expected_seq) = overlap(&mut segment, next_seq) {
                 // Segment starts before the next expected segment but has new data
                 self.consumed_flags |= segment.flags();
-                // TODO no need for tmp variable if consume_pdu can take reference
                 info.consume_pdu(&segment, subscription, registry);
                 if Self::handshake_done(self.orig, &self.last_ack) {
                     info.handshake_done(subscription);
@@ -107,6 +107,8 @@ impl TcpFlow {
                     cur_seq,
                     next_seq
                 );
+                segment.offset = None;
+                info.new_packet(&mut segment, subscription);
                 drop(segment);
             }
         } else {
@@ -261,6 +263,8 @@ impl OutOfOrderBuffer {
                     index = 0;
                 } else {
                     log::debug!("Dropping old segment during flush.");
+                    segment.offset = None;
+                    info.new_packet(&mut segment, subscription);
                     drop(segment);
                     index += 1;
                 }
