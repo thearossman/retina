@@ -232,11 +232,10 @@ impl TrackableLayer for L7Session {
                         state_tx[1] = StateTransition::L7EndHdrs;
                         self.linfo.state = LayerState::None;
                     },
-                    ParseResult::Partial => {
-                        // One direction headers done
-                        pdu.set_app_offset(self.parser.last_offset());
-                    }
-                    _ => { /* Continue */ }
+                    _ => { /* continue */ }
+                }
+                if let Some(offset) = self.parser.body_offset() {
+                    pdu.set_app_offset(offset);
                 }
                 if tracked.update_l7_headers(pdu) {
                     state_tx[0] = StateTransition::L7InHdrs;

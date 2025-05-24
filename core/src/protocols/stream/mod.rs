@@ -34,7 +34,10 @@ pub(crate) const IMPLEMENTED_PROTOCOLS: [&str; 5] = ["tls", "dns", "http", "quic
 /// Represents the result of parsing one packet as a protocol message.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) enum ParseResult {
-    /// Session parsing done, check session filter. Returns the most-recently-updated session ID.
+    /// Session headers done, ready to be filtered on.
+    /// Returns the most-recently-updated session ID.
+    HeadersDone(usize),
+    /// Session parsing, including body, done. Returns the most-recently-updated session ID.
     Done(usize),
     /// Successfully extracted data, continue processing more packets. Returns most recently updated
     /// session ID.
@@ -132,6 +135,11 @@ pub(crate) trait ConnParsable {
 
     /// Indicates whether we expect to see >1 sessions per connection
     fn session_parsed_state(&self) -> ParsingState;
+
+    /// If applicable, returns the offset into the most recently processed payload
+    /// where application-layer body begins. Some and non-zero if a payload contains
+    /// both header and body data. Clears the offset after access.
+    fn body_offset(&mut self) -> Option<usize>;
 }
 
 /// Data required to filter on Five-Tuple fields after the first packet.
@@ -215,6 +223,10 @@ pub struct Session {
     pub data: SessionData,
     /// A unique identifier that represents the arrival order of the first packet of the session.
     pub id: usize,
+    /// A Session may be delivered twice for non-encrypted protocols: once after header fields,
+    /// and once after the body is parsed. This flag indicates that only session header fields
+    /// are valid.
+    pub headers_only: bool,
 }
 
 impl Default for Session {
@@ -222,6 +234,7 @@ impl Default for Session {
         Session {
             data: SessionData::Null,
             id: 0,
+            headers_only: true,
         }
     }
 }
