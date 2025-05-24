@@ -24,7 +24,7 @@ where
     T: Trackable,
 {
     /// Actions and state from the perspective of L4.
-    /// "Headers" refers to the TCP handshake.
+    /// Valid states are Payload or None.
     pub(crate) linfo: LayerInfo,
     /// Connection five-tuple for filtering and determining directionality
     /// of future packets.
@@ -43,14 +43,9 @@ where
 
     pub(super) fn new(pdu: &L4Pdu, core_id: CoreId) -> Self {
         let five_tuple = FiveTuple::from_ctxt(pdu.ctxt);
-        let l4_state = match pdu.ctxt.proto {
-            TCP_PROTOCOL => LayerState::Headers,
-            UDP_PROTOCOL => LayerState::Payload,
-            _ => panic!("Unsupported protocol"),
-        };
         ConnInfo {
             linfo: LayerInfo {
-                state: l4_state,
+                state: LayerState::Payload,
                 actions: TrackedActions::new(),
             },
             cdata: ConnData::new(five_tuple),
@@ -74,29 +69,15 @@ where
     /// Note that InHandshake is processed post-reassembly.
     pub(crate) fn new_packet(&mut self, pdu: &L4Pdu,
                              subscription: &Subscription<T::Subscribed>) {
-        let frame_order = match pdu.ctxt.proto {
-            TCP_PROTOCOL => L4Order::Received,
-            _ => L4Order::None,
-        };
-        if self.linfo.state == LayerState::Payload &&
-           self.linfo.actions.update() &&
-           self.tracked.update_l4_payload(pdu, frame_order)
-        {
-            self.exec_state_tx(StateTransition::L4InPayload, subscription);
-        }
-
-        if pdu.ctxt.proto == TCP_PROTOCOL {
-            let tx_ = self.layers[0].new_packet(pdu, &mut self.tracked, registry);
-            for tx in tx_ {
-                self.exec_state_tx(tx, subscription);
+        if self.actions.update() {
+            if self.tracked.update(pdu, DataLevel::L4InPayload) {
+                self.exec_state_tx(StateTransition::L4InPayload, subscription);
             }
         }
     }
 
     /// Invoked by reassembly infrastructure when the TCP handshake is completed.
-    /// TODO INVOKE THIS
     pub(super) fn handshake_done(&mut self, subscription: &Subscription<T::Subscribed>) {
-        self.linfo.state = LayerState::Payload;
         self.exec_state_tx(StateTransition::L4EndHshk, subscription);
     }
 
@@ -144,37 +125,15 @@ where
             layer.reset_actions(tx);
         }
         match tx {
-            StateTransition::L4InTcpHshk => {
-                subscription.in_handshake(self);
+            StateTransition::L7OnDisc => subscription.filter_protocol(self),
+            StateTransition::L7EndHdrs => subscription.filter_session(self, tx),
+            StateTransition::L4Terminated => subscription.connection_terminated(self),
+            StateTransition::L4EndHshk => subscription.handshake_done(self),
+            StateTransition::L4InPayload | StateTransition::L7InHdrs | StateTransition::L7InPayload => {
+                subscription.in_update(self, tx);
             }
-            StateTransition::L4EndHshk => {
-                subscription.handshake_done(self);
-            }
-            StateTransition::L4InPayload => {
-                subscription.in_l4_payload(self);
-            }
-            StateTransition::L4InStream => {
-                subscription.in_tcp_stream(self);
-            }
-            StateTransition::L4Terminated => {
-                subscription.connection_terminated(self);
-            }
-            StateTransition::L7OnDisc => {
-                subscription.l7_identified(self);
-            }
-            StateTransition::L7InHdrs => {
-                subscription.in_l7_hdrs(self);
-            }
-            StateTransition::L7EndHdrs => {
-                subscription.l7_hdrs_parsed(self);
-            }
-            StateTransition::L7InPayload => {
-                subscription.l7_in_payload(self);
-            }
-            StateTransition::L7EndPayload => {
-                subscription.l7_payload_done(self);
-            }
-            _ => { }
+            StateTransition::L7EndPayload => unimplemented!(),
+            StateTransition::L4FirstPacket | StateTransition::None => { }
         }
 
         if self.linfo.drop() &&

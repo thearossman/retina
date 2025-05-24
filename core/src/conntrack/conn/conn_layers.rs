@@ -31,25 +31,11 @@ pub(crate) trait TrackableLayer {
         registry: &ParserRegistry,
     ) -> [StateTransition; 2];
 
-    /// Called for each received packet in a TCP stream in the order received
-    /// (i.e., pre-reassembly).
-    /// Note that this necessarily is called before state updates happen.
-    fn new_packet(
-        &mut self,
-        pdu: &mut L4Pdu,
-        tracked: &mut impl Trackable,
-        registry: &ParserRegistry,
-    ) -> StateTransition;
-
     /// Should be checked directly after a state transition to see
     /// if process_stream needs to be called again.
     /// For example, the packet used to "discover" a protocol will
     /// also be part of its header.
     fn needs_process(&self, tx: StateTransition) -> bool;
-
-    /// Should be checked directly after a state transition to see
-    /// if new_packet should be called again.
-    fn needs_new_packet(&self, tx: StateTransition) -> bool;
 
     /// Called before applying a state transition on tracked data
     /// Will clear all active Actions that need to be "re-checked"
@@ -74,17 +60,6 @@ impl TrackableLayer for Layer {
         }
     }
 
-    fn new_packet(
-        &mut self,
-        pdu: &mut L4Pdu,
-        tracked: &mut impl Trackable,
-        registry: &ParserRegistry,
-    ) -> StateTransition {
-        match self {
-            Layer::L7(session) => session.new_packet(pdu, tracked, registry),
-        }
-    }
-
     fn reset_actions(&mut self, tx: StateTransition) {
         match self {
             Layer::L7(session) => session.reset_actions(tx),
@@ -94,12 +69,6 @@ impl TrackableLayer for Layer {
     fn needs_process(&self, tx: StateTransition) -> bool {
         match self {
             Layer::L7(session) => session.needs_process(tx),
-        }
-    }
-
-    fn needs_new_packet(&self, tx: StateTransition) -> bool {
-        match self {
-            Layer::L7(session) => session.needs_new_packet(tx),
         }
     }
 
@@ -169,25 +138,8 @@ impl L7Session {
 
 impl TrackableLayer for L7Session {
 
-    fn process_state_tx(&mut self,
-                        tx: StateTransition,
-                        pdu: &mut L4Pdu,
-                        tracked: &mut T,
-                        registry: &ParserRegistry) -> [StateTransition; 2] {
-        let mut new_tx = [StateTransition::None; 2];
-        match tx {
-            StateTransition::L7OnDisc => {
-                return self.process_packet(pdu, tracked, registry);
-            }
-            StateTransition::L7EndHdrs => {
-                if self.parser.offset() > 0 {
-                    self.process_packet(pdu, tracked, registry);
-                }
-                self.parser.pop_offset();
-            }
-            _ => { }
-        }
-        new_tx
+    fn needs_process(&self, tx: StateTransition) -> bool {
+        matches!(tx, StateTransition::L7OnDisc | StateTransition::L7EndHdrs)
     }
 
     fn reset_actions(&mut self, tx: StateTransition) {
@@ -219,73 +171,42 @@ impl TrackableLayer for L7Session {
                         state_tx[0] = StateTransition::L7OnDisc;
                         self.linfo.state = LayerState::None;
                     }
-                    ProbeRegistryResult::Unsure => { /* Continue */ }
+                    ProbeRegistryResult::Unsure => { /* skip */ }
                 }
             }
             LayerState::Headers => {
                 match self.parser.parse(pdu) {
+                    let mut new_state = self.linfo.state;
                     ParseResult::Done(_) => {
                         state_tx[1] = StateTransition::L7EndHdrs;
-                        self.linfo.state = LayerState::Payload;
+                        new_state = LayerState::Payload;
                     },
                     ParseResult::None => {
                         state_tx[1] = StateTransition::L7EndHdrs;
-                        self.linfo.state = LayerState::None;
+                        new_state = LayerState::None;
                     },
                     _ => { /* continue */ }
                 }
                 if let Some(offset) = self.parser.body_offset() {
                     pdu.set_app_offset(offset);
                 }
-                if tracked.update_l7_headers(pdu) {
+                if tracked.update(pdu, DataLevel::L7InHdrs) {
                     state_tx[0] = StateTransition::L7InHdrs;
                 }
+                self.linfo.state = new_state;
             }
             LayerState::Payload => {
                 // TODO if no payload in this PDU (first PDU) return immediately
-
-                if tracked.update_l7_payload(pdu, frame_order, self.parser.offset()) {
+                if tracked.update(pdu, DataLevel::L7InPayload) {
                     state_tx[0] = StateTransition::L7InPayload;
                 }
                 // TODO - add API for parser to consume payload
                 // if applicable and return when session is "done"
-
-                if state_tx[1] == StateTransition::L7EndPayload {
-                    // TODO come back to this with new distinction
-                    match self.parser.session_parsed_state() {
-                        ParsingState::Probing => self.linfo.state = LayerState::Discovery,
-                        ParsingState::Parsing => self.linfo.state = LayerState::Headers,
-                        ParsingState::Stop => self.linfo.state = LayerState::None,
-                    }
-                }
             }
             LayerState::None => {
                 // Do nothing
             }
         }
         state_tx
-    }
-
-    fn new_packet(
-        &mut self,
-        pdu: &mut L4Pdu,
-        tracked: &mut impl Trackable,
-        registry: &ParserRegistry,
-    ) -> StateTransition {
-        debug_assert!(pdu.ctxt.proto == TCP_PROTOCOL);
-        match self.linfo.state {
-            LayerState::Headers => {
-                if tracked.update_l7_headers(pdu, L4Order::Received) {
-                    return StateTransition::L7InHdrs;
-                }
-            }
-            LayerState::Payload => {
-                if tracked.update_l7_payload(pdu, L4Order::Received, self.parser.offset()) {
-                    return StateTransition::L7InPayload;
-                }
-            }
-            LayerState::Discovery | LayerState::None => { }
-        }
-        StateTransition::None
     }
 }

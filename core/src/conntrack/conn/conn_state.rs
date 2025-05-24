@@ -22,15 +22,13 @@ pub enum LayerState {
 pub enum DataLevel {
     /// On first packet in connection
     L4FirstPacket = 0,
-    /// Streaming in TCP handshake
-    L4InTcpHshk,
-    /// At TCP handshake end
+    /// Complete TCP handshake has been observed.
+    /// Note that this should not be used to indicate the beginning
+    /// of payload, as payload may overlap with the handshake.
     L4EndHshk,
-    /// Streaming in L4 Payload
-    /// After TCP handshake or anywhere in UDP conn.
+    /// Streaming anywhere in L4 connection, including TCP handshake.
+    /// Must specify in datatype whether the payload must be reassembled.
     L4InPayload,
-    /// Streaming in L4 reass. payload
-    L4InStream,
     /// L4 connection terminated by FIN/ACK sequence or timeout
     L4Terminated,
 
@@ -40,11 +38,12 @@ pub enum DataLevel {
     L7InHdrs,
     /// On L6/L7 headers parsed
     L7EndHdrs,
-    /// Streaming in L7 payload
+    /// Streaming in L7 payload (after headers)
     L7InPayload,
-    /// L7 payload (HTTP body, TLS ciphertext, etc) done
+    /// L7 payload end. NOT YET SUPPORTED by parsers.
     L7EndPayload,
-    /// This is used as a no-op state transition and to give the
+
+    /// `None` is used as a no-op state transition and to give the
     /// enum a defined length. It is not a valid Level for a datatype
     /// or filter. This must be last in the enum variant list.
     None,
