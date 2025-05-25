@@ -1,9 +1,10 @@
 // Additional traffic layers built on top of the L4 base transport layer.
 
 use super::conn_actions::TrackedActions;
-use super::{LayerState, StateTransition};
+use super::conn_state::{LayerState, StateTransition, DataLevel};
 use crate::subscription::Trackable;
-use crate::protocols::stream::{ParseResult, ProbeRegistryResult, ConnParser, ParserRegistry, ParsingState};
+use crate::protocols::stream::{ParseResult, ProbeRegistryResult,
+                               ConnParser, ParserRegistry, ParsingState};
 use crate::protocols::Session;
 use crate::L4Pdu;
 
@@ -175,8 +176,8 @@ impl TrackableLayer for L7Session {
                 }
             }
             LayerState::Headers => {
+                let mut new_state = self.linfo.state;
                 match self.parser.parse(pdu) {
-                    let mut new_state = self.linfo.state;
                     ParseResult::Done(_) => {
                         state_tx[1] = StateTransition::L7EndHdrs;
                         new_state = LayerState::Payload;
@@ -188,7 +189,7 @@ impl TrackableLayer for L7Session {
                     _ => { /* continue */ }
                 }
                 if let Some(offset) = self.parser.body_offset() {
-                    pdu.set_app_offset(offset);
+                    pdu.ctxt.app_offset = Some(offset);
                 }
                 if tracked.update(pdu, DataLevel::L7InHdrs) {
                     state_tx[0] = StateTransition::L7InHdrs;
@@ -196,7 +197,15 @@ impl TrackableLayer for L7Session {
                 self.linfo.state = new_state;
             }
             LayerState::Payload => {
-                // TODO if no payload in this PDU (first PDU) return immediately
+                match self.parser.session_parsed_state() {
+                    ParsingState::Probing => {
+                        // TODO unimplemented: nested sessions
+                     },
+                    ParsingState::Parsing => {
+                        // TODO unimplemented: pipelined sessions
+                    },
+                    _ => {}
+                }
                 if tracked.update(pdu, DataLevel::L7InPayload) {
                     state_tx[0] = StateTransition::L7InPayload;
                 }

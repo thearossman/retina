@@ -5,11 +5,11 @@ use super::conn_state::{StateTransition, NUM_STATE_TRANSITIONS};
 #[bitmask(u8)]
 #[bitmask_config(vec_debug)]
 pub enum Actions {
-    /// Invoke "Update" API
+    /// Invoke "Update" API at this Layer
     Update,
-    /// Invoke TCP reassembly module
+    /// Invoke TCP reassembly module; only for L4
     Reassemble,
-    /// For L6/L7: probe for protocol or parse session
+    /// Pass data to the next Layer(s) for additional parsing
     Parse,
 }
 
@@ -49,15 +49,15 @@ impl TrackedActions {
         self.active.is_none()
     }
 
-    pub fn reassemble(&self) -> bool {
+    pub fn needs_reassembly(&self) -> bool {
         self.active.intersects(Actions::Reassemble | Actions::Parse)
     }
 
-    pub fn parse(&self) -> bool {
+    pub fn needs_parse(&self) -> bool {
         self.active.contains(Actions::Parse)
     }
 
-    pub fn update(&self) -> bool {
+    pub fn needs_update(&self) -> bool {
         self.active.contains(Actions::Update)
     }
 

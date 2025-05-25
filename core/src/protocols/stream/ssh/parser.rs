@@ -15,14 +15,12 @@ use ssh_parser::*;
 #[derive(Debug)]
 pub struct SshParser {
     sessions: Vec<Ssh>,
-    last_body_offset: Option<usize>,
 }
 
 impl Default for SshParser {
     fn default() -> Self {
         SshParser {
             sessions: vec![Ssh::new()],
-            last_body_offset: None,
         }
     }
 }
@@ -89,7 +87,10 @@ impl ConnParsable for SshParser {
     }
 
     fn body_offset(&mut self) -> Option<usize> {
-        std::mem::take(&mut self.last_body_offset)
+        match self.sessions.last_mut() {
+            Some(session) => std::mem::take(&mut session.last_body_offset),
+            None => None,
+        }
     }
 }
 
@@ -104,6 +105,7 @@ impl Ssh {
             server_dh_key_exchange: None,
             client_new_keys: None,
             server_new_keys: None,
+            last_body_offset: None,
         }
     }
 

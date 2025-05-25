@@ -25,7 +25,7 @@ pub struct HttpRequest {
 }
 
 impl HttpRequest {
-    pub(crate) fn parse_from(data: &[u8]) -> Result<(Self, usize)> {
+    pub(crate) fn parse_from(data: &[u8]) -> Result<Self> {
         let mut request = HttpRequest::default();
 
         const NUM_OF_HEADERS: usize = 20;
@@ -84,7 +84,7 @@ impl HttpRequest {
                 _ => (),
             }
         }
-        Ok((request, status.unwrap()))
+        Ok(request)
     }
 }
 
@@ -103,7 +103,7 @@ pub struct HttpResponse {
 }
 
 impl HttpResponse {
-    pub(crate) fn parse_from(data: &[u8]) -> Result<Self> {
+    pub(crate) fn parse_from(data: &[u8]) -> Result<(Self, usize)> {
         let mut response = HttpResponse::default();
 
         const NUM_OF_HEADERS: usize = 20;
@@ -157,6 +157,10 @@ impl HttpResponse {
                 _ => (),
             }
         }
-        Ok(response)
+        let consumed = match status.unwrap() {
+            httparse::Status::Complete(nbytes) => nbytes,
+            httparse::Status::Partial => data.len(),
+        };
+        Ok((response, consumed))
     }
 }

@@ -26,11 +26,6 @@ use tls_parser::*;
 pub struct TlsParser {
     /// Handshakes seen. We expect there to only be one.
     sessions: Vec<Tls>,
-    /// Offset into the last TCP segment where we think the
-    /// TLS body starts. This will only be (possibly) relevant for
-    /// the last packet in the TLS handshake.
-    /// This can be inaccurate under 0-RTT est. or unsupported extensions.
-    last_body_offset: Option<usize>,
 }
 
 impl TlsParser {}
@@ -39,7 +34,6 @@ impl Default for TlsParser {
     fn default() -> Self {
         TlsParser {
             sessions: vec![Tls::new()],
-            last_body_offset: None,
         }
     }
 }
@@ -104,7 +98,10 @@ impl ConnParsable for TlsParser {
     }
 
     fn body_offset(&mut self) -> Option<usize> {
-        std::mem::take(&mut self.last_body_offset)
+        match self.sessions.last_mut() {
+            Some(tls) => std::mem::take(&mut tls.last_body_offset),
+            None => None,
+        }
     }
 }
 
@@ -123,6 +120,7 @@ impl Tls {
             state: TlsState::None,
             tcp_buffer: vec![],
             record_buffer: vec![],
+            last_body_offset: None,
         }
     }
 
@@ -470,9 +468,9 @@ impl Tls {
                     if status != ParseResult::Continue(0) {
                         // Handshake done, but data remaining
                         let remaining = rem.len();
-                        if status == ParseResult::HeadersDone(_) &&
+                        if matches!(status, ParseResult::HeadersDone(_)) &&
                            remaining > 0 && remaining < pdu_len {
-                            self.last_body_offset = pdu_len - remaining - 1;
+                            self.last_body_offset = Some(pdu_len - remaining - 1);
                         }
                         return status;
                     }

@@ -10,6 +10,7 @@ pub mod pdu;
 mod timerwheel;
 
 pub use conn::ConnInfo;
+pub use conn::conn_state::{LayerState, StateTransition, DataLevel};
 
 use self::conn::{Conn, L4Conn};
 use self::conn_id::ConnId;
@@ -97,11 +98,11 @@ where
                 if conn.drop_pdu() {
                     return;
                 }
-                let dir = conn.packet_dir(&ctxt);
                 conn.inactivity_window = match &conn.l4conn {
                     L4Conn::Tcp(_) => self.config.tcp_inactivity_timeout,
                     L4Conn::Udp(_) => self.config.udp_inactivity_timeout,
                 };
+                let dir = conn.packet_dir(&ctxt);
                 let pdu = L4Pdu::new(mbuf, ctxt, dir, conn.last_seen_ts.clone(),
                                      conn.flow_len(dir), conn.total_len());
                 // Consume PDU for update, reassembly, and/or parsing
@@ -119,8 +120,8 @@ where
             }
             RawEntryMut::Vacant(_) => {
                 if self.size() < self.config.max_connections {
-                    let pdu = L4Pdu::new(mbuf, ctxt, dir, Instant::now(),
-                                         0, 0);
+                    let mut pdu = L4Pdu::new(mbuf, ctxt, true, Instant::now(),
+                                             Some(0), Some(0));
                     let conn = match ctxt.proto {
                         TCP_PROTOCOL => Conn::<T>::new_tcp(
                             self.config.tcp_establish_timeout,
@@ -135,14 +136,14 @@ where
                                 self.config.udp_inactivity_timeout,
                                 &pdu,
                                 self.core_id,
-                            ),
+                            )
                         }
                         _ => Err(anyhow!("Invalid L4 Protocol")),
                     };
                     if let Ok(mut conn) = conn {
                         conn.info.filter_first_packet(&pdu, subscription);
                         if conn.info.needs_parse() {
-                            conn.info.consume_stream(&pdu, subscription, &self.registry);
+                            conn.info.consume_stream(&mut pdu, subscription, &self.registry);
                         } else {
                             conn.info.new_packet(&pdu, subscription);
                         }

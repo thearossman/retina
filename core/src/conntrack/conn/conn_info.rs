@@ -10,7 +10,6 @@ use crate::lcore::CoreId;
 use crate::protocols::stream::{ConnData, ParserRegistry};
 use crate::subscription::{Subscription, Trackable};
 use crate::FiveTuple;
-use crate::protocols::packet::{tcp::TCP_PROTOCOL, udp::UDP_PROTOCOL};
 
 use super::{conn_state::*, conn_layers::*};
 
@@ -69,7 +68,7 @@ where
     /// Note that InHandshake is processed post-reassembly.
     pub(crate) fn new_packet(&mut self, pdu: &L4Pdu,
                              subscription: &Subscription<T::Subscribed>) {
-        if self.actions.update() {
+        if self.linfo.actions.needs_update() {
             if self.tracked.update(pdu, DataLevel::L4InPayload) {
                 self.exec_state_tx(StateTransition::L4InPayload, subscription);
             }
@@ -126,11 +125,11 @@ where
         }
         match tx {
             StateTransition::L7OnDisc => subscription.filter_protocol(self),
-            StateTransition::L7EndHdrs => subscription.filter_session(self, tx),
+            StateTransition::L7EndHdrs => subscription.filter_session(self),
             StateTransition::L4Terminated => subscription.connection_terminated(self),
             StateTransition::L4EndHshk => subscription.handshake_done(self),
             StateTransition::L4InPayload | StateTransition::L7InHdrs | StateTransition::L7InPayload => {
-                subscription.in_update(self, tx);
+                subscription.in_update(self, &tx);
             }
             StateTransition::L7EndPayload => unimplemented!(),
             StateTransition::L4FirstPacket | StateTransition::None => { }
@@ -148,10 +147,10 @@ where
     }
 
     pub(crate) fn needs_parse(&self) -> bool {
-        self.linfo.actions.parse()
+        self.linfo.actions.needs_parse()
     }
 
     pub(crate) fn needs_reassembly(&self) -> bool {
-        self.linfo.state == LayerState::Headers || self.linfo.actions.reassemble()
+        self.linfo.actions.needs_reassembly()
     }
 }

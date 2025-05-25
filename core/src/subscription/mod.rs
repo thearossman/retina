@@ -1,6 +1,6 @@
 use crate::conntrack::pdu::{L4Context, L4Pdu};
-use crate::conntrack::ConnTracker;
-use crate::conntrack::ConnInfo;
+use crate::conntrack::{ConnInfo, ConnTracker,
+                       StateTransition, DataLevel};
 use crate::filter::*;
 use crate::lcore::CoreId;
 use crate::memory::mbuf::Mbuf;
@@ -56,11 +56,9 @@ pub trait Trackable {
     /// Clear all internal data
     fn clear(&mut self);
 
-    fn update_l7_headers(&mut self, pdu: &L4Pdu, _ord: L4Order) -> bool;
-    fn update_l7_payload(&mut self, pdu: &L4Pdu, _ord: L4Order) -> bool;
-    fn update_in_handshake(&mut self, pdu: &L4Pdu, _ord: L4Order) -> bool;
-    fn update_l4_reassembled(&mut self, pdu: &L4Pdu, _ord: L4Order) -> bool;
-    fn update_l4_payload(&mut self, pdu: &L4Pdu, _ord: L4Order) -> bool;
+    /// Invoke "update" API, returning `true` if Actions may need
+    /// to be refreshed (i.e., a subscription has gone out of scope).
+    fn update(&mut self, pdu: &L4Pdu, state: DataLevel) -> bool;
 }
 
 #[allow(dead_code)]
@@ -131,20 +129,25 @@ where
         Actions::new()
     }
 
-    /// Invokes the five-tuple filter.
-    /// Applied to the first packet in the connection.
+    /// Initializes connection actions by filtering on the first packet in the connection.
     pub fn filter_packet<T: Trackable>(&self, _conn: &mut ConnInfo<T>, _mbuf: &Mbuf) {}
 
-    pub fn handshake_done<T: Trackable>(&self, _conn: &mut ConnInfo<T>) {}
-    pub fn in_handshake<T: Trackable>(&self, _conn: &mut ConnInfo<T>) {}
-    pub fn in_l4_payload<T: Trackable>(&self, _conn: &mut ConnInfo<T>) {}
-    pub fn in_tcp_stream<T: Trackable>(&self, _conn: &mut ConnInfo<T>) {}
+    /// Invokes the L6/L7 protocol filter, i.e., filtering on the protocol (e.g., TLS, HTTP)
+    pub fn filter_protocol<T: Trackable>(&self, _conn: &mut ConnInfo<T>) {}
+
+    /// Invokes the Session filter, i.e., filtering on fields in a parsed session.
+    pub fn filter_session<T: Trackable>(&self, _conn: &mut ConnInfo<T>) {}
+
+    /// Invokes any L4 Connection-level subscriptions
     pub fn connection_terminated<T: Trackable>(&self, _conn: &mut ConnInfo<T>) {}
-    pub fn l7_identified<T: Trackable>(&self, _conn: &mut ConnInfo<T>) {}
-    pub fn in_l7_hdrs<T: Trackable>(&self, _conn: &mut ConnInfo<T>) {}
-    pub fn l7_hdrs_parsed<T: Trackable>(&self, _conn: &mut ConnInfo<T>) {}
-    pub fn l7_in_payload<T: Trackable>(&self, _conn: &mut ConnInfo<T>) {}
-    pub fn l7_payload_done<T: Trackable>(&self, _conn: &mut ConnInfo<T>) {}
+
+    /// Indicates that the TCP handshake has completed
+    pub fn handshake_done<T: Trackable>(&self, _conn: &mut ConnInfo<T>) {}
+
+    /// Invoked if an `update` method returned `true`, indicating that some Actions need
+    /// to be refreshed. The `state` parameter helps the subscription determine which
+    /// set of filter predicates to apply.
+    pub fn in_update<T: Trackable>(&self, _conn: &mut ConnInfo<T>, _state: &StateTransition) {}
 }
 
 /// For `update` methods, the order of the packet received.

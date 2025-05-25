@@ -68,21 +68,21 @@ impl TcpFlow {
         let length = segment.length() as u32;
         let cur_seq = segment.seq_no();
         self.observed += 1;
-        segment.reassembled = true;
+        segment.ctxt.reassembled = true;
 
         if let Some(next_seq) = self.next_seq {
             if next_seq == cur_seq {
                 // Segment is the next expected segment in the sequence
                 self.consumed_flags |= segment.flags();
                 if segment.flags() & RST != 0 {
-                    info.consume_pdu(&segment, subscription, registry);
+                    info.consume_stream(&mut segment, subscription, registry);
                     return;
                 }
                 let mut expected_seq = cur_seq.wrapping_add(length);
                 if segment.flags() & FIN != 0 {
                     expected_seq = cur_seq.wrapping_add(1);
                 }
-                info.consume_pdu(&segment, subscription, registry);
+                info.consume_stream(&mut segment, subscription, registry);
                 if Self::handshake_done(self.orig, &self.last_ack) {
                     info.handshake_done(subscription);
                 }
@@ -94,7 +94,7 @@ impl TcpFlow {
             } else if let Some(expected_seq) = overlap(&mut segment, next_seq) {
                 // Segment starts before the next expected segment but has new data
                 self.consumed_flags |= segment.flags();
-                info.consume_pdu(&segment, subscription, registry);
+                info.consume_stream(&mut segment, subscription, registry);
                 if Self::handshake_done(self.orig, &self.last_ack) {
                     info.handshake_done(subscription);
                 }
@@ -107,7 +107,7 @@ impl TcpFlow {
                     cur_seq,
                     next_seq
                 );
-                segment.offset = None;
+                segment.ctxt.offset = None;
                 info.new_packet(&mut segment, subscription);
                 drop(segment);
             }
@@ -118,7 +118,7 @@ impl TcpFlow {
                 self.next_seq = Some(expected_seq);
                 self.consumed_flags |= segment.flags();
                 self.last_ack = Some(segment.ack_no());
-                info.consume_pdu(&segment, subscription, registry);
+                info.consume_stream(&mut segment, subscription, registry);
                 self.flush_ooo_buffer::<T>(expected_seq, info, subscription, registry);
             } else {
                 // Buffer out-of-order non-SYNACK packets
@@ -232,17 +232,17 @@ impl OutOfOrderBuffer {
             log::debug!("Flushing...current seq: {:#?}", cur_seq);
 
             if next_seq == cur_seq {
-                let segment = self.buf.remove(index).unwrap();
+                let mut segment = self.buf.remove(index).unwrap();
                 *consumed_flags |= segment.flags();
                 if segment.flags() & RST != 0 {
-                    info.consume_pdu(&segment, subscription, registry);
+                    info.consume_stream(&mut segment, subscription, registry);
                     return next_seq;
                 }
                 next_seq = next_seq.wrapping_add(segment.length() as u32);
                 if segment.flags() & FIN != 0 {
                     next_seq = next_seq.wrapping_add(1);
                 }
-                info.consume_pdu(&segment, subscription, registry);
+                info.consume_stream(&mut segment, subscription, registry);
                 if TcpFlow::handshake_done(orig, last_ack) {
                     info.handshake_done(subscription);
                 }
@@ -255,7 +255,7 @@ impl OutOfOrderBuffer {
                 if let Some(update_seq) = overlap(&mut segment, next_seq) {
                     next_seq = update_seq;
                     *consumed_flags |= segment.flags();
-                    info.consume_pdu(&segment, subscription, registry);
+                    info.consume_stream(&mut segment, subscription, registry);
                     if TcpFlow::handshake_done(orig, last_ack) {
                         info.handshake_done(subscription);
                     }
@@ -263,7 +263,7 @@ impl OutOfOrderBuffer {
                     index = 0;
                 } else {
                     log::debug!("Dropping old segment during flush.");
-                    segment.offset = None;
+                    segment.ctxt.offset = None;
                     info.new_packet(&mut segment, subscription);
                     drop(segment);
                     index += 1;
@@ -301,7 +301,7 @@ fn overlap(segment: &mut L4Pdu, expected_seq: u32) -> Option<u32> {
         let overlap_data_len = expected_seq.wrapping_sub(cur_seq);
 
         log::debug!("Overlap with new data size : {:#?}", new_data_len);
-        segment.ctxt.offset += overlap_data_len as usize;
+        *segment.ctxt.offset.as_mut().unwrap() += overlap_data_len as usize;
         segment.ctxt.length = new_data_len as usize;
         Some(end_seq)
     } else {

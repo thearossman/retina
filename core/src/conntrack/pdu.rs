@@ -206,9 +206,4 @@ impl L4Context {
         }
     }
 
-    pub set_app_offset(&mut self, offset: usize) {
-        if self.app_offset.is_none() {
-            self.app_offset = Some(offset);
-        }
-    }
 }

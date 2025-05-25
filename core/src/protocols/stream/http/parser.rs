@@ -52,7 +52,7 @@ impl HttpParser {
             if let Some(http) = self.pending.get_mut(&self.current_trans) {
                 http.response = response;
                 // Calculate end of headers, if present
-                if consumed < data.len() {
+                if consumed < data.len() && consumed > 0 {
                     self.last_body_offset = Some(consumed);
                 }
                 // TODO: Handle response continuation data

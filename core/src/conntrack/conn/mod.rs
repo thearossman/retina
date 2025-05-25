@@ -10,8 +10,6 @@ pub mod conn_state;
 pub mod conn_layers;
 pub mod conn_actions;
 
-pub use conn_state::{StateTransition, LayerState};
-
 pub use conn_info::ConnInfo;
 
 use self::tcp_conn::TcpConn;
@@ -98,14 +96,14 @@ where
 
     pub(super) fn flow_len(&self, dir: bool) -> Option<usize> {
         match &self.l4conn {
-            L4Conn::Tcp(tcp_conn) => tcp_conn.flow_len(dir),
+            L4Conn::Tcp(tcp_conn) => Some(tcp_conn.flow_len(dir)),
             L4Conn::Udp(_) => None,
         }
     }
 
     pub(super) fn total_len(&self) -> Option<usize> {
         match &self.l4conn {
-            L4Conn::Tcp(tcp_conn) => tcp_conn.total_len(),
+            L4Conn::Tcp(tcp_conn) => Some(tcp_conn.total_len()),
             L4Conn::Udp(_) => None,
         }
     }
@@ -113,19 +111,19 @@ where
     /// Updates a connection on the arrival of a new packet.
     pub(super) fn update(
         &mut self,
-        pdu: L4Pdu,
+        mut pdu: L4Pdu,
         subscription: &Subscription<T::Subscribed>,
         registry: &ParserRegistry,
     ) {
         // Case 1: no need to pass through parsing/reassembly infrastructure,
         // but still may need update and still need to track for termination.
-        if !conn.info.actions.needs_reassembly() &&
-           !conn.info.actions.needs_parse() {
+        if !self.info.linfo.actions.needs_reassembly() &&
+           !self.info.linfo.actions.needs_parse() {
             // Update without reassembly
-            if conn.info.actions.needs_update() {
-                conn.info.new_packet(pdu, subscription);
+            if self.info.linfo.actions.needs_update() {
+                self.info.new_packet(&pdu, subscription);
             }
-            conn.update_tcp_flags(pdu.flags(), pdu.dir);
+            self.update_tcp_flags(pdu.flags(), pdu.dir);
             return;
         }
 
@@ -145,7 +143,7 @@ where
                     }
                 }
             }
-            L4Conn::Udp(_) => self.info.consume_pdu(&pdu, subscription, registry),
+            L4Conn::Udp(_) => self.info.consume_stream(&mut pdu, subscription, registry),
         }
     }
 

@@ -223,10 +223,6 @@ pub struct Session {
     pub data: SessionData,
     /// A unique identifier that represents the arrival order of the first packet of the session.
     pub id: usize,
-    /// A Session may be delivered twice for non-encrypted protocols: once after header fields,
-    /// and once after the body is parsed. This flag indicates that only session header fields
-    /// are valid.
-    pub headers_only: bool,
 }
 
 impl Default for Session {
@@ -234,7 +230,6 @@ impl Default for Session {
         Session {
             data: SessionData::Null,
             id: 0,
-            headers_only: true,
         }
     }
 }
@@ -329,6 +324,17 @@ impl ConnParser {
             ConnParser::Quic(parser) => parser.session_parsed_state(),
             ConnParser::Ssh(parser) => parser.session_parsed_state(),
             ConnParser::Unknown => ParsingState::Stop,
+        }
+    }
+
+    pub(crate) fn body_offset(&mut self) -> Option<usize> {
+        match self {
+            ConnParser::Tls(parser) => parser.body_offset(),
+            ConnParser::Dns(parser) => parser.body_offset(),
+            ConnParser::Http(parser) => parser.body_offset(),
+            ConnParser::Quic(parser) => parser.body_offset(),
+            ConnParser::Ssh(parser) => parser.body_offset(),
+            ConnParser::Unknown => None,
         }
     }
 
