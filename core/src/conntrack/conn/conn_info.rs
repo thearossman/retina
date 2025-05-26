@@ -17,6 +17,8 @@ use super::{conn_state::*, conn_layers::*};
 /// datatypes (`tracked` data). Maintains the State of the connection
 /// at each layer, including the `Actions` to execute when new
 /// packets are received.
+/// This must be public in order to be accessible by generated filter
+/// and update code.
 #[derive(Debug)]
 pub struct ConnInfo<T>
 where
@@ -24,15 +26,15 @@ where
 {
     /// Actions and state from the perspective of L4.
     /// Valid states are Payload or None.
-    pub(crate) linfo: LayerInfo,
+    pub linfo: LayerInfo,
     /// Connection five-tuple for filtering and determining directionality
     /// of future packets.
-    pub(crate) cdata: ConnData,
+    pub cdata: ConnData,
     /// Additional Layers that the L4 conn. should pass
     /// data to.
-    pub(crate) layers: [Layer; NUM_LAYERS],
+    pub layers: [Layer; NUM_LAYERS],
     /// Subscription data (for delivering)
-    pub(crate) tracked: T,
+    pub tracked: T,
 }
 
 impl<T> ConnInfo<T>
@@ -63,9 +65,10 @@ where
         subscription.filter_packet(self, pdu.mbuf_ref());
     }
 
-    /// New packet associated with the connection observed.
-    /// Updates tracked data.
-    /// Note that InHandshake is processed post-reassembly.
+    /// Update tracked data when new packet is observed.
+    /// For TCP connections, this is invoked either pre-reassembly OR post-
+    /// reassembly (not both). The L4Pdu will be marked with the `reassembled`
+    /// flag if it has passed through the TCP reassembly module.
     pub(crate) fn new_packet(&mut self, pdu: &L4Pdu,
                              subscription: &Subscription<T::Subscribed>) {
         if self.linfo.actions.needs_update() {
@@ -88,18 +91,21 @@ where
         subscription: &Subscription<T::Subscribed>,
         registry: &ParserRegistry)
     {
+        // Update tracked data
         self.new_packet(pdu, subscription);
-        let tx_ = self.layers[0].process_stream(pdu, &mut self.tracked, registry);
-        for tx in tx_ {
-            self.exec_state_tx(tx, subscription);
-            if self.layers[0].needs_process(tx) {
-                self.layers[0].process_stream(pdu, &mut self.tracked, registry);
+        // Pass to next layer(s) if applicable
+        if !self.layers[0].drop() {
+            let tx_ = self.layers[0].process_stream(pdu, &mut self.tracked, registry);
+            for tx in tx_ {
+                self.exec_state_tx(tx, subscription);
+                if self.layers[0].needs_process(tx, pdu) {
+                    self.layers[0].process_stream(pdu, &mut self.tracked, registry);
+                }
             }
         }
     }
 
     /// Drop the connection, e.g. due to timeout
-    /// TODO make sure this is invoked if all actions are none after state tx
     pub(crate) fn exec_drop(&mut self) {
         self.linfo.state = LayerState::None
     }
@@ -119,9 +125,9 @@ where
     /// upon state transition.
     fn exec_state_tx(&mut self, tx: StateTransition,
                      subscription: &Subscription<T::Subscribed>) {
-        self.linfo.reset_actions(tx);
+        self.linfo.actions.start_state_tx(tx);
         for layer in self.layers.iter_mut() {
-            layer.reset_actions(tx);
+            layer.layer_info_mut().actions.start_state_tx(tx);
         }
         match tx {
             StateTransition::L7OnDisc => subscription.filter_protocol(self),
@@ -138,19 +144,20 @@ where
         if self.linfo.drop() &&
            self.layers.iter().all(|l| l.drop()) {
             self.exec_drop();
+        } else {
+            if self.layers.iter().any(|l| !l.drop()) {
+                self.linfo.actions.set_next_layer();
+            }
         }
     }
 
     pub(crate) fn clear(&mut self) {
-        // TODO clear other layers?
         self.tracked.clear();
     }
 
-    pub(crate) fn needs_parse(&self) -> bool {
-        self.linfo.actions.needs_parse()
+    pub(crate) fn needs_reassembly(&self) -> bool {
+        self.linfo.actions.needs_reassembly() ||
+           self.linfo.actions.has_next_layer()
     }
 
-    pub(crate) fn needs_reassembly(&self) -> bool {
-        self.linfo.actions.needs_reassembly()
-    }
 }

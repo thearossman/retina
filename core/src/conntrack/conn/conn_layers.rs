@@ -12,11 +12,11 @@ use crate::L4Pdu;
 /// Ordering is derived by list order
 /// Each associated datatype must implement LayerInfo API (see below)
 #[derive(Debug)]
-pub(crate) enum Layer {
+pub enum Layer {
     /// L6/L7 Session
     L7(L7Session),
 }
-pub(crate) const NUM_LAYERS: usize = 1;
+pub const NUM_LAYERS: usize = 1;
 
 /// Trait implemented for each Layer variant
 pub(crate) trait TrackableLayer {
@@ -36,16 +36,20 @@ pub(crate) trait TrackableLayer {
     /// if process_stream needs to be called again.
     /// For example, the packet used to "discover" a protocol will
     /// also be part of its header.
-    fn needs_process(&self, tx: StateTransition) -> bool;
-
-    /// Called before applying a state transition on tracked data
-    /// Will clear all active Actions that need to be "re-checked"
-    /// at this state transition.
-    fn reset_actions(&mut self, state: StateTransition);
+    fn needs_process(&self, tx: StateTransition, pdu: &L4Pdu) -> bool;
 
     /// No actions are active and, if applicable, no sub-layers have
     /// active actions.
     fn drop(&self) -> bool;
+}
+
+impl Layer {
+    /// Accessors for LayerInfo
+    pub fn layer_info_mut(&mut self) -> &mut LayerInfo {
+        match self {
+            Layer::L7(session) => &mut session.linfo,
+        }
+    }
 }
 
 impl TrackableLayer for Layer {
@@ -61,15 +65,9 @@ impl TrackableLayer for Layer {
         }
     }
 
-    fn reset_actions(&mut self, tx: StateTransition) {
+    fn needs_process(&self, tx: StateTransition, pdu: &L4Pdu) -> bool {
         match self {
-            Layer::L7(session) => session.reset_actions(tx),
-        }
-    }
-
-    fn needs_process(&self, tx: StateTransition) -> bool {
-        match self {
-            Layer::L7(session) => session.needs_process(tx),
+            Layer::L7(session) => session.needs_process(tx, pdu),
         }
     }
 
@@ -94,10 +92,6 @@ impl LayerInfo {
             state: LayerState::Discovery,
             actions: TrackedActions::new(),
         }
-    }
-
-    pub(crate) fn reset_actions(&mut self, tx: StateTransition) {
-        self.actions.active &= self.actions.refresh_at[tx as usize].not();
     }
 
     pub(crate) fn drop(&self) -> bool {
@@ -139,12 +133,12 @@ impl L7Session {
 
 impl TrackableLayer for L7Session {
 
-    fn needs_process(&self, tx: StateTransition) -> bool {
-        matches!(tx, StateTransition::L7OnDisc | StateTransition::L7EndHdrs)
-    }
-
-    fn reset_actions(&mut self, tx: StateTransition) {
-        self.linfo.reset_actions(tx);
+    fn needs_process(&self, tx: StateTransition, pdu: &L4Pdu) -> bool {
+        self.linfo.state != LayerState::None &&
+        (tx == StateTransition::L7OnDisc ||
+            (tx == StateTransition::L7EndHdrs &&
+             pdu.ctxt.app_offset.is_some())
+        )
     }
 
     fn drop(&self) -> bool {
@@ -191,23 +185,30 @@ impl TrackableLayer for L7Session {
                 if let Some(offset) = self.parser.body_offset() {
                     pdu.ctxt.app_offset = Some(offset);
                 }
-                if tracked.update(pdu, DataLevel::L7InHdrs) {
-                    state_tx[0] = StateTransition::L7InHdrs;
+                if self.linfo.actions.needs_update() {
+                    if tracked.update(pdu, DataLevel::L7InHdrs) {
+                        state_tx[0] = StateTransition::L7InHdrs;
+                    }
                 }
                 self.linfo.state = new_state;
             }
             LayerState::Payload => {
-                match self.parser.session_parsed_state() {
-                    ParsingState::Probing => {
-                        // TODO unimplemented: nested sessions
-                     },
-                    ParsingState::Parsing => {
-                        // TODO unimplemented: pipelined sessions
-                    },
-                    _ => {}
+                pdu.ctxt.app_offset = Some(0);
+                if self.linfo.actions.needs_parse() {
+                    match self.parser.session_parsed_state() {
+                        ParsingState::Probing => {
+                            // TODO unimplemented: nested sessions
+                        },
+                        ParsingState::Parsing => {
+                            // TODO unimplemented: pipelined sessions
+                        },
+                        _ => {}
+                    }
                 }
-                if tracked.update(pdu, DataLevel::L7InPayload) {
-                    state_tx[0] = StateTransition::L7InPayload;
+                if self.linfo.actions.needs_update() {
+                    if tracked.update(pdu, DataLevel::L7InPayload) {
+                        state_tx[0] = StateTransition::L7InPayload;
+                    }
                 }
                 // TODO - add API for parser to consume payload
                 // if applicable and return when session is "done"

@@ -117,8 +117,7 @@ where
     ) {
         // Case 1: no need to pass through parsing/reassembly infrastructure,
         // but still may need update and still need to track for termination.
-        if !self.info.linfo.actions.needs_reassembly() &&
-           !self.info.linfo.actions.needs_parse() {
+        if !self.info.needs_reassembly() {
             // Update without reassembly
             if self.info.linfo.actions.needs_update() {
                 self.info.new_packet(&pdu, subscription);
@@ -131,8 +130,8 @@ where
         match &mut self.l4conn {
             L4Conn::Tcp(tcp_conn) => {
                 tcp_conn.reassemble(pdu, &mut self.info, subscription, registry);
-                // Check if, after actions update, the framework/subscriptions no longer require
-                // receiving reassembled traffic.
+                // Check if, after actions update, the framework/subscriptions
+                // no longer require receiving reassembled traffic.
                 if !self.info.needs_reassembly() {
                     // Safe to discard out-of-order buffers
                     if tcp_conn.ctos.ooo_buf.len() != 0 {

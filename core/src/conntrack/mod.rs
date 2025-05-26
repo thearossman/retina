@@ -142,7 +142,7 @@ where
                     };
                     if let Ok(mut conn) = conn {
                         conn.info.filter_first_packet(&pdu, subscription);
-                        if conn.info.needs_parse() {
+                        if conn.info.needs_reassembly() {
                             conn.info.consume_stream(&mut pdu, subscription, &self.registry);
                         } else {
                             conn.info.new_packet(&pdu, subscription);

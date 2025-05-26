@@ -40,7 +40,7 @@ pub enum DataLevel {
     L7EndHdrs,
     /// Streaming in L7 payload (after headers)
     L7InPayload,
-    /// L7 payload end. NOT YET SUPPORTED by parsers.
+    /// L7 payload end. TODO NOT YET SUPPORTED by parsers.
     L7EndPayload,
 
     /// `None` is used as a no-op state transition and to give the
