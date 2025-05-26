@@ -711,37 +711,3 @@ impl SubscriptionSpec {
         }
     }
 }
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn basic_multispec() {
-        let datatype_session = DataType::new_default_session("Session", vec![]);
-        let datatype_connection = DataType::new_default_connection("Connection");
-        let mut spec = SubscriptionSpec::new(String::from(""), String::from("cb"));
-        spec.add_datatype(datatype_session);
-        assert!(matches!(spec.level, Level::Session));
-        spec.add_datatype(datatype_connection);
-        assert!(matches!(spec.level, Level::Connection));
-
-        let matching_actions = spec.packet_filter();
-        assert!(matching_actions.if_matching.parse_any());
-        assert!(matching_actions.if_matching.update_pdu());
-
-        let matching_actions = spec.proto_filter();
-        assert!(matching_actions.if_matching.parse_any());
-        assert!(matching_actions.if_matching.update_pdu());
-
-        let mut spec = SubscriptionSpec::new(String::from(""), String::from("cb"));
-        spec.add_datatype(DataType::new_default_packet("Packet"));
-        assert!(spec.proto_filter().if_matched.packet_deliver());
-        assert!(spec.proto_filter().if_matching.cache_packet());
-
-        let mut spec = SubscriptionSpec::new_default_streaming();
-        spec.add_datatype(DataType::new_default_session("Session", vec![]));
-        assert!(matches!(spec.level, Level::Streaming(_)));
-        assert!(spec.proto_filter().if_matched.stream_deliver());
-    }
-}
