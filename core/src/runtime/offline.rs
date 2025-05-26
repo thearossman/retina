@@ -74,10 +74,10 @@ where
             nb_bytes += mbuf.data_len() as u64;
 
             /* Apply the packet filter to get actions */
-            let actions = self.subscription.continue_packet(&mbuf, &self.id);
-            if !actions.drop() {
+            let cont = self.subscription.continue_packet(&mbuf, &self.id);
+            if cont {
                 self.subscription
-                    .process_packet(mbuf, &mut stream_table, actions);
+                    .process_packet(mbuf, &mut stream_table);
             }
         }
 

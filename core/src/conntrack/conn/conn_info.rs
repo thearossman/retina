@@ -61,7 +61,7 @@ where
         pdu: &L4Pdu,
         subscription: &Subscription<T::Subscribed>,
     ) {
-        subscription.filter_packet(self, pdu.mbuf_ref());
+        subscription.filter_packet::<T>(self, pdu.mbuf_ref());
     }
 
     /// Update tracked data when new packet is observed.
@@ -127,14 +127,14 @@ where
             layer.layer_info_mut().actions.start_state_tx(tx);
         }
         match tx {
-            StateTransition::L7OnDisc => subscription.filter_protocol(self),
-            StateTransition::L7EndHdrs => subscription.filter_session(self),
-            StateTransition::L4Terminated => subscription.connection_terminated(self),
-            StateTransition::L4EndHshk => subscription.handshake_done(self),
+            StateTransition::L7OnDisc => subscription.filter_protocol::<T>(self),
+            StateTransition::L7EndHdrs => subscription.filter_session::<T>(self),
+            StateTransition::L4Terminated => subscription.connection_terminated::<T>(self),
+            StateTransition::L4EndHshk => subscription.handshake_done::<T>(self),
             StateTransition::L4InPayload
             | StateTransition::L7InHdrs
             | StateTransition::L7InPayload => {
-                subscription.in_update(self, &tx);
+                subscription.in_update::<T>(self, &tx);
             }
             StateTransition::L7EndPayload => unimplemented!(),
             StateTransition::L4FirstPacket | StateTransition::None => {}
