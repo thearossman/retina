@@ -32,10 +32,22 @@ pub struct L4Pdu {
 }
 
 impl L4Pdu {
-    pub(crate) fn new(mbuf: Mbuf, ctxt: L4Context, dir: bool,
-                      ts: Instant, flow_ord: Option<usize>,
-                      conn_ord: Option<usize>) -> Self {
-        L4Pdu { mbuf, ctxt, dir, ts, flow_ord, conn_ord }
+    pub(crate) fn new(
+        mbuf: Mbuf,
+        ctxt: L4Context,
+        dir: bool,
+        ts: Instant,
+        flow_ord: Option<usize>,
+        conn_ord: Option<usize>,
+    ) -> Self {
+        L4Pdu {
+            mbuf,
+            ctxt,
+            dir,
+            ts,
+            flow_ord,
+            conn_ord,
+        }
     }
 
     #[inline]
@@ -205,5 +217,4 @@ impl L4Context {
             bail!("Not Ethernet");
         }
     }
-
 }

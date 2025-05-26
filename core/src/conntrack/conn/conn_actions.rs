@@ -1,5 +1,5 @@
-use bitmask_enum::bitmask;
 use super::conn_state::{StateTransition, NUM_STATE_TRANSITIONS};
+use bitmask_enum::bitmask;
 
 /// Possible actions to be taken on a connection
 #[bitmask(u8)]
@@ -23,7 +23,7 @@ pub struct TrackedActions {
     // Currently-active actions (as bitmask)
     pub active: Actions,
     // Bitmask of actions that should be refreshed at each stage
-    pub refresh_at: [Actions; NUM_STATE_TRANSITIONS]
+    pub refresh_at: [Actions; NUM_STATE_TRANSITIONS],
 }
 
 impl TrackedActions {
@@ -53,7 +53,8 @@ impl TrackedActions {
 
     #[inline]
     pub fn needs_reassembly(&self) -> bool {
-        self.active.intersects(Actions::Parse | Actions::PassThrough)
+        self.active
+            .intersects(Actions::Parse | Actions::PassThrough)
     }
 
     #[inline]

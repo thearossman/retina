@@ -42,8 +42,7 @@ impl TcpFlow {
     /// Creates a new TCP flow with given next sequence number, flags,
     /// and out-of-order buffer
     #[inline]
-    pub(super) fn new(capacity: usize, next_seq: u32, flags: u8, ack: u32,
-                      orig: bool) -> Self {
+    pub(super) fn new(capacity: usize, next_seq: u32, flags: u8, ack: u32, orig: bool) -> Self {
         TcpFlow {
             next_seq: Some(next_seq),
             last_ack: Some(ack),

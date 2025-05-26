@@ -176,9 +176,7 @@ impl ConnData {
     /// Create a new `ConnData` from the connection `five_tuple` and the ID of the last matched node
     /// in the filter predicate trie.
     pub(crate) fn new(five_tuple: FiveTuple) -> Self {
-        ConnData {
-            five_tuple,
-        }
+        ConnData { five_tuple }
     }
 
     /// Parses the `ConnData`'s FiveTuple into sub-protocol metadata

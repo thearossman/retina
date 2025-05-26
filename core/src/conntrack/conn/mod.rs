@@ -3,12 +3,12 @@
 //! Tracks a TCP or UDP connection, performs stream reassembly, and (via ConnInfo)
 //! manages protocol parser state throughout the duration of the connection.
 
+pub mod conn_actions;
 pub mod conn_info;
+pub mod conn_layers;
+pub mod conn_state;
 pub mod tcp_conn;
 pub mod udp_conn;
-pub mod conn_state;
-pub mod conn_layers;
-pub mod conn_actions;
 
 pub use conn_info::ConnInfo;
 
@@ -163,7 +163,7 @@ where
     pub(super) fn remove_from_table(&self) -> bool {
         match &self.l4conn {
             L4Conn::Udp(_) => false,
-            _ => self.info.drop()
+            _ => self.info.drop(),
         }
     }
 

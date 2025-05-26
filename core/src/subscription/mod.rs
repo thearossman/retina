@@ -1,6 +1,5 @@
 use crate::conntrack::pdu::{L4Context, L4Pdu};
-use crate::conntrack::{ConnInfo, ConnTracker,
-                       StateTransition, DataLevel};
+use crate::conntrack::{ConnInfo, ConnTracker, DataLevel, StateTransition};
 use crate::filter::*;
 use crate::lcore::CoreId;
 use crate::memory::mbuf::Mbuf;

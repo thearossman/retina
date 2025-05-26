@@ -468,8 +468,10 @@ impl Tls {
                     if status != ParseResult::Continue(0) {
                         // Handshake done, but data remaining
                         let remaining = rem.len();
-                        if matches!(status, ParseResult::HeadersDone(_)) &&
-                           remaining > 0 && remaining < pdu_len {
+                        if matches!(status, ParseResult::HeadersDone(_))
+                            && remaining > 0
+                            && remaining < pdu_len
+                        {
                             self.last_body_offset = Some(pdu_len - remaining - 1);
                         }
                         return status;

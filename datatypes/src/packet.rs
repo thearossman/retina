@@ -18,7 +18,7 @@ pub type Payload = [u8];
 impl FromMbuf for Payload {
     fn from_mbuf(mbuf: &Mbuf) -> Option<&Self> {
         if let Ok(ctxt) = L4Context::new(mbuf) {
-            let offset = ctxt.offset;
+            let offset = ctxt.offset.unwrap();
             let payload_len = ctxt.length;
             if let Ok(data) = mbuf.get_data_slice(offset, payload_len) {
                 return Some(data);

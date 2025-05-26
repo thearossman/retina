@@ -1,11 +1,12 @@
 // Additional traffic layers built on top of the L4 base transport layer.
 
 use super::conn_actions::TrackedActions;
-use super::conn_state::{LayerState, StateTransition, DataLevel};
-use crate::subscription::Trackable;
-use crate::protocols::stream::{ParseResult, ProbeRegistryResult,
-                               ConnParser, ParserRegistry, ParsingState};
+use super::conn_state::{DataLevel, LayerState, StateTransition};
+use crate::protocols::stream::{
+    ConnParser, ParseResult, ParserRegistry, ParsingState, ProbeRegistryResult,
+};
 use crate::protocols::Session;
+use crate::subscription::Trackable;
 use crate::L4Pdu;
 
 /// "Layer", roughly mapped to OSI layer
@@ -53,7 +54,6 @@ impl Layer {
 }
 
 impl TrackableLayer for Layer {
-
     fn process_stream<T: Trackable>(
         &mut self,
         pdu: &mut L4Pdu,
@@ -76,7 +76,6 @@ impl TrackableLayer for Layer {
             Layer::L7(session) => session.drop(),
         }
     }
-
 }
 
 /// Stored for each Layer
@@ -132,13 +131,10 @@ impl L7Session {
 }
 
 impl TrackableLayer for L7Session {
-
     fn needs_process(&self, tx: StateTransition, pdu: &L4Pdu) -> bool {
-        self.linfo.state != LayerState::None &&
-        (tx == StateTransition::L7OnDisc ||
-            (tx == StateTransition::L7EndHdrs &&
-             pdu.ctxt.app_offset.is_some())
-        )
+        self.linfo.state != LayerState::None
+            && (tx == StateTransition::L7OnDisc
+                || (tx == StateTransition::L7EndHdrs && pdu.ctxt.app_offset.is_some()))
     }
 
     fn drop(&self) -> bool {
@@ -175,11 +171,11 @@ impl TrackableLayer for L7Session {
                     ParseResult::Done(_) => {
                         state_tx[1] = StateTransition::L7EndHdrs;
                         new_state = LayerState::Payload;
-                    },
+                    }
                     ParseResult::None => {
                         state_tx[1] = StateTransition::L7EndHdrs;
                         new_state = LayerState::None;
-                    },
+                    }
                     _ => { /* continue */ }
                 }
                 if let Some(offset) = self.parser.body_offset() {
@@ -198,10 +194,10 @@ impl TrackableLayer for L7Session {
                     match self.parser.session_parsed_state() {
                         ParsingState::Probing => {
                             // TODO unimplemented: nested sessions
-                        },
+                        }
                         ParsingState::Parsing => {
                             // TODO unimplemented: pipelined sessions
-                        },
+                        }
                         _ => {}
                     }
                 }

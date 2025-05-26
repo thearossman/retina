@@ -4,14 +4,14 @@
 // Terminate handler
 // Probe, parse, etc.
 
-use crate::L4Pdu;
 use super::conn_actions::TrackedActions;
 use crate::lcore::CoreId;
 use crate::protocols::stream::{ConnData, ParserRegistry};
 use crate::subscription::{Subscription, Trackable};
 use crate::FiveTuple;
+use crate::L4Pdu;
 
-use super::{conn_state::*, conn_layers::*};
+use super::{conn_layers::*, conn_state::*};
 
 /// Per-connection struct. Tracks all subscription-requested
 /// datatypes (`tracked` data). Maintains the State of the connection
@@ -41,7 +41,6 @@ impl<T> ConnInfo<T>
 where
     T: Trackable,
 {
-
     pub(super) fn new(pdu: &L4Pdu, core_id: CoreId) -> Self {
         let five_tuple = FiveTuple::from_ctxt(pdu.ctxt);
         ConnInfo {
@@ -69,8 +68,7 @@ where
     /// For TCP connections, this is invoked either pre-reassembly OR post-
     /// reassembly (not both). The L4Pdu will be marked with the `reassembled`
     /// flag if it has passed through the TCP reassembly module.
-    pub(crate) fn new_packet(&mut self, pdu: &L4Pdu,
-                             subscription: &Subscription<T::Subscribed>) {
+    pub(crate) fn new_packet(&mut self, pdu: &L4Pdu, subscription: &Subscription<T::Subscribed>) {
         if self.linfo.actions.needs_update() {
             if self.tracked.update(pdu, DataLevel::L4InPayload) {
                 self.exec_state_tx(StateTransition::L4InPayload, subscription);
@@ -89,8 +87,8 @@ where
         &mut self,
         pdu: &mut L4Pdu,
         subscription: &Subscription<T::Subscribed>,
-        registry: &ParserRegistry)
-    {
+        registry: &ParserRegistry,
+    ) {
         // Update tracked data
         self.new_packet(pdu, subscription);
         // Pass to next layer(s) if applicable
@@ -123,8 +121,7 @@ where
 
     /// Update subscription data and current state, including actions,
     /// upon state transition.
-    fn exec_state_tx(&mut self, tx: StateTransition,
-                     subscription: &Subscription<T::Subscribed>) {
+    fn exec_state_tx(&mut self, tx: StateTransition, subscription: &Subscription<T::Subscribed>) {
         self.linfo.actions.start_state_tx(tx);
         for layer in self.layers.iter_mut() {
             layer.layer_info_mut().actions.start_state_tx(tx);
@@ -134,15 +131,16 @@ where
             StateTransition::L7EndHdrs => subscription.filter_session(self),
             StateTransition::L4Terminated => subscription.connection_terminated(self),
             StateTransition::L4EndHshk => subscription.handshake_done(self),
-            StateTransition::L4InPayload | StateTransition::L7InHdrs | StateTransition::L7InPayload => {
+            StateTransition::L4InPayload
+            | StateTransition::L7InHdrs
+            | StateTransition::L7InPayload => {
                 subscription.in_update(self, &tx);
             }
             StateTransition::L7EndPayload => unimplemented!(),
-            StateTransition::L4FirstPacket | StateTransition::None => { }
+            StateTransition::L4FirstPacket | StateTransition::None => {}
         }
 
-        if self.linfo.drop() &&
-           self.layers.iter().all(|l| l.drop()) {
+        if self.linfo.drop() && self.layers.iter().all(|l| l.drop()) {
             self.exec_drop();
         } else {
             if self.layers.iter().any(|l| !l.drop()) {
@@ -156,8 +154,6 @@ where
     }
 
     pub(crate) fn needs_reassembly(&self) -> bool {
-        self.linfo.actions.needs_reassembly() ||
-           self.linfo.actions.has_next_layer()
+        self.linfo.actions.needs_reassembly() || self.linfo.actions.has_next_layer()
     }
-
 }
