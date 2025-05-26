@@ -63,6 +63,9 @@ hyper-util = { version = "0.1", features = ["full"], optional = true }
 prometheus-client = { version = "0.22.3", optional = true }
 http-body-util = { version = "0.1.2", optional = true }
 
+[dev-dependencies]
+nix = { version = "0.30", features = ["user"] }
+
 [features]
 timing = []
 prometheus = [

@@ -88,7 +88,7 @@ where
         println!("CPU time: {:?}ms", cpu_time.as_millis());
     }
 
-    fn get_mempool_raw(&self) -> *mut dpdk::rte_mempool {
+    pub(crate) fn get_mempool_raw(&self) -> *mut dpdk::rte_mempool {
         let cname = CString::new(self.mempool_name.clone()).expect("Invalid CString conversion");
         unsafe { dpdk::rte_mempool_lookup(cname.as_ptr()) }
     }

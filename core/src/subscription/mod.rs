@@ -37,6 +37,9 @@ pub trait Trackable {
     /// Invoke "update" API, returning `true` if Actions may need
     /// to be refreshed (i.e., a subscription has gone out of scope).
     fn update(&mut self, pdu: &L4Pdu, state: DataLevel) -> bool;
+
+    /// Indicates a state transition occurred
+    fn state_tx(&mut self, state: StateTransition);
 }
 
 #[allow(dead_code)]
@@ -109,28 +112,33 @@ where
 
     /// Invokes the L6/L7 protocol filter, i.e., filtering on the protocol (e.g., TLS, HTTP)
     pub fn filter_protocol<T: Trackable>(&self, conn: &mut ConnInfo<S::Tracked>) {
+        conn.tracked.state_tx(StateTransition::L7OnDisc);
         (self.proto_filter)(conn);
     }
 
     /// Invokes the Session filter, i.e., filtering on fields in a parsed session.
     pub fn filter_session<T: Trackable>(&self, conn: &mut ConnInfo<S::Tracked>) {
+        conn.tracked.state_tx(StateTransition::L7EndHdrs);
         (self.session_filter)(conn)
     }
 
     /// Invokes any L4 Connection-level subscriptions
     pub fn connection_terminated<T: Trackable>(&self, conn: &mut ConnInfo<S::Tracked>) {
+        conn.tracked.state_tx(StateTransition::L4Terminated);
         (self.conn_deliver)(conn);
     }
 
     /// Indicates that the TCP handshake has completed
-    pub fn handshake_done<T: Trackable>(&self, _conn: &mut ConnInfo<S::Tracked>) {
+    pub fn handshake_done<T: Trackable>(&self, conn: &mut ConnInfo<S::Tracked>) {
+        conn.tracked.state_tx(StateTransition::L4EndHshk);
         // TODO
     }
 
     /// Invoked if an `update` method returned `true`, indicating that some Actions need
     /// to be refreshed. The `state` parameter helps the subscription determine which
     /// set of filter predicates to apply.
-    pub fn in_update<T: Trackable>(&self, _conn: &mut ConnInfo<S::Tracked>, _state: &StateTransition) {
+    pub fn in_update<T: Trackable>(&self, conn: &mut ConnInfo<S::Tracked>, state: StateTransition) {
+        conn.tracked.state_tx(state);
         // TODO
     }
 }

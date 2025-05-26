@@ -32,7 +32,7 @@ where
     #[allow(dead_code)]
     mempools: BTreeMap<SocketId, Mempool>,
     online: Option<OnlineRuntime<S>>,
-    offline: Option<OfflineRuntime<S>>,
+    pub(crate) offline: Option<OfflineRuntime<S>>, // Public for testing only
     #[cfg(feature = "timing")]
     subscription: Arc<Subscription<S>>,
 }

@@ -9,7 +9,12 @@ pub mod conn_id;
 pub mod pdu;
 mod timerwheel;
 
+#[cfg(test)]
+mod tests;
+
 pub use conn::conn_state::{DataLevel, LayerState, StateTransition};
+pub use conn::conn_layers::Layer;
+pub use conn::conn_actions::{Actions, TrackedActions};
 pub use conn::ConnInfo;
 
 use self::conn::{Conn, L4Conn};
@@ -194,6 +199,12 @@ where
     ) {
         self.timerwheel
             .check_inactive(&mut self.table, subscription, now);
+    }
+
+    /// Clears the parser registry. Used in testing.
+    #[allow(dead_code)]
+    pub(crate) fn clear_registry(&mut self) {
+        self.registry = ParserRegistry::from_strings(vec![]);
     }
 }
 

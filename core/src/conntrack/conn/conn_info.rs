@@ -136,7 +136,7 @@ where
             StateTransition::L4InPayload
             | StateTransition::L7InHdrs
             | StateTransition::L7InPayload => {
-                subscription.in_update::<T>(self, &tx);
+                subscription.in_update::<T>(self, tx);
             }
             StateTransition::L7EndPayload => unimplemented!(),
             StateTransition::L4FirstPacket | StateTransition::None => {}
