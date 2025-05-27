@@ -8,6 +8,13 @@ use crate::protocols::packet::udp::UDP_PROTOCOL;
 use crate::protocols::stream::ParserRegistry;
 use crate::stats::{StatExt, TCP_BYTE, TCP_PKT, UDP_BYTE, UDP_PKT};
 
+pub mod filter;
+pub use filter::StreamingFilter;
+pub mod data;
+pub use data::{Tracked, TrackedEmpty, FromSession, FromMbuf};
+pub mod callback;
+pub use callback::StreamingCallback;
+
 #[cfg(feature = "timing")]
 use crate::timing::timer::Timers;
 
