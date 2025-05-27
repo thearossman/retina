@@ -19,6 +19,7 @@ pub enum LayerState {
 /// Streaming Levels must also identify the streaming frequency and unit
 /// (packets, bytes, or seconds).
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[repr(u8)]
 pub enum DataLevel {
     /// On first packet in connection
     L4FirstPacket = 0,
@@ -27,8 +28,9 @@ pub enum DataLevel {
     /// of payload, as payload may overlap with the handshake.
     L4EndHshk,
     /// Streaming anywhere in L4 connection, including TCP handshake.
-    /// Must specify in datatype whether the payload must be reassembled.
-    L4InPayload,
+    /// Must specify in associated data whether the packets must be
+    /// reassembled (true) or not (false).
+    L4InPayload(bool),
     /// L4 connection terminated by FIN/ACK sequence or timeout
     L4Terminated,
 
@@ -49,10 +51,33 @@ pub enum DataLevel {
     None,
 }
 
+// https://doc.rust-lang.org/reference/items/enumerations.html#casting
+impl DataLevel {
+    pub fn as_usize(&self) -> usize {
+        self.raw() as usize
+    }
+
+    pub fn raw(&self) -> u8 {
+        unsafe { *(self as *const Self as *const u8) }
+    }
+}
+
 /// The State Transitions that a connection can encounter.
 /// For `InX` Levels, the state transition is triggered if
 /// a streaming callback or filter changed match state (i.e.,
 /// was and is no longer active).
 pub type StateTransition = DataLevel;
 /// Number of variants; used to size the `refresh_at` array
-pub(crate) const NUM_STATE_TRANSITIONS: usize = StateTransition::None as usize - 1;
+pub(crate) const NUM_STATE_TRANSITIONS: usize = 9;
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_data_level_raw() {
+        assert_eq!(DataLevel::None.as_usize(), NUM_STATE_TRANSITIONS);
+        assert_eq!(DataLevel::L4InPayload(true).as_usize(),
+                   DataLevel::L4InPayload(false).as_usize());
+    }
+}

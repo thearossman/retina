@@ -54,12 +54,12 @@ impl Trackable for TestTrackable {
     }
 
     fn update(&mut self, _pdu: &L4Pdu, state: DataLevel) -> bool {
-        self.invoked[state as usize] += 1;
-        self.invoked[state as usize] % 2 == 0
+        self.invoked[state.as_usize()] += 1;
+        self.invoked[state.as_usize()] % 2 == 0
     }
 
     fn state_tx(&mut self, state: DataLevel) {
-        self.state_tx[state as usize] += 1;
+        self.state_tx[state.as_usize()] += 1;
     }
 }
 
@@ -177,7 +177,7 @@ fn core_state_tx() {
     {
         let entry = conntrack.table.get(&conn_id).expect("Connection should exist");
         let info = &entry.info;
-        assert!(info.tracked.invoked[DataLevel::L4InPayload as usize] == 2,
+        assert!(info.tracked.invoked[DataLevel::L4InPayload(true).as_usize()] == 2,
             "Tracked should have invoked L4InPayload after duplicate SYN packet.");
         assert!(info.linfo.actions.active == Actions::Update | Actions::PassThrough,
                 "ConnTracker should have Update and PassThrough actions after InUpdate filter.");
@@ -191,12 +191,12 @@ fn core_state_tx() {
     {
         let entry = conntrack.table.get(&conn_id).expect("Connection should exist");
         let info = &entry.info;
-        assert!(info.tracked.invoked[DataLevel::L4InPayload as usize] == 3);
+        assert!(info.tracked.invoked[DataLevel::L4InPayload(true).as_usize()] == 3);
         let l7 = match info.layers.get(0).unwrap() {
             Layer::L7(layer) => layer,
         };
         assert!(l7.linfo.drop()); // Parser should have failed to match
-        assert!(info.tracked.state_tx[DataLevel::L7OnDisc as usize] == 1,
+        assert!(info.tracked.state_tx[DataLevel::L7OnDisc.as_usize()] == 1,
             "Tracked should have state tx after parser failure."
         );
         // 3 packets observed total

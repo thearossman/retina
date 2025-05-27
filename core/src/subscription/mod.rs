@@ -142,14 +142,3 @@ where
         // TODO
     }
 }
-
-/// For `update` methods, the order of the packet received.
-#[derive(Debug, Eq, PartialEq)]
-pub enum L4Order {
-    /// UDP connection, reassembly not applicable
-    None,
-    /// TCP connection, post-reassembly
-    Reassembled,
-    /// TCP connection, pre-assembly (order observed)
-    Received,
-}

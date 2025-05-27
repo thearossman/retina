@@ -41,7 +41,7 @@ impl TrackedActions {
     /// state TX if child layer(s) have actions set.
     #[inline]
     pub fn start_state_tx(&mut self, state: StateTransition) {
-        self.active &= self.refresh_at[state as usize].not();
+        self.active &= self.refresh_at[state.as_usize()].not();
         self.active &= (Actions::PassThrough).not();
     }
 
