@@ -45,6 +45,12 @@ impl TrackedActions {
         self.active &= (Actions::PassThrough).not();
     }
 
+    /// Clear an action
+    #[inline]
+    pub fn clear(&mut self, actions: &Actions) {
+        self.active &= actions.not();
+    }
+
     /// All actions are empty; nothing to do for future packets in connection.
     #[inline]
     pub fn drop(&self) -> bool {

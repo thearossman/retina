@@ -142,6 +142,9 @@ where
             StateTransition::L4FirstPacket | StateTransition::None => {}
         }
 
+        for layer in &mut self.layers {
+            layer.end_state_tx();
+        }
         if self.linfo.drop() && self.layers.iter().all(|l| l.drop()) {
             self.exec_drop();
         } else {

@@ -2,6 +2,7 @@
 
 use super::conn_actions::TrackedActions;
 use super::conn_state::{DataLevel, LayerState, StateTransition};
+use crate::conntrack::Actions;
 use crate::protocols::stream::{
     ConnParser, ParseResult, ParserRegistry, ParsingState, ProbeRegistryResult,
 };
@@ -42,6 +43,11 @@ pub(crate) trait TrackableLayer {
     /// No actions are active and, if applicable, no sub-layers have
     /// active actions.
     fn drop(&self) -> bool;
+
+    /// Used to remove any actions that are invalid at this layer.
+    /// For example: an L4 Update may trigger an L7 "parse" action, which
+    /// would be invalid once in payload if another session is not expected.
+    fn end_state_tx(&mut self);
 }
 
 impl Layer {
@@ -74,6 +80,12 @@ impl TrackableLayer for Layer {
     fn drop(&self) -> bool {
         match self {
             Layer::L7(session) => session.drop(),
+        }
+    }
+
+    fn end_state_tx(&mut self) {
+        match self {
+            Layer::L7(session) => session.end_state_tx(),
         }
     }
 }
@@ -131,6 +143,18 @@ impl L7Session {
 }
 
 impl TrackableLayer for L7Session {
+
+    fn end_state_tx(&mut self) {
+        // Nothing to parse if in payload and no more sessions expected
+        if self.linfo.actions.needs_parse() &&
+           matches!(self.linfo.state, LayerState::Payload) &&
+           !matches!(self.parser.session_parsed_state(),
+                         ParsingState::Parsing | ParsingState::Probing)
+        {
+            self.linfo.actions.clear(&Actions::Parse);
+        }
+    }
+
     fn needs_process(&self, tx: StateTransition, pdu: &L4Pdu) -> bool {
         self.linfo.state != LayerState::None
             && (tx == StateTransition::L7OnDisc
