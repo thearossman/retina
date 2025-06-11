@@ -15,7 +15,7 @@ use crate::memory::mbuf::Mbuf;
 pub trait Tracked {
     /// Initialize internal data. Invoked on first PDU in connection.
     /// Note that this first PDU will also be received in `update`.
-    fn new(first_pkt: &L4Pdu);
+    fn new(first_pkt: &L4Pdu) -> Self;
     /// Invoked for each newly received PDU.
     /// Start/end phases of interest must be specified as attributes, e.g.
     /// #[invoke(L4InPayload)], #[invoke(L4FirstPacket,L4EndHshk)]
@@ -32,7 +32,7 @@ pub trait Tracked {
 /// any tracked data (i.e., just wants raw packets).
 pub struct TrackedEmpty;
 impl Tracked for TrackedEmpty {
-    fn new(_first_pkt: &L4Pdu) {}
+    fn new(_first_pkt: &L4Pdu) -> Self { TrackedEmpty }
     fn update(&mut self, _pdu: &L4Pdu) {}
     fn phase_tx(&mut self, _tx: StateTransition) {}
     fn clear(&mut self) {}
