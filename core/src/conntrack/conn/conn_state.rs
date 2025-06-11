@@ -60,6 +60,32 @@ impl DataLevel {
     pub fn raw(&self) -> u8 {
         unsafe { *(self as *const Self as *const u8) }
     }
+
+    pub fn name(&self) -> &str {
+        match self {
+            DataLevel::L4FirstPacket => "L4FirstPacket",
+            DataLevel::L4EndHshk => "L4EndHshk",
+            DataLevel::L4InPayload(_) => "L4InPayload",
+            DataLevel::L4Terminated => "L4Terminated",
+            DataLevel::L7OnDisc => "L7OnDisc",
+            DataLevel::L7InHdrs => "L7InHdrs",
+            DataLevel::L7EndHdrs => "L7EndHdrs",
+            DataLevel::L7InPayload => "L7InPayload",
+            DataLevel::L7EndPayload => "L7EndPayload",
+            DataLevel::None => "None",
+        }
+    }
+
+    pub fn in_transport(&self) -> bool {
+        self.name().contains("L4")
+    }
+
+    pub fn layer_idx(&self) -> Option<usize> {
+        if self.name().contains("L7") {
+            return Some(0);
+        }
+        None
+    }
 }
 
 /// The State Transitions that a connection can encounter.
