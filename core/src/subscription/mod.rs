@@ -14,6 +14,7 @@ pub mod data;
 pub use data::{Tracked, TrackedEmpty, FromSession, FromMbuf};
 pub mod callback;
 pub use callback::StreamingCallback;
+pub mod timer;
 
 #[cfg(feature = "timing")]
 use crate::timing::timer::Timers;

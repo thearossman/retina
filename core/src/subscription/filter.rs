@@ -1,6 +1,11 @@
 use crate::{conntrack::StateTransition, L4Pdu};
 use super::data::Tracked;
 
+// TODOs:
+// - Like callback, ultimately want the filter to be a wrapper
+//   s.t. it can take in multiple tracked datatypes.
+// - Maybe add a timer wrapper
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum FilterResult {
     Continue,
