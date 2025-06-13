@@ -22,3 +22,11 @@ macro_rules! field {
         $crate::filter::ast::FieldName($x.to_owned())
     };
 }
+
+#[doc(hidden)]
+#[macro_export]
+macro_rules! filterfunc {
+    ( $x:expr ) => {
+        $crate::filter::ast::FilterFuncName($x.to_owned())
+    };
+}

@@ -151,11 +151,11 @@ impl FlatPTree {
     // Converts PTree to vector of LayeredPatterns (all root->leaf paths).
     // Useful for using the PTree to prune redundant branches then
     // converting back to LayeredPatterns
-    pub(crate) fn to_layered_patterns(&self) -> Vec<LayeredPattern> {
+    pub(crate) fn to_layered_patterns(&self, custom_filters: &Vec<Predicate>) -> Vec<LayeredPattern> {
         let flat_patterns = self.to_flat_patterns();
         let mut layered = vec![];
         for pattern in flat_patterns.iter() {
-            layered.extend(pattern.to_fully_qualified().expect("fully qualified"));
+            layered.extend(pattern.to_fully_qualified(custom_filters).expect("fully qualified"));
         }
         layered
     }

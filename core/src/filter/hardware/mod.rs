@@ -59,7 +59,7 @@ impl<'a> HardwareFilter<'a> {
                 pattern.predicates.pop();
             }
             // converts to LayeredPattern
-            layered.extend(pattern.to_fully_qualified().expect("fully qualified"));
+            layered.extend(pattern.to_fully_qualified(&vec![]).expect("fully qualified"));
         }
 
         // Remove identical patterns
@@ -138,6 +138,7 @@ pub(crate) fn device_supported(pred: &Predicate, port: &Port) -> bool {
     // Only allow equality predicates
     // MLX5 only supports equality or masked IP address
     let op_supported = match pred {
+        Predicate::Custom { .. } => false,
         Predicate::Unary { .. } => true,
         Predicate::Binary {
             protocol,
@@ -176,7 +177,7 @@ fn predicate_supported(predicate: &Predicate, port: &Port, group: u32, priority:
     let pattern = FlatPattern {
         predicates: vec![predicate.to_owned()],
     };
-    let fq_patterns = pattern.to_fully_qualified().expect("fully qualified");
+    let fq_patterns = pattern.to_fully_qualified(&vec![]).expect("fully qualified");
     fq_patterns
         .iter()
         .all(|p| pattern_supported(p, port, group, priority))

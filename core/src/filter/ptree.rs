@@ -1,6 +1,6 @@
 use super::actions::*;
 use super::ast::*;
-use super::pattern::{FlatPattern, LayeredPattern};
+use super::pattern::FlatPattern;
 use super::{Level, SubscriptionSpec};
 
 use std::cmp::{Ordering, PartialOrd};
@@ -799,16 +799,6 @@ impl PTree {
 
         build_pattern(&mut patterns, &mut predicates, &self.root);
         patterns
-    }
-
-    #[allow(dead_code)]
-    pub(crate) fn to_layered_patterns(&self) -> Vec<LayeredPattern> {
-        let flat_patterns = self.to_flat_patterns();
-        let mut layered = vec![];
-        for pattern in flat_patterns.iter() {
-            layered.extend(pattern.to_fully_qualified().expect("fully qualified"));
-        }
-        layered
     }
 
     // modified from https://vallentin.dev/2019/05/14/pretty-print-tree

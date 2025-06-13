@@ -18,7 +18,7 @@ pub enum LayerState {
 /// The possible Levels that a datatype or filter can be associated with.
 /// Streaming Levels must also identify the streaming frequency and unit
 /// (packets, bytes, or seconds).
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
 #[repr(u8)]
 pub enum DataLevel {
     /// On first packet in connection
@@ -31,8 +31,6 @@ pub enum DataLevel {
     /// Must specify in associated data whether the packets must be
     /// reassembled (true) or not (false).
     L4InPayload(bool),
-    /// L4 connection terminated by FIN/ACK sequence or timeout
-    L4Terminated,
 
     /// On L7 protocol identification
     L7OnDisc,
@@ -44,6 +42,9 @@ pub enum DataLevel {
     L7InPayload,
     /// L7 payload end. TODO NOT YET SUPPORTED by parsers.
     L7EndPayload,
+
+    /// L4 connection terminated by FIN/ACK sequence or timeout
+    L4Terminated,
 
     /// `None` is used as a no-op state transition and to give the
     /// enum a defined length. It is not a valid Level for a datatype

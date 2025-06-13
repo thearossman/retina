@@ -5,6 +5,7 @@ use super::{Level, SubscriptionSpec};
 use std::collections::HashSet;
 use std::fmt;
 
+use crate::conntrack::DataLevel;
 use crate::protocols::stream::ConnData;
 use bimap::BiMap;
 use ipnet::{Ipv4Net, Ipv6Net};
@@ -86,6 +87,15 @@ pub enum Predicate {
         op: BinOp,
         value: Value,
     },
+    /// Opaque function provided by user
+    Custom {
+        /// Function name
+        name: FilterFuncName,
+        /// DataLevel(s) at which the filter must receive streaming updates
+        /// (e.g., "packets in the L4 payload") and/or phase transition
+        /// updates (e.g., "parsed session").
+        levels: Vec<DataLevel>,
+    }
 }
 
 impl Predicate {
@@ -94,6 +104,24 @@ impl Predicate {
         match self {
             Predicate::Unary { protocol } => protocol,
             Predicate::Binary { protocol, .. } => protocol,
+            Predicate::Custom { .. } => ProtocolName::none(),
+        }
+    }
+
+    // Returns the name of the custom filter function
+    pub fn get_name(&self) -> &FilterFuncName {
+        if let Predicate::Custom { name, .. } = self {
+            return name;
+        }
+        panic!("Invoked get_name on non-custom filter");
+    }
+
+    // Returns the name of the protocol or the name of the filter
+    pub fn get_protocol_or_name(&self) -> &str {
+        match self {
+            Predicate::Unary { protocol } => protocol.name(),
+            Predicate::Binary { protocol, .. } => protocol.name(),
+            Predicate::Custom { name, .. } => name.name(),
         }
     }
 
@@ -105,6 +133,20 @@ impl Predicate {
     // Returns `true` if predicate is a binary constraint.
     pub fn is_binary(&self) -> bool {
         matches!(self, Predicate::Binary { .. })
+    }
+
+    // Returns `true` if predicate is a black-box function defined by a user.
+    pub fn is_custom(&self) -> bool {
+        matches!(self, Predicate::Custom { .. })
+    }
+
+    // Returns a reference to the `levels` vector for a custom filter.
+    // Inapplicable to non-custom filters.
+    pub fn levels(&self) -> &Vec<DataLevel> {
+        match self {
+            Predicate::Custom { levels, .. } => levels,
+            _ => panic!("Levels called on predicate: {:?}", self)
+        }
     }
 
     // Returns `true` if predicate can be pushed to a packet filter.
@@ -151,6 +193,7 @@ impl Predicate {
             || has_path(self.get_protocol(), &protocol!("udp"))
     }
 
+    // TODOTR THIS NEEDS TO BE CHANGED
     pub(crate) fn is_next_layer(&self, filter_layer: FilterLayer) -> bool {
         match filter_layer {
             FilterLayer::Packet | FilterLayer::PacketContinue => !self.on_packet(),
@@ -161,6 +204,7 @@ impl Predicate {
         }
     }
 
+    // TODOTR THIS NEEDS TO BE CHANGED
     // Returns `true` if the predicate would have been checked at the previous
     // filter layer based on both the filter layer and the subscription level.
     pub(super) fn is_prev_layer(
@@ -194,6 +238,7 @@ impl Predicate {
         }
     }
 
+    // TODOTR THIS NEEDS TO BE CHANGED
     // Returns true if the predicate would have been checked at prev. layer
     // Does not consider subscription type; meant to be used for filter collapse.
     pub(super) fn is_prev_layer_pred(&self, filter_layer: FilterLayer) -> bool {
@@ -841,6 +886,13 @@ impl fmt::Display for Predicate {
                 op,
                 value,
             } => write!(f, "{}.{} {} {}", protocol, field, op, value),
+            Predicate::Custom {
+                name,
+                levels } => {
+                    let levels: Vec<&str> = levels.iter().map(|l| l.name() ).collect();
+                    let levels = levels.join(",");
+                    write!(f, "{name} ({levels})")
+                }
         }
     }
 }
@@ -851,8 +903,17 @@ impl fmt::Display for Predicate {
 pub struct ProtocolName(pub String);
 
 impl ProtocolName {
+    pub(crate) fn none<'a>() -> &'a ProtocolName {
+        static NONE: std::sync::OnceLock<ProtocolName> = std::sync::OnceLock::new();
+        NONE.get_or_init(|| protocol!("none"))
+    }
+
     pub fn name(&self) -> &str {
         self.0.as_str()
+    }
+
+    pub fn is_supported(&self) -> bool {
+        LAYERS.node_indices().find(|i| LAYERS[*i] == *self).is_some()
     }
 }
 
@@ -880,6 +941,24 @@ impl FieldName {
 }
 
 impl fmt::Display for FieldName {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> Result<(), fmt::Error> {
+        write!(f, "{}", self.0)
+    }
+}
+
+/// Name of a custom filter function defined by a user
+/// By convention, this should be snake case
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub struct FilterFuncName(pub String);
+
+impl FilterFuncName {
+    pub fn name(&self) -> &str {
+        self.0.as_str()
+    }
+
+}
+
+impl fmt::Display for FilterFuncName {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> Result<(), fmt::Error> {
         write!(f, "{}", self.0)
     }

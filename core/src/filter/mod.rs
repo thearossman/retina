@@ -29,6 +29,7 @@ use crate::filter::hardware::{flush_rules, HardwareFilter};
 use crate::filter::parser::FilterParser;
 use crate::filter::pattern::{FlatPattern, LayeredPattern};
 use crate::filter::ptree_flat::FlatPTree;
+use crate::filter::ast::Predicate;
 use crate::lcore::CoreId;
 use crate::memory::mbuf::Mbuf;
 use crate::port::Port;
@@ -104,7 +105,7 @@ pub struct Filter {
 }
 
 impl Filter {
-    pub fn new(filter_raw: &str) -> Result<Filter> {
+    pub fn new(filter_raw: &str, custom_filters: &Vec<Predicate>) -> Result<Filter> {
         let raw_patterns = FilterParser::parse_filter(filter_raw)?;
 
         let flat_patterns = raw_patterns
@@ -114,7 +115,7 @@ impl Filter {
 
         let mut fq_patterns = vec![];
         for pattern in flat_patterns.iter() {
-            fq_patterns.extend(pattern.to_fully_qualified()?);
+            fq_patterns.extend(pattern.to_fully_qualified(custom_filters)?);
         }
 
         // deduplicate fully qualified patterns
@@ -128,7 +129,7 @@ impl Filter {
         ptree.prune_branches();
 
         Ok(Filter {
-            patterns: ptree.to_layered_patterns(),
+            patterns: ptree.to_layered_patterns(custom_filters),
         })
     }
 
@@ -227,6 +228,9 @@ pub enum FilterError {
         #[from]
         source: ipnet::PrefixLenError,
     },
+
+    #[error("Invalid Custom Filter: {0}")]
+    InvalidCustomFilter(String),
 }
 
 // Nice-to-have: tests for filter string parsing
