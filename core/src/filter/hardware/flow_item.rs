@@ -85,6 +85,8 @@ impl FlowPattern {
         for pred in predicates.iter() {
             match pred {
                 Predicate::Custom { .. } => bail!(FilterError::InvalidPredType("custom".to_owned())),
+                Predicate::Callback { .. } => bail!(FilterError::InvalidPredType("callback".to_owned())),
+                Predicate::LayerState { .. } => bail!(FilterError::InvalidPredType("layerstate".to_owned())),
                 Predicate::Unary { .. } => bail!(FilterError::InvalidPredType("unary".to_owned())),
                 Predicate::Binary {
                     protocol: _,
@@ -215,6 +217,8 @@ impl FlowPattern {
         for pred in predicates.iter() {
             match pred {
                 Predicate::Custom { .. } => bail!(FilterError::InvalidPredType("custom".to_owned())),
+                Predicate::Callback { .. } => bail!(FilterError::InvalidPredType("callback".to_owned())),
+                Predicate::LayerState { .. } => bail!(FilterError::InvalidPredType("layerstate".to_owned())),
                 Predicate::Unary { .. } => bail!(FilterError::InvalidPredType("unary".to_owned())),
                 Predicate::Binary {
                     protocol: _,
@@ -309,6 +313,8 @@ impl FlowPattern {
         for pred in predicates.iter() {
             match pred {
                 Predicate::Custom { .. } => bail!(FilterError::InvalidPredType("custom".to_owned())),
+                Predicate::Callback { .. } => bail!(FilterError::InvalidPredType("callback".to_owned())),
+                Predicate::LayerState { .. } => bail!(FilterError::InvalidPredType("layerstate".to_owned())),
                 Predicate::Unary { .. } => bail!(FilterError::InvalidPredType("unary".to_owned())),
                 Predicate::Binary {
                     protocol: _,
@@ -438,6 +444,8 @@ impl FlowPattern {
         for pred in predicates.iter() {
             match pred {
                 Predicate::Custom { .. } => bail!(FilterError::InvalidPredType("custom".to_owned())),
+                Predicate::Callback { .. } => bail!(FilterError::InvalidPredType("callback".to_owned())),
+                Predicate::LayerState { .. } => bail!(FilterError::InvalidPredType("layerstate".to_owned())),
                 Predicate::Unary { .. } => bail!(FilterError::InvalidPredType("unary".to_owned())),
                 Predicate::Binary {
                     protocol: _,

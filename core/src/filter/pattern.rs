@@ -43,7 +43,7 @@ impl FlatPattern {
                     let cur_header = unwrap_or_ret_false!(labels.get_by_right(protocol));
                     ret = ret && (*cur_header == *prev_header)
                 }
-                Predicate::Custom { .. } => continue,
+                _ => continue,
             }
         }
         ret
@@ -227,6 +227,7 @@ impl LayeredPattern {
         // check that there is an edge to previous protocol header
         // check that field_predicates are all binary
         // check that field_predicates are all predicates on protocol
+        // ignore custom filters
         let mut ret = true;
         let node = unwrap_or_ret_false!(labels.get_by_right(&proto_name));
         if let Some((outer_proto, _)) = self.0.back() {
@@ -237,7 +238,7 @@ impl LayeredPattern {
                     && match pred {
                         Predicate::Unary { .. } => false,
                         Predicate::Binary { protocol, .. } => protocol == &proto_name,
-                        Predicate::Custom { .. } => false,
+                        Predicate::Custom { .. } | Predicate::Callback { .. } | Predicate::LayerState { .. } => false,
                     }
             }
         } else {

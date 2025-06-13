@@ -138,7 +138,6 @@ pub(crate) fn device_supported(pred: &Predicate, port: &Port) -> bool {
     // Only allow equality predicates
     // MLX5 only supports equality or masked IP address
     let op_supported = match pred {
-        Predicate::Custom { .. } => false,
         Predicate::Unary { .. } => true,
         Predicate::Binary {
             protocol,
@@ -149,7 +148,8 @@ pub(crate) fn device_supported(pred: &Predicate, port: &Port) -> bool {
             matches!(op, BinOp::Eq)
                 || protocol == &protocol!("ipv4") && matches!(op, BinOp::In)
                 || protocol == &protocol!("ipv6") && matches!(op, BinOp::In)
-        }
+        },
+        _ => false,
     };
     if !op_supported {
         info!(

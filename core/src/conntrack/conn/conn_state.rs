@@ -1,6 +1,6 @@
 /// State that each Layer maintains, based on what it has
 /// seen so far in the connection.
-#[derive(PartialEq, Eq, Debug, Copy, Clone)]
+#[derive(PartialEq, Eq, Debug, Copy, Clone, Ord, PartialOrd, Hash)]
 pub enum LayerState {
     /// Determining protocol
     Discovery,
@@ -13,6 +13,14 @@ pub enum LayerState {
     /// receive packets. This will be set based on the
     /// result of a filter.
     None,
+}
+
+/// Convenience enum to be used at compile-time.
+/// Should match with `Layer` in conn_layers mod.
+#[derive(PartialEq, Eq, Debug, Copy, Clone, Ord, PartialOrd, Hash)]
+pub enum SupportedLayer {
+    L4,
+    L7
 }
 
 /// The possible Levels that a datatype or filter can be associated with.

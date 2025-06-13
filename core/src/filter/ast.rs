@@ -5,7 +5,7 @@ use super::{Level, SubscriptionSpec};
 use std::collections::HashSet;
 use std::fmt;
 
-use crate::conntrack::DataLevel;
+use crate::conntrack::{DataLevel, LayerState, conn::conn_state::SupportedLayer};
 use crate::protocols::stream::ConnData;
 use bimap::BiMap;
 use ipnet::{Ipv4Net, Ipv6Net};
@@ -87,14 +87,27 @@ pub enum Predicate {
         op: BinOp,
         value: Value,
     },
-    /// Opaque function provided by user
+    /// Opaque filter function provided by user
     Custom {
         /// Function name
-        name: FilterFuncName,
+        name: FuncName,
         /// DataLevel(s) at which the filter must receive streaming updates
         /// (e.g., "packets in the L4 payload") and/or phase transition
         /// updates (e.g., "parsed session").
         levels: Vec<DataLevel>,
+    },
+    /// Streaming callback, which may need to be checked for "unsubscribe"
+    /// to determine Actions. This will only be used in filter sub-trees.
+    Callback {
+        name: FuncName,
+        levels: Vec<DataLevel>,
+    },
+    /// A State that must be checked for, e.g., "if L7 is in payload".
+    /// This may be needed for Layers that cannot be ordered to determine
+    /// which action(s) to maintain. This will only be used in filter sub-trees.
+    LayerState {
+        layer: SupportedLayer,
+        state: LayerState,
     }
 }
 
@@ -104,24 +117,16 @@ impl Predicate {
         match self {
             Predicate::Unary { protocol } => protocol,
             Predicate::Binary { protocol, .. } => protocol,
-            Predicate::Custom { .. } => ProtocolName::none(),
+            _ => ProtocolName::none(),
         }
     }
 
     // Returns the name of the custom filter function
-    pub fn get_name(&self) -> &FilterFuncName {
-        if let Predicate::Custom { name, .. } = self {
-            return name;
-        }
-        panic!("Invoked get_name on non-custom filter");
-    }
-
-    // Returns the name of the protocol or the name of the filter
-    pub fn get_protocol_or_name(&self) -> &str {
+    pub fn get_name(&self) -> &FuncName {
         match self {
-            Predicate::Unary { protocol } => protocol.name(),
-            Predicate::Binary { protocol, .. } => protocol.name(),
-            Predicate::Custom { name, .. } => name.name(),
+            Predicate::Custom { name, .. } => name,
+            Predicate::Callback { name, .. } => name,
+            _ => panic!("Invoked get_name on non-custom filter"),
         }
     }
 
@@ -140,11 +145,22 @@ impl Predicate {
         matches!(self, Predicate::Custom { .. })
     }
 
+    // Returns `true` if predicate is a black-box callback defined by a user.
+    pub fn is_callback(&self) -> bool {
+        matches!(self, Predicate::Callback { .. })
+    }
+
+    // Returns `true` if predicate checks a Layer State
+    pub fn is_state(&self) -> bool {
+        matches!(self, Predicate::LayerState { .. })
+    }
+
     // Returns a reference to the `levels` vector for a custom filter.
-    // Inapplicable to non-custom filters.
+    // Inapplicable to static predicates and LayerState.
     pub fn levels(&self) -> &Vec<DataLevel> {
         match self {
             Predicate::Custom { levels, .. } => levels,
+            Predicate::Callback { levels, .. } => levels,
             _ => panic!("Levels called on predicate: {:?}", self)
         }
     }
@@ -888,11 +904,18 @@ impl fmt::Display for Predicate {
             } => write!(f, "{}.{} {} {}", protocol, field, op, value),
             Predicate::Custom {
                 name,
-                levels } => {
-                    let levels: Vec<&str> = levels.iter().map(|l| l.name() ).collect();
-                    let levels = levels.join(",");
+                levels
+            } => {
+                    let levels = levels.iter().map(|l| l.name() ).collect::<Vec<&str>>().join(",");
                     write!(f, "{name} ({levels})")
-                }
+            },
+            Predicate::Callback { name, levels} => {
+                let levels = levels.iter().map(|l| l.name() ).collect::<Vec<&str>>().join(",");
+                write!(f, "{name} ({levels})")
+            }
+            Predicate::LayerState { layer, state } => {
+                write!(f, "{:?}[{:?}]", layer, state)
+            }
         }
     }
 }
@@ -949,16 +972,16 @@ impl fmt::Display for FieldName {
 /// Name of a custom filter function defined by a user
 /// By convention, this should be snake case
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
-pub struct FilterFuncName(pub String);
+pub struct FuncName(pub String);
 
-impl FilterFuncName {
+impl FuncName {
     pub fn name(&self) -> &str {
         self.0.as_str()
     }
 
 }
 
-impl fmt::Display for FilterFuncName {
+impl fmt::Display for FuncName {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> Result<(), fmt::Error> {
         write!(f, "{}", self.0)
     }
