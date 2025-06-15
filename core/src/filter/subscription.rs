@@ -249,6 +249,16 @@ impl DatatypeSpec {
         actions
     }
 
+    /// Should be applied for each subscription.
+    /// Updates Actions to be "refreshed" at the next layer where new relevant information
+    /// might be available (i.e., next filter predicate can be evaluated).
+    pub(crate) fn push_filter_pred(actions: &mut Vec<CompiledActions>, next_pred: &StateTransition) {
+        for a in actions {
+            a.transport.refresh_at[next_pred.as_usize()] |= a.transport.active;
+            a.layers[0].refresh_at[next_pred.as_usize()] |= a.layers[0].active;
+        }
+    }
+
     /// Add `new` to `actions` by either:
     /// - Appending it, or
     /// - Updating an existing action that has the same preconditions
