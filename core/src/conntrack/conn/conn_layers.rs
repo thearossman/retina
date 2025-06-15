@@ -10,8 +10,7 @@ use crate::protocols::Session;
 use crate::subscription::Trackable;
 use crate::L4Pdu;
 
-/// "Layer", roughly mapped to OSI layer
-/// Ordering is derived by list order
+/// "Layers" that can be built on top of the transport layer (L4).
 /// Each associated datatype must implement LayerInfo API (see below)
 #[derive(Debug)]
 pub enum Layer {
@@ -19,6 +18,15 @@ pub enum Layer {
     L7(L7Session),
 }
 pub const NUM_LAYERS: usize = 1;
+
+/// Convenience enum to be used at compile-time.
+/// Should correspond to the transport layer plus `Layer` variants.
+#[derive(PartialEq, Eq, Debug, Copy, Clone, Ord, PartialOrd, Hash)]
+#[repr(usize)]
+pub enum SupportedLayer {
+    L4,
+    L7
+}
 
 /// Trait implemented for each Layer variant
 pub(crate) trait TrackableLayer {

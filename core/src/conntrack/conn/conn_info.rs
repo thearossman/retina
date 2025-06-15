@@ -6,6 +6,7 @@
 
 use super::conn_actions::TrackedActions;
 use crate::lcore::CoreId;
+use crate::protocols::packet::tcp::TCP_PROTOCOL;
 use crate::protocols::stream::{ConnData, ParserRegistry};
 use crate::subscription::{Subscription, Trackable};
 use crate::FiveTuple;
@@ -45,7 +46,11 @@ where
         let five_tuple = FiveTuple::from_ctxt(pdu.ctxt);
         ConnInfo {
             linfo: LayerInfo {
-                state: LayerState::Payload,
+                state: if pdu.ctxt.proto == TCP_PROTOCOL {
+                    LayerState::Headers // Pre-TCP handshake
+                } else {
+                    LayerState::Payload
+                },
                 actions: TrackedActions::new(),
             },
             cdata: ConnData::new(five_tuple),
@@ -78,6 +83,7 @@ where
 
     /// Invoked by reassembly infrastructure when the TCP handshake is completed.
     pub(super) fn handshake_done(&mut self, subscription: &Subscription<T::Subscribed>) {
+        self.linfo.state = LayerState::Payload;
         self.exec_state_tx(StateTransition::L4EndHshk, subscription);
     }
 

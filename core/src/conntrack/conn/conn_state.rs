@@ -1,8 +1,12 @@
+use std::cmp::Ordering;
+use strum_macros::EnumIter;
+
 /// State that each Layer maintains, based on what it has
 /// seen so far in the connection.
 #[derive(PartialEq, Eq, Debug, Copy, Clone, Ord, PartialOrd, Hash)]
 pub enum LayerState {
     /// Determining protocol
+    /// For L4, this indicates pre-handshake
     Discovery,
     /// Headers (TCP hshk, TLS hshk, HTTP hdrs, etc.)
     /// Contains number of packets seen in headers.
@@ -15,18 +19,11 @@ pub enum LayerState {
     None,
 }
 
-/// Convenience enum to be used at compile-time.
-/// Should match with `Layer` in conn_layers mod.
-#[derive(PartialEq, Eq, Debug, Copy, Clone, Ord, PartialOrd, Hash)]
-pub enum SupportedLayer {
-    L4,
-    L7
-}
-
 /// The possible Levels that a datatype or filter can be associated with.
 /// Streaming Levels must also identify the streaming frequency and unit
 /// (packets, bytes, or seconds).
-#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
+/// NOTE: for the same layer, enums must be listed in order.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, EnumIter)]
 #[repr(u8)]
 pub enum DataLevel {
     /// On first packet in connection
@@ -94,6 +91,54 @@ impl DataLevel {
             return Some(0);
         }
         None
+    }
+
+    /// Returns Greater if self > Other, Less if self < Other, Equal if self == Other,
+    /// and Unknown if the two cannot be compared (different layers).
+    pub fn compare(&self, other: &DataLevel) -> StateTxOrd {
+        // Invalid layer for subscriptions
+        assert!(!matches!(self, DataLevel::None) && !matches!(self, DataLevel::None));
+
+        // End of connection is always greatest
+        if matches!(self, DataLevel::L4Terminated) || matches!(other, DataLevel::L4Terminated) {
+            return StateTxOrd::from_ord(self.cmp(other));
+        }
+        // Start of connection is always lowest
+        if matches!(self, DataLevel::L4FirstPacket) || matches!(other, DataLevel::L4FirstPacket) {
+            return StateTxOrd::from_ord(self.cmp(other));
+        }
+
+        // Different layers
+        if self.name().contains("L4") && !other.name().contains("L4") ||
+           self.name().contains("L7") && !other.name().contains("L7") {
+            return StateTxOrd::Unknown;
+        }
+
+        // Exceptions to the ordering rule
+        if matches!(self, DataLevel::L4EndHshk) {
+            return StateTxOrd::Unknown;
+        }
+
+        // Enum must be in listed order above.
+        StateTxOrd::from_ord(self.cmp(other))
+    }
+}
+
+#[derive(Debug, Eq, PartialEq)]
+pub enum StateTxOrd {
+    Unknown,
+    Greater,
+    Less,
+    Equal,
+}
+
+impl StateTxOrd {
+    pub(crate) fn from_ord(ordering: Ordering) -> StateTxOrd {
+        match ordering {
+            Ordering::Greater => StateTxOrd::Greater,
+            Ordering::Less => StateTxOrd::Less,
+            Ordering::Equal => StateTxOrd::Equal,
+        }
     }
 }
 

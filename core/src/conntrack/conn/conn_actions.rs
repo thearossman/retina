@@ -14,11 +14,13 @@ pub enum Actions {
     Parse,
     /// Indicates that some child layer(s) require actions.
     PassThrough,
+    /// Track the connection, updating with state transitions.
+    Track,
 }
 
 /// Basic representation of Actions
 /// TODO change to single bitmask in the future
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, Ord, PartialOrd)]
 pub struct TrackedActions {
     // Currently-active actions (as bitmask)
     pub active: Actions,
@@ -81,6 +83,15 @@ impl TrackedActions {
     #[inline]
     pub fn needs_update(&self) -> bool {
         self.active.intersects(Actions::Update)
+    }
+
+    /// Append TrackedActions. Primarily used at compile-time.
+    #[inline]
+    pub(crate) fn extend(&mut self, other: &TrackedActions) {
+        self.active |= other.active;
+        for i in 0..NUM_STATE_TRANSITIONS {
+            self.refresh_at[i] |= other.refresh_at[i];
+        }
     }
 
     /// When a filter has definitively matched AND it will be required

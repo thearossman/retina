@@ -5,7 +5,7 @@ use super::{Level, SubscriptionSpec};
 use std::collections::HashSet;
 use std::fmt;
 
-use crate::conntrack::{DataLevel, LayerState, conn::conn_state::SupportedLayer};
+use crate::conntrack::{DataLevel, LayerState, conn::conn_layers::SupportedLayer};
 use crate::protocols::stream::ConnData;
 use bimap::BiMap;
 use ipnet::{Ipv4Net, Ipv6Net};
