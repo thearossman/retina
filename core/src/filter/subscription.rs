@@ -3,14 +3,61 @@ use crate::conntrack::conn::conn_state::StateTxOrd;
 use crate::conntrack::{Actions, DataLevel, LayerState, StateTransition, TrackedActions};
 
 
-/// Compile-time struct for representing a datatype
+/// Actions for a single subscription that will be stored at a node in a PTree
 #[derive(Debug, Clone)]
-pub struct DatatypeSpec {
-    /// The Level at which the datatype is complete (or streamed)
-    pub level: DataLevel,
-    /// Updates: streaming updates and state transitions requested.
-    /// This should include the `level` above.
-    pub updates: Vec<DataLevel>,
+pub(crate) struct NodeActions {
+    pub(crate) actions: Vec<CompiledActions>,
+    pub(crate) end_datatypes: bool,
+    pub(crate) filter_layer: StateTransition,
+}
+
+impl NodeActions {
+    pub(crate) fn new(filter_layer: StateTransition) -> Self {
+        Self { actions: vec![], end_datatypes: false, filter_layer }
+    }
+
+    /// Add `new` to `actions` by either:
+    /// - Appending it, or
+    /// - Updating an existing action that has the same preconditions
+    pub(crate) fn push_action(&mut self, new: CompiledActions) {
+        let curr = self.actions.iter_mut().find(|a| (**a).if_matches == new.if_matches);
+        match curr {
+            Some(curr) => {
+                curr.transport.extend(&new.transport);
+                curr.layers[0].extend(&new.layers[0]);
+            },
+            None => self.actions.push(new),
+        }
+    }
+
+    /// Update actions with an additional datatype.
+    pub(crate) fn add_datatype(&mut self, spec: &DatatypeSpec) {
+        assert!(!self.end_datatypes, "Cannot add new datatypes after adding filter predicates.");
+        let actions = spec.to_actions(self.filter_layer);
+        for a in actions.actions {
+            self.push_action(a);
+        }
+    }
+
+    /// Must be added after full subscription spec has been built up with all datatypes,
+    /// including the datatypes required for filters.
+    /// Updates Actions to be "refreshed" at the next layer where new relevant information
+    /// might be available (i.e., next filter predicate can be evaluated).
+    pub(crate) fn push_filter_pred(&mut self, next_pred: &StateTransition) {
+        self.end_datatypes = true;
+        for a in self.actions.iter_mut() {
+            a.transport.refresh_at[next_pred.as_usize()] |= a.transport.active;
+            a.layers[0].refresh_at[next_pred.as_usize()] |= a.layers[0].active;
+        }
+    }
+
+    /// Must be added after full subscription spec has been built up with all datatypes,
+    /// including the datatypes required for filters.
+    /// `streaming_level` should indicate the level at which the callback could unsubscribe.
+    /// Updates subscription Actions to be "refreshed" at this point.
+    pub(crate) fn push_streaming_cb(&mut self, streaming_level: &StateTransition) {
+        self.push_filter_pred(streaming_level);
+    }
 }
 
 /// Data required to build PTrees, indicating how to populate actions.
@@ -81,6 +128,16 @@ impl CompiledActions {
     // }
 }
 
+/// Compile-time struct for representing a datatype
+#[derive(Debug, Clone)]
+pub struct DatatypeSpec {
+    /// The Level at which the datatype is complete (or streamed)
+    pub level: DataLevel,
+    /// Updates: streaming updates and state transitions requested.
+    /// This should include the `level` above.
+    pub updates: Vec<DataLevel>,
+}
+
 impl DatatypeSpec {
     /// For a given filter layer (state transition), return the actions that the
     /// datatype requires.
@@ -95,8 +152,8 @@ impl DatatypeSpec {
     /// guaranteed to execute after the end of the L7 headers, we should do nothing.
     /// If the layers are not comparable (may happen in any order), then the actions
     /// taken depend on the L7 state.
-    pub(crate) fn to_actions(&self, filter_layer: StateTransition) -> Vec<CompiledActions> {
-        let mut actions = vec![];
+    pub(crate) fn to_actions(&self, filter_layer: StateTransition) -> NodeActions {
+        let mut actions = NodeActions::new(filter_layer);
         let l7_idx = SupportedLayer::L7 as usize - 1;
         assert!(self.updates.contains(&self.level));
         for level in &self.updates {
@@ -119,7 +176,7 @@ impl DatatypeSpec {
                             if matches!(cmp, StateTxOrd::Unknown) {
                                 a.if_matches = Some((SupportedLayer::L4, vec![LayerState::Headers]));
                             }
-                            DatatypeSpec::push_action(&mut actions, a);
+                            actions.push_action(a);
                         },
                         _ => continue,
                     }
@@ -132,7 +189,7 @@ impl DatatypeSpec {
                         // Require reassembly if requested
                         a.transport.active |= Actions::Parse;
                     }
-                    DatatypeSpec::push_action(&mut actions, a);
+                    actions.push_action(a);
                 },
                 DataLevel::L7OnDisc => {
                     match cmp {
@@ -149,7 +206,7 @@ impl DatatypeSpec {
                             if matches!(cmp, StateTxOrd::Unknown) {
                                 a.if_matches = Some((SupportedLayer::L7, vec![LayerState::Discovery]));
                             }
-                            DatatypeSpec::push_action(&mut actions, a);
+                            actions.push_action(a);
                         }
                     }
                 },
@@ -175,7 +232,7 @@ impl DatatypeSpec {
                             if matches!(cmp, StateTxOrd::Unknown) {
                                 a.if_matches = Some((SupportedLayer::L7, vec![LayerState::Headers]));
                             }
-                            DatatypeSpec::push_action(&mut actions, a);
+                            actions.push_action(a);
                         }
                     }
                 },
@@ -190,7 +247,7 @@ impl DatatypeSpec {
                             if matches!(cmp, StateTxOrd::Unknown) {
                                 a.if_matches = Some((SupportedLayer::L7, vec![LayerState::Discovery, LayerState::Headers]));
                             }
-                            DatatypeSpec::push_action(&mut actions, a);
+                            actions.push_action(a);
                         }
                     }
                 },
@@ -211,18 +268,18 @@ impl DatatypeSpec {
 
                     // Beginning of or in payload: update
                     if cmp == StateTxOrd::Equal || filter_layer == StateTransition::L7EndHdrs {
-                        DatatypeSpec::push_action(&mut actions, in_payload);
+                        actions.push_action(in_payload);
                     }
                     // Pre-payload (L7OnDisc, InHdrs)
                     else if cmp == StateTxOrd::Less {
-                        DatatypeSpec::push_action(&mut actions, pre_payload);
+                        actions.push_action(pre_payload);
                     }
                     // Different layer: depends on L7 state
                     else if cmp == StateTxOrd::Unknown {
                         pre_payload.if_matches = Some((SupportedLayer::L7, vec![LayerState::Discovery, LayerState::Headers]));
-                        DatatypeSpec::push_action(&mut actions, pre_payload);
+                        actions.push_action(pre_payload);
                         in_payload.if_matches = Some((SupportedLayer::L7, vec![LayerState::Payload]));
-                        DatatypeSpec::push_action(&mut actions, in_payload);
+                        actions.push_action(in_payload);
                     }
                 },
                 DataLevel::L7EndPayload => {
@@ -233,46 +290,13 @@ impl DatatypeSpec {
                     let mut a = CompiledActions::new();
                     a.transport.active |= Actions::Track;
                     a.transport.refresh_at[level.as_usize()];
-                    DatatypeSpec::push_action(&mut actions, a);
+                    actions.push_action(a);
                 },
                 DataLevel::None => panic!("Data level cannot be None"),
             }
         }
         actions
     }
-
-    /// Must be added after full subscription spec has been built up with all datatypes,
-    /// including the datatypes required for filters.
-    /// Updates Actions to be "refreshed" at the next layer where new relevant information
-    /// might be available (i.e., next filter predicate can be evaluated).
-    pub(crate) fn push_filter_pred(actions: &mut Vec<CompiledActions>, next_pred: &StateTransition) {
-        for a in actions {
-            a.transport.refresh_at[next_pred.as_usize()] |= a.transport.active;
-            a.layers[0].refresh_at[next_pred.as_usize()] |= a.layers[0].active;
-        }
-    }
-
-    /// Must be added after full subscription spec has been built up with all datatypes,
-    /// including the datatypes required for filters.
-    /// Updates Actions to be "refreshed" at a point where a streaming callback could unsubscribe.
-    pub(crate) fn push_streaming_cb(actions: &mut Vec<CompiledActions>, streaming_level: &StateTransition) {
-        Self::push_filter_pred(actions, streaming_level);
-    }
-
-    /// Add `new` to `actions` by either:
-    /// - Appending it, or
-    /// - Updating an existing action that has the same preconditions
-    fn push_action(actions: &mut Vec<CompiledActions>, new: CompiledActions) {
-        let curr = actions.iter_mut().find(|a| (**a).if_matches == new.if_matches);
-        match curr {
-            Some(curr) => {
-                curr.transport.extend(&new.transport);
-                curr.layers[0].extend(&new.layers[0]);
-            },
-            None => actions.push(new),
-        }
-    }
-
 
 }
 
@@ -311,7 +335,7 @@ mod tests {
     #[test]
     fn core_data_actions_l7() {
         // Initial state: should parse until end of headers
-        let actions = l7_header.to_actions(StateTransition::L4FirstPacket);
+        let actions = l7_header.to_actions(StateTransition::L4FirstPacket).actions;
         assert!(actions.len() == 1);
         assert!(actions[0].if_matches == None);
         assert!(actions[0].transport.has_next_layer() && actions[0].layers[0].needs_parse());
@@ -325,7 +349,7 @@ mod tests {
             }
         }
         // Everything should be dropped after headers
-        let actions = l7_header.to_actions(StateTransition::L7EndHdrs);
+        let actions = l7_header.to_actions(StateTransition::L7EndHdrs).actions;
         assert!(actions.len() == 0);
     }
 
@@ -333,7 +357,7 @@ mod tests {
     #[test]
     fn core_data_actions_l7_l4() {
         // Initial state: pre-payload
-        let actions = l7_fingerprint.to_actions(StateTransition::L4FirstPacket);
+        let actions = l7_fingerprint.to_actions(StateTransition::L4FirstPacket).actions;
         assert!(actions.len() == 1);
         assert!(actions[0].transport.has_next_layer() && actions[0].transport.needs_update());
         for tx in StateTransition::iter() {
@@ -349,9 +373,29 @@ mod tests {
         }
 
         // Ambiguous: may be pre- or post-payload
-        let actions = l7_fingerprint.to_actions(StateTransition::L4InPayload(false));
+        let actions = l7_fingerprint.to_actions(StateTransition::L4InPayload(false)).actions;
         // Two added "nodes" for LayerState checks
         assert!(actions.len() == 2);
         assert!(actions[0].if_matches.is_some() || actions[1].if_matches.is_some());
+    }
+
+    #[test]
+    fn core_sub_actions() {
+        let mut node = NodeActions::new(StateTransition::L4FirstPacket);
+        node.add_datatype(&l7_header);
+        node.add_datatype(&conn_data);
+        // Expecting: no StateTransition conditionals
+        assert!(node.actions.len() == 1);
+        // Expecting: Update and Track (connection-level subscription), parse (L7 Headers)
+        assert!(node.actions[0].transport.active == Actions::Update | Actions::PassThrough | Actions::Track);
+
+        // Add in (e.g.) "tls" filter
+        node.push_filter_pred(&StateTransition::L7OnDisc);
+        assert!(node.actions[0].transport.refresh_at[StateTransition::L7OnDisc.as_usize()] ==
+                Actions::Update | Actions::PassThrough | Actions::Track);
+        // Indicate that this will be in a streaming callback
+        node.push_streaming_cb(&StateTransition::L4InPayload(false));
+        assert!(node.actions[0].transport.refresh_at[StateTransition::L4InPayload(false).as_usize()] ==
+                Actions::Update | Actions::PassThrough | Actions::Track);
     }
 }
