@@ -125,16 +125,12 @@ impl DatatypeSpec {
                     }
                 },
                 DataLevel::L4InPayload(reassembled) => {
-                    // Actions get "refreshed" either never (if specified)
-                    // or during subsequent updates (to allow datatype to unsubscribe).
-                    let refresh_at = if self.level == DataLevel::L4Terminated { self.level } else { *level };
                     // "In" suggests an update is required
+                    // InPayload datatype by itself can't "unsubscribe"
                     a.transport.active |= Actions::Update;
-                    a.transport.refresh_at[refresh_at.as_usize()] |= Actions::Update;
                     if *reassembled {
                         // Require reassembly if requested
                         a.transport.active |= Actions::Parse;
-                        a.transport.refresh_at[refresh_at.as_usize()] |= Actions::Parse;
                     }
                     DatatypeSpec::push_action(&mut actions, a);
                 },
@@ -158,8 +154,6 @@ impl DatatypeSpec {
                     }
                 },
                 DataLevel::L7InHdrs => {
-                    // Resets might happen if "in headers" data unsubscribes or headers end.
-                    let refresh_at = vec![DataLevel::L7InHdrs, DataLevel::L7EndHdrs];
                     match cmp {
                         StateTxOrd::Greater => continue,
                         StateTxOrd::Equal | StateTxOrd::Less | StateTxOrd::Unknown => {
@@ -167,15 +161,16 @@ impl DatatypeSpec {
                             // - If before protocol discovery: to get to start of L7 headers
                             // - If at or in headers: to update and (eventually) identify end of headers
                             a.transport.active |= Actions::PassThrough;
-                            for refr in &refresh_at {
-                                a.transport.refresh_at[refr.as_usize()] |= Actions::PassThrough;
+                            a.transport.refresh_at[DataLevel::L7EndHdrs.as_usize()] |= Actions::PassThrough;
+                            // Parse to get to end of headers
+                            if matches!(cmp, StateTxOrd::Less | StateTxOrd::Equal) {
+                                a.layers[l7_idx].active |= Actions::Parse;
+                                a.layers[l7_idx].refresh_at[StateTransition::L7EndHdrs.as_usize()] |= Actions::Parse;
                             }
-                            // Update at start of and in headers.
+                            // Update at start of and in headers
                             if matches!(filter_layer, StateTransition::L7OnDisc | StateTransition::L7InHdrs) {
-                                a.layers[l7_idx].active |= Actions::Parse | Actions::Update;
-                            }
-                            for refr in &refresh_at {
-                                a.layers[l7_idx].refresh_at[refr.as_usize()] |= Actions::Parse | Actions::Update;
+                                a.layers[l7_idx].active |= Actions::Update;
+                                a.layers[l7_idx].refresh_at[StateTransition::L7EndHdrs.as_usize()] |= Actions::Update;
                             }
                             if matches!(cmp, StateTxOrd::Unknown) {
                                 a.if_matches = Some((SupportedLayer::L7, vec![LayerState::Headers]));
@@ -202,15 +197,12 @@ impl DatatypeSpec {
                 DataLevel::L7InPayload => {
                     if cmp == StateTxOrd::Greater { continue; }
 
-                    // Start on updates at end of headers, continue in payload.
-                    // Once in payload, no more parsing to do.
+                    // Case 1: at beginning of or in payload.
                     let mut in_payload = CompiledActions::new();
                     in_payload.transport.active |= Actions::PassThrough;
-                    in_payload.transport.refresh_at[level.as_usize()] |= Actions::PassThrough;
                     in_payload.layers[l7_idx].active |= Actions::Update;
-                    in_payload.layers[l7_idx].refresh_at[level.as_usize()] |= Actions::Update;
 
-                    // Require parsing until end of L7 headers.
+                    // Case 2: before end of L7 headers.
                     let mut pre_payload = CompiledActions::new();
                     pre_payload.transport.active |= Actions::PassThrough;
                     pre_payload.transport.refresh_at[StateTransition::L7EndHdrs.as_usize()] |= Actions::PassThrough;
@@ -249,7 +241,8 @@ impl DatatypeSpec {
         actions
     }
 
-    /// Should be applied for each subscription.
+    /// Must be added after full subscription spec has been built up with all datatypes,
+    /// including the datatypes required for filters.
     /// Updates Actions to be "refreshed" at the next layer where new relevant information
     /// might be available (i.e., next filter predicate can be evaluated).
     pub(crate) fn push_filter_pred(actions: &mut Vec<CompiledActions>, next_pred: &StateTransition) {
@@ -257,6 +250,13 @@ impl DatatypeSpec {
             a.transport.refresh_at[next_pred.as_usize()] |= a.transport.active;
             a.layers[0].refresh_at[next_pred.as_usize()] |= a.layers[0].active;
         }
+    }
+
+    /// Must be added after full subscription spec has been built up with all datatypes,
+    /// including the datatypes required for filters.
+    /// Updates Actions to be "refreshed" at a point where a streaming callback could unsubscribe.
+    pub(crate) fn push_streaming_cb(actions: &mut Vec<CompiledActions>, streaming_level: &StateTransition) {
+        Self::push_filter_pred(actions, streaming_level);
     }
 
     /// Add `new` to `actions` by either:
@@ -340,11 +340,6 @@ mod tests {
             // At end of headers, expect DataLevel::L7EndHdrs done.
             if tx == StateTransition::L7EndHdrs {
                 assert!(actions[0].transport.refresh_at[tx.as_usize()] == Actions::PassThrough,
-                        "{:?} has value: {:?}", tx, actions[0].transport.refresh_at[tx.as_usize()]);
-            }
-            // Allow `update` to unsubscribe.
-            else if matches!(tx, StateTransition::L4InPayload(_)) {
-                assert!(actions[0].transport.refresh_at[tx.as_usize()] == Actions::Update,
                         "{:?} has value: {:?}", tx, actions[0].transport.refresh_at[tx.as_usize()]);
             }
             else if tx != StateTransition::None {
