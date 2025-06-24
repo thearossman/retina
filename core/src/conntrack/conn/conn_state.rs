@@ -86,6 +86,44 @@ impl DataLevel {
         self.name().contains("L4")
     }
 
+    pub fn is_streaming(&self) -> bool {
+        self.name().contains("In")
+    }
+
+    // Returns the layers `l` for which `l > self`
+    // and `l` _could_ directly follow `self`.
+    // For example, "L7OnDisc" can directly precede "L7InHdrs", but it cannot
+    // directly precede "L7InPayload" because "L7EndHdrs" must come first.
+    pub(crate) fn next_layers(&self) -> Vec<Self> {
+        let mut ret = vec![];
+        match self {
+            StateTransition::L4FirstPacket => {
+                ret.push(StateTransition::L4EndHshk);
+                ret.push(StateTransition::L7OnDisc);
+                ret.push(StateTransition::L4InPayload(true));
+                ret.push(StateTransition::L4InPayload(false));
+            }
+            StateTransition::L4EndHshk |
+                StateTransition::L4InPayload(_) |
+                StateTransition::L7EndPayload |
+                StateTransition::L7InPayload => {
+                ret.push(StateTransition::L4Terminated);
+            },
+            StateTransition::L7OnDisc => {
+                ret.push(StateTransition::L7EndHdrs);
+                ret.push(StateTransition::L7InHdrs);
+            },
+            StateTransition::L7InHdrs => {
+                ret.push(StateTransition::L7EndHdrs);
+            },
+            StateTransition::L7EndHdrs => {
+                ret.push(StateTransition::L7InPayload);
+            },
+            StateTransition::L4Terminated | StateTransition::None => { }
+        }
+        ret
+    }
+
     pub fn layer_idx(&self) -> Option<usize> {
         if self.name().contains("L7") {
             return Some(0);

@@ -136,6 +136,8 @@ pub struct DatatypeSpec {
     /// Updates: streaming updates and state transitions requested.
     /// This should include the `level` above.
     pub updates: Vec<DataLevel>,
+    /// The name of the datatype as a string
+    pub name: String,
 }
 
 impl DatatypeSpec {
@@ -311,23 +313,27 @@ mod tests {
         static ref l7_header: DatatypeSpec = DatatypeSpec {
             level: DataLevel::L7EndHdrs,
             updates: vec![DataLevel::L7EndHdrs],
+            name: "l7_header".into(),
         };
         // L7 headers with a customized fingerprint that requires
         // analyzing payload metadata.
         static ref l7_fingerprint: DatatypeSpec = DatatypeSpec {
             level: DataLevel::L4InPayload(false),
             updates: vec![DataLevel::L4InPayload(false), DataLevel::L7EndHdrs],
+            name: "l7_fingerprint".into(),
         };
         // Basic connection metadata, delivered at end of connection
         static ref conn_data: DatatypeSpec = DatatypeSpec {
             level: DataLevel::L4Terminated,
             updates: vec![DataLevel::L4InPayload(false), DataLevel::L4Terminated],
+            name: "conn_data".into(),
         };
         // Basic connection metadata, delivered in streaming fashion.
         // Also requests update when handshake completes.
         static ref conn_streamdata: DatatypeSpec = DatatypeSpec {
             level: DataLevel::L4InPayload(false),
             updates: vec![DataLevel::L4InPayload(false), DataLevel::L4EndHshk],
+            name: "conn_streamdata".into(),
         };
     );
 

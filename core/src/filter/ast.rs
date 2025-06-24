@@ -1,10 +1,11 @@
 use super::hardware;
-use super::ptree::FilterLayer;
-use super::{Level, SubscriptionSpec};
+use super::subscription::DatatypeSpec;
 
 use std::collections::HashSet;
 use std::fmt;
 
+use crate::conntrack::conn::conn_state::StateTxOrd;
+use crate::conntrack::StateTransition;
 use crate::conntrack::{DataLevel, LayerState, conn::conn_layers::SupportedLayer};
 use crate::protocols::stream::ConnData;
 use bimap::BiMap;
@@ -209,61 +210,73 @@ impl Predicate {
             || has_path(self.get_protocol(), &protocol!("udp"))
     }
 
-    // TODOTR THIS NEEDS TO BE CHANGED
-    pub(crate) fn is_next_layer(&self, filter_layer: FilterLayer) -> bool {
-        match filter_layer {
-            FilterLayer::Packet | FilterLayer::PacketContinue => !self.on_packet(),
-            FilterLayer::Protocol => self.on_session(),
-            FilterLayer::Session | FilterLayer::ConnectionDeliver | FilterLayer::PacketDeliver => {
-                false
+    // Returns the `StateTransition(s)` at which this predicate can be applied.
+    fn state_tx(&self) -> Vec<StateTransition> {
+        match self {
+            Predicate::Callback { .. } | Predicate::Custom { .. } => {
+                return self.levels().clone();
+            },
+            Predicate::LayerState { .. } => {
+                return vec![StateTransition::None];
+            },
+            _ => {
+                if self.on_packet() {
+                    return vec![StateTransition::L4FirstPacket];
+                }
+                if self.on_proto() {
+                    return vec![StateTransition::L7OnDisc];
+                }
+                if self.on_session() {
+                    return vec![StateTransition::L7EndHdrs];
+                }
+                else {
+                    panic!("Can't identify layer for unary or binary predicate: {:?}", self);
+                }
             }
         }
     }
 
-    // TODOTR THIS NEEDS TO BE CHANGED
-    // Returns `true` if the predicate would have been checked at the previous
-    // filter layer based on both the filter layer and the subscription level.
-    pub(super) fn is_prev_layer(
-        &self,
-        filter_layer: FilterLayer,
-        subscription: &SubscriptionSpec,
-    ) -> bool {
-        match filter_layer {
-            FilterLayer::PacketContinue => false,
-            FilterLayer::Packet => {
-                // Packet would have already been delivered in PacketContinue
-                self.on_packet() && matches!(subscription.level, Level::Packet)
+    /// Returns the StateTransitions that may need to be applied
+    /// after `curr` to correctly fulfill predicate `self`
+    pub(super) fn next_layer(&self, curr: StateTransition) -> Vec<StateTransition> {
+        let levels = self.levels();
+        let mut ret = vec![];
+        // Collect Levels that are greater or not comparable
+        let levels: Vec<_> = levels.iter().filter(|l|
+                                    !matches!(curr.compare(l), StateTxOrd::Less | StateTxOrd::Equal))
+                                    .collect();
+        for l in levels {
+            // Possible `next` level if current filter layer not comparable.
+            if matches!(curr.compare(l), StateTxOrd::Unknown) {
+                ret.push(*l);
+                continue;
             }
-            FilterLayer::PacketDeliver => {
-                // Subscription not delivered in this filter
-                !matches!(subscription.level, Level::Packet) ||
-                    // Subscription delivered in PacketContinue
-                    self.on_packet()
-            }
-            FilterLayer::Protocol => self.on_packet(),
-            FilterLayer::Session => {
-                (self.on_packet() || self.on_proto()) &&  // prev filter
-                !subscription.deliver_on_session()
-            }
-            FilterLayer::ConnectionDeliver => {
-                // Delivered elsewhere
-                !matches!(subscription.level, Level::Connection | Level::Static) ||
-                    // Delivered in packet filter
-                    (matches!(subscription.level, Level::Static) && self.on_packet())
+            // For `curr < self`, choose only those which can
+            // directly follow `curr`.
+            if curr.next_layers().contains(l) {
+                ret.push(*l);
             }
         }
+        ret
     }
 
-    // TODOTR THIS NEEDS TO BE CHANGED
-    // Returns true if the predicate would have been checked at prev. layer
+    // Same as `is_prev_layer_pred`, but accounts for the fact that a datatype
+    // might require updates.
+    pub(super) fn is_prev_layer(&self, curr: StateTransition,
+                                spec: &DatatypeSpec) -> bool {
+        self.state_tx()
+            .iter()
+            .all(|l| matches!(l.compare(&curr), StateTxOrd::Less)) &&
+            spec.updates
+                .iter().all(|l| matches!(l.compare(&curr), StateTxOrd::Less))
+    }
+
+    // Returns true if the predicate `self` would have been checked at prev. layer
     // Does not consider subscription type; meant to be used for filter collapse.
-    pub(super) fn is_prev_layer_pred(&self, filter_layer: FilterLayer) -> bool {
-        match filter_layer {
-            FilterLayer::PacketContinue => false,
-            FilterLayer::Packet | FilterLayer::Protocol => self.on_packet(),
-            FilterLayer::PacketDeliver | FilterLayer::ConnectionDeliver => true,
-            FilterLayer::Session => self.on_packet() || self.on_proto(),
-        }
+    pub(super) fn is_prev_layer_pred(&self, curr: StateTransition) -> bool {
+        self.state_tx()
+            .iter()
+            .all(|l| matches!(l.compare(&curr), StateTxOrd::Less))
     }
 
     pub(super) fn default_pred() -> Predicate {
