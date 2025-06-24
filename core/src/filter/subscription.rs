@@ -2,67 +2,18 @@ use crate::conntrack::conn::conn_layers::{SupportedLayer, NUM_LAYERS};
 use crate::conntrack::conn::conn_state::StateTxOrd;
 use crate::conntrack::{Actions, DataLevel, LayerState, StateTransition, TrackedActions};
 
-
-/// Actions for a single subscription that will be stored at a node in a PTree
-#[derive(Debug, Clone)]
-pub(crate) struct NodeActions {
-    pub(crate) actions: Vec<CompiledActions>,
-    pub(crate) end_datatypes: bool,
-    pub(crate) filter_layer: StateTransition,
-}
-
-impl NodeActions {
-    pub(crate) fn new(filter_layer: StateTransition) -> Self {
-        Self { actions: vec![], end_datatypes: false, filter_layer }
-    }
-
-    /// Add `new` to `actions` by either:
-    /// - Appending it, or
-    /// - Updating an existing action that has the same preconditions
-    pub(crate) fn push_action(&mut self, new: CompiledActions) {
-        let curr = self.actions.iter_mut().find(|a| (**a).if_matches == new.if_matches);
-        match curr {
-            Some(curr) => {
-                curr.transport.extend(&new.transport);
-                curr.layers[0].extend(&new.layers[0]);
-            },
-            None => self.actions.push(new),
-        }
-    }
-
-    /// Update actions with an additional datatype.
-    pub(crate) fn add_datatype(&mut self, spec: &DatatypeSpec) {
-        assert!(!self.end_datatypes, "Cannot add new datatypes after adding filter predicates.");
-        let actions = spec.to_actions(self.filter_layer);
-        for a in actions.actions {
-            self.push_action(a);
-        }
-    }
-
-    /// Must be added after full subscription spec has been built up with all datatypes,
-    /// including the datatypes required for filters.
-    /// Updates Actions to be "refreshed" at the next layer where new relevant information
-    /// might be available (i.e., next filter predicate can be evaluated).
-    pub(crate) fn push_filter_pred(&mut self, next_pred: &StateTransition) {
-        self.end_datatypes = true;
-        for a in self.actions.iter_mut() {
-            a.transport.refresh_at[next_pred.as_usize()] |= a.transport.active;
-            a.layers[0].refresh_at[next_pred.as_usize()] |= a.layers[0].active;
-        }
-    }
-
-    /// Must be added after full subscription spec has been built up with all datatypes,
-    /// including the datatypes required for filters.
-    /// `streaming_level` should indicate the level at which the callback could unsubscribe.
-    /// Updates subscription Actions to be "refreshed" at this point.
-    pub(crate) fn push_streaming_cb(&mut self, streaming_level: &StateTransition) {
-        self.push_filter_pred(streaming_level);
-    }
-}
-
-/// Data required to build PTrees, indicating how to populate actions.
+/// The Actions to be tracked for any subset of subscription components
+/// at a filter layer if some filter pattern matches (fully or partially).
+///
+/// The complete set of Actions for a Subscription at a PNode must be built up
+/// by adding datatypes, filter predicates, and callback levels using the
+/// NodeActions (see below). The NodeActions support (1) different actions
+/// for different layer states and (2) APIs for adding the `refresh_at`
+/// components of actoins.
+///
+/// TODO ideally we'd use the LayerState predicate type more effectively.
 #[derive(Debug, Clone, Eq, PartialEq, Ord, PartialOrd)]
-pub(crate) struct CompiledActions {
+pub(crate) struct DataActions {
     /// Optional conditional: these actions are only applied if layer is in
     /// one of the listed states.
     if_matches: Option<(SupportedLayer, Vec<LayerState>)>,
@@ -75,9 +26,9 @@ pub(crate) struct CompiledActions {
     layers: [TrackedActions; NUM_LAYERS],
 }
 
-impl CompiledActions {
+impl DataActions {
     pub(crate) fn new() -> Self {
-        CompiledActions {
+        DataActions {
             if_matches: None,
             transport: TrackedActions::new(),
             layers: [TrackedActions::new(); NUM_LAYERS],
@@ -128,7 +79,75 @@ impl CompiledActions {
     // }
 }
 
-/// Compile-time struct for representing a datatype
+/// Actions for a single subscription that will be stored at a node in a PTree.
+/// This must be built up by first adding `datatypes` and custom filters and then
+/// adding `next predicates` or `streaming callbacks` to determine when the node's
+/// actions could potentially be updated.
+#[derive(Debug, Clone)]
+pub(crate) struct NodeActions {
+    /// Essentially, there will be multiple elements here if there are different
+    /// branches depending on some layer's state.
+    /// TODO shouldn't need this in future - use LayerState pred.
+    pub(crate) actions: Vec<DataActions>,
+    /// Set to `true` the first time a filter predicate or streaming callback level
+    /// is added to ensure that no further datatypes are added afterwards.
+    pub(crate) end_datatypes: bool,
+    /// The state transition PTree that this Node is part of.
+    pub(crate) filter_layer: StateTransition,
+}
+
+impl NodeActions {
+    pub(crate) fn new(filter_layer: StateTransition) -> Self {
+        Self { actions: vec![], end_datatypes: false, filter_layer }
+    }
+
+    /// Add `new` to `actions` by either:
+    /// - Appending it, or
+    /// - Updating an existing action that has the same preconditions
+    pub(crate) fn push_action(&mut self, new: DataActions) {
+        let curr = self.actions.iter_mut().find(|a| (**a).if_matches == new.if_matches);
+        match curr {
+            Some(curr) => {
+                curr.transport.extend(&new.transport);
+                curr.layers[0].extend(&new.layers[0]);
+            },
+            None => self.actions.push(new),
+        }
+    }
+
+    /// Update actions with an additional datatype.
+    pub(crate) fn add_datatype(&mut self, spec: &DatatypeSpec) {
+        assert!(!self.end_datatypes, "Cannot add new datatypes after adding filter predicates.");
+        let actions = spec.to_actions(self.filter_layer);
+        for a in actions.actions {
+            self.push_action(a);
+        }
+    }
+
+    /// Must be added after full NodeActions for a specific subscription has been built up,
+    /// including the datatypes required for filters.
+    /// Updates Actions to be "refreshed" at the next layer where new relevant information
+    /// might be available (i.e., next filter predicate can be evaluated).
+    pub(crate) fn push_filter_pred(&mut self, next_pred: &StateTransition) {
+        self.end_datatypes = true;
+        for a in self.actions.iter_mut() {
+            a.transport.refresh_at[next_pred.as_usize()] |= a.transport.active;
+            a.layers[0].refresh_at[next_pred.as_usize()] |= a.layers[0].active;
+        }
+    }
+
+    /// Must be added after full subscription spec has been built up with all datatypes,
+    /// including the datatypes required for filters.
+    /// `streaming_level` should indicate the level at which the callback could unsubscribe.
+    /// Updates subscription Actions to be "refreshed" at this point.
+    pub(crate) fn push_streaming_cb(&mut self, streaming_level: &StateTransition) {
+        self.push_filter_pred(streaming_level);
+    }
+}
+
+/// Compile-time struct for representing a datatype required for a callback
+/// or custom filter predicate.
+/// Might also be used to represent a stateful custom filter predicate.
 #[derive(Debug, Clone)]
 pub struct DatatypeSpec {
     /// Updates: streaming updates and state transitions requested.
@@ -157,7 +176,7 @@ impl DatatypeSpec {
         let l7_idx = SupportedLayer::L7 as usize - 1;
         for level in &self.updates {
             let cmp = filter_layer.compare(level);
-            let mut a = CompiledActions::new();
+            let mut a = DataActions::new();
             match level {
                 DataLevel::L4FirstPacket => {
                     // Nothing required.
@@ -254,12 +273,12 @@ impl DatatypeSpec {
                     if cmp == StateTxOrd::Greater { continue; }
 
                     // Case 1: at beginning of or in payload.
-                    let mut in_payload = CompiledActions::new();
+                    let mut in_payload = DataActions::new();
                     in_payload.transport.active |= Actions::PassThrough;
                     in_payload.layers[l7_idx].active |= Actions::Update;
 
                     // Case 2: before end of L7 headers.
-                    let mut pre_payload = CompiledActions::new();
+                    let mut pre_payload = DataActions::new();
                     pre_payload.transport.active |= Actions::PassThrough;
                     pre_payload.transport.refresh_at[StateTransition::L7EndHdrs.as_usize()] |= Actions::PassThrough;
                     pre_payload.layers[l7_idx].active |= Actions::Parse;
@@ -286,7 +305,7 @@ impl DatatypeSpec {
                     unimplemented!();
                 },
                 DataLevel::L4Terminated => {
-                    let mut a = CompiledActions::new();
+                    let mut a = DataActions::new();
                     a.transport.active |= Actions::Track;
                     a.transport.refresh_at[level.as_usize()];
                     actions.push_action(a);
