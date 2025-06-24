@@ -1,6 +1,10 @@
+use std::collections::HashSet;
+
 use crate::conntrack::conn::conn_layers::{SupportedLayer, NUM_LAYERS};
 use crate::conntrack::conn::conn_state::StateTxOrd;
 use crate::conntrack::{Actions, DataLevel, LayerState, StateTransition, TrackedActions};
+
+use super::pattern::FlatPattern;
 
 /// The Actions to be tracked for any subset of subscription components
 /// at a filter layer if some filter pattern matches (fully or partially).
@@ -317,6 +321,86 @@ impl DatatypeSpec {
     }
 
 }
+
+/// Utility for determining at which levels filter predicates are needed for
+/// a subscription and at which levels a subscription could be delivered (or CB
+/// timer could be started). Note that one of these `SubscriptionLevel` structs
+/// must be built for _each filter pattern_ in a subscription.
+#[derive(Debug, Clone)]
+pub(crate) struct SubscriptionLevel {
+    pub(crate) datatypes: HashSet<DataLevel>,
+    pub(crate) filter_preds: HashSet<DataLevel>,
+    pub(crate) callback: Option<DataLevel>,
+}
+
+impl SubscriptionLevel {
+    pub(crate) fn new(data: &Vec<DatatypeSpec>,
+                      preds: &FlatPattern, cb: Option<DataLevel>) -> Self {
+        let mut ret = Self::empty();
+        for d in data { ret.add_datatype(d); }
+        for p in &preds.predicates {
+            ret.add_filter_pred(&p.state_tx());
+        }
+        ret.callback = cb;
+        ret
+    }
+
+    /// Can the callback be invoked or CB timer started?
+    pub(crate) fn can_deliver(&self, curr: &StateTransition) -> bool {
+        // Create iterator over all filter and datatype predicates
+        let mut iter = self.datatypes
+            .iter()
+            .chain(self.filter_preds.iter());
+
+        // Delivery can kick off if the current state transition
+        // is _not less than_ any of the predicates and it is _equal_ to at least one
+        // of the predicates (i.e., this may be the first state TX where the "not less than"
+        // bound is true).
+        iter.clone().all(|l| !matches!(curr.compare(l), StateTxOrd::Less)) &&
+            iter.any(|l| curr.compare(l) == StateTxOrd::Equal)
+
+    }
+
+    /// Can the pattern of predicates be skipped at this state transition layer?
+    /// That is, is this subscription guaranteed to have terminated at a level
+    /// that is strictly less than the current level?
+    pub(crate) fn can_skip(&self, curr: &StateTransition) -> bool {
+        // Streaming callback, if applicable, is strictly before `curr`
+        (self.callback.is_none() ||
+         curr.compare(&self.callback.unwrap()) == StateTxOrd::Greater) &&
+        // All datatype and filter predicate levels are strictly before `curr`
+        self.datatypes
+            .iter()
+            .chain(self.filter_preds.iter())
+            .all(|l| curr.compare(l) == StateTxOrd::Greater)
+    }
+
+    fn empty() -> Self {
+        Self {
+            datatypes: HashSet::new(),
+            filter_preds: HashSet::new(),
+            callback: None,
+        }
+    }
+
+    pub(crate) fn add_stream_callback(&mut self, level: DataLevel) {
+        assert!(level.is_streaming());
+        self.callback = Some(level);
+    }
+
+    pub(crate) fn add_datatype(&mut self, data: &DatatypeSpec) {
+        for d in &data.updates {
+            self.datatypes.insert(*d);
+        }
+    }
+
+    pub(crate) fn add_filter_pred(&mut self, pred: &Vec<DataLevel>) {
+        for d in pred {
+            self.filter_preds.insert(*d);
+        }
+    }
+}
+
 
 
 #[cfg(test)]

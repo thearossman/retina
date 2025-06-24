@@ -211,7 +211,7 @@ impl Predicate {
     }
 
     // Returns the `StateTransition(s)` at which this predicate can be applied.
-    fn state_tx(&self) -> Vec<StateTransition> {
+    pub(super) fn state_tx(&self) -> Vec<StateTransition> {
         match self {
             Predicate::Callback { .. } | Predicate::Custom { .. } => {
                 return self.levels().clone();
