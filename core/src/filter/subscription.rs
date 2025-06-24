@@ -131,8 +131,6 @@ impl CompiledActions {
 /// Compile-time struct for representing a datatype
 #[derive(Debug, Clone)]
 pub struct DatatypeSpec {
-    /// The Level at which the datatype is complete (or streamed)
-    pub level: DataLevel,
     /// Updates: streaming updates and state transitions requested.
     /// This should include the `level` above.
     pub updates: Vec<DataLevel>,
@@ -157,7 +155,6 @@ impl DatatypeSpec {
     pub(crate) fn to_actions(&self, filter_layer: StateTransition) -> NodeActions {
         let mut actions = NodeActions::new(filter_layer);
         let l7_idx = SupportedLayer::L7 as usize - 1;
-        assert!(self.updates.contains(&self.level));
         for level in &self.updates {
             let cmp = filter_layer.compare(level);
             let mut a = CompiledActions::new();
@@ -311,27 +308,23 @@ mod tests {
     lazy_static::lazy_static!(
         // L7 headers, e.g., TLS handshake, HTTP headers, DNS txn
         static ref l7_header: DatatypeSpec = DatatypeSpec {
-            level: DataLevel::L7EndHdrs,
             updates: vec![DataLevel::L7EndHdrs],
             name: "l7_header".into(),
         };
         // L7 headers with a customized fingerprint that requires
         // analyzing payload metadata.
         static ref l7_fingerprint: DatatypeSpec = DatatypeSpec {
-            level: DataLevel::L4InPayload(false),
             updates: vec![DataLevel::L4InPayload(false), DataLevel::L7EndHdrs],
             name: "l7_fingerprint".into(),
         };
         // Basic connection metadata, delivered at end of connection
         static ref conn_data: DatatypeSpec = DatatypeSpec {
-            level: DataLevel::L4Terminated,
             updates: vec![DataLevel::L4InPayload(false), DataLevel::L4Terminated],
             name: "conn_data".into(),
         };
         // Basic connection metadata, delivered in streaming fashion.
         // Also requests update when handshake completes.
         static ref conn_streamdata: DatatypeSpec = DatatypeSpec {
-            level: DataLevel::L4InPayload(false),
             updates: vec![DataLevel::L4InPayload(false), DataLevel::L4EndHshk],
             name: "conn_streamdata".into(),
         };
