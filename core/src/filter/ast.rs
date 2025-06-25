@@ -1,5 +1,4 @@
 use super::hardware;
-use super::subscription::DatatypeSpec;
 
 use std::collections::HashSet;
 use std::fmt;
@@ -236,44 +235,9 @@ impl Predicate {
         }
     }
 
-    /// Returns the StateTransitions that may need to be applied
-    /// after `curr` to correctly fulfill predicate `self`
-    pub(super) fn next_layer(&self, curr: StateTransition) -> Vec<StateTransition> {
-        let levels = self.levels();
-        let mut ret = vec![];
-        // Collect Levels that are greater or not comparable
-        let levels: Vec<_> = levels.iter().filter(|l|
-                                    !matches!(curr.compare(l), StateTxOrd::Less | StateTxOrd::Equal))
-                                    .collect();
-        for l in levels {
-            // Possible `next` level if current filter layer not comparable.
-            if matches!(curr.compare(l), StateTxOrd::Unknown) {
-                ret.push(*l);
-                continue;
-            }
-            // For `curr < self`, choose only those which can
-            // directly follow `curr`.
-            if curr.next_layers().contains(l) {
-                ret.push(*l);
-            }
-        }
-        ret
-    }
-
-    // Same as `is_prev_layer_pred`, but accounts for the fact that a datatype
-    // might require updates.
-    pub(super) fn is_prev_layer(&self, curr: StateTransition,
-                                spec: &DatatypeSpec) -> bool {
-        self.state_tx()
-            .iter()
-            .all(|l| matches!(l.compare(&curr), StateTxOrd::Less)) &&
-            spec.updates
-                .iter().all(|l| matches!(l.compare(&curr), StateTxOrd::Less))
-    }
-
     // Returns true if the predicate `self` would have been checked at prev. layer
-    // Does not consider subscription type; meant to be used for filter collapse.
-    pub(super) fn is_prev_layer_pred(&self, curr: StateTransition) -> bool {
+    // Does not consider subscription type; meant to be used for filter collapse only.
+    pub(super) fn is_prev_layer(&self, curr: StateTransition) -> bool {
         self.state_tx()
             .iter()
             .all(|l| matches!(l.compare(&curr), StateTxOrd::Less))

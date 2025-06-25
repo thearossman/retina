@@ -13,7 +13,7 @@ use super::pattern::FlatPattern;
 /// by adding datatypes, filter predicates, and callback levels using the
 /// NodeActions (see below). The NodeActions support (1) different actions
 /// for different layer states and (2) APIs for adding the `refresh_at`
-/// components of actoins.
+/// components of actions.
 ///
 /// TODO ideally we'd use the LayerState predicate type more effectively.
 #[derive(Debug, Clone, Eq, PartialEq, Ord, PartialOrd)]
@@ -400,7 +400,6 @@ impl SubscriptionLevel {
         }
     }
 }
-
 
 
 #[cfg(test)]

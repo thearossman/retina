@@ -1,5 +1,4 @@
-use super::ptree::FilterLayer;
-use super::{ast::*, SubscriptionSpec};
+use super::ast::*;
 
 use std::cmp::Ordering;
 use std::collections::HashSet;
@@ -47,18 +46,6 @@ impl FlatPattern {
             }
         }
         ret
-    }
-
-    // Returns true if a pattern should be skipped at a given filter layer
-    // Example: we don't need to check the pattern "ipv4 and tcp" at the session filter layer.
-    pub(super) fn is_prev_layer(
-        &self,
-        filter_layer: FilterLayer,
-        subscription: &SubscriptionSpec,
-    ) -> bool {
-        self.predicates
-            .iter()
-            .all(|p| p.is_prev_layer(filter_layer, subscription))
     }
 
     // Returns a vector of fully qualified patterns from self
