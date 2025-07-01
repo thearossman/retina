@@ -25,7 +25,7 @@ pub const NUM_LAYERS: usize = 1;
 #[repr(usize)]
 pub enum SupportedLayer {
     L4,
-    L7
+    L7,
 }
 
 /// Trait implemented for each Layer variant
@@ -151,13 +151,14 @@ impl L7Session {
 }
 
 impl TrackableLayer for L7Session {
-
     fn end_state_tx(&mut self) {
         // Nothing to parse if in payload and no more sessions expected
-        if self.linfo.actions.needs_parse() &&
-           matches!(self.linfo.state, LayerState::Payload) &&
-           !matches!(self.parser.session_parsed_state(),
-                         ParsingState::Parsing | ParsingState::Probing)
+        if self.linfo.actions.needs_parse()
+            && matches!(self.linfo.state, LayerState::Payload)
+            && !matches!(
+                self.parser.session_parsed_state(),
+                ParsingState::Parsing | ParsingState::Probing
+            )
         {
             self.linfo.actions.clear(&Actions::Parse);
         }

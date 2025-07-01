@@ -1,5 +1,5 @@
-use crate::{conntrack::StateTransition, L4Pdu};
 use super::data::Tracked;
+use crate::{conntrack::StateTransition, L4Pdu};
 
 // TODOs:
 // - Like callback, ultimately want the filter to be a wrapper
@@ -15,7 +15,9 @@ pub enum FilterResult {
 
 /// Streaming filter. See notes for streaming callback.
 pub trait StreamingFilter<T>
-where T: Tracked {
+where
+    T: Tracked,
+{
     /// Initialize internal data, if applicable. Invoked on first packet.
     fn new() -> Self;
     /// Invoked at specified intervals with tracked data until either
@@ -58,7 +60,7 @@ where
     refresh_at: u32,
 }
 
-impl <T, F> FilterWrapper<T, F>
+impl<T, F> FilterWrapper<T, F>
 where
     T: Tracked,
     F: StreamingFilter<T>,

@@ -59,7 +59,11 @@ impl<'a> HardwareFilter<'a> {
                 pattern.predicates.pop();
             }
             // converts to LayeredPattern
-            layered.extend(pattern.to_fully_qualified(&vec![]).expect("fully qualified"));
+            layered.extend(
+                pattern
+                    .to_fully_qualified(&vec![])
+                    .expect("fully qualified"),
+            );
         }
 
         // Remove identical patterns
@@ -148,7 +152,7 @@ pub(crate) fn device_supported(pred: &Predicate, port: &Port) -> bool {
             matches!(op, BinOp::Eq)
                 || protocol == &protocol!("ipv4") && matches!(op, BinOp::In)
                 || protocol == &protocol!("ipv6") && matches!(op, BinOp::In)
-        },
+        }
         _ => false,
     };
     if !op_supported {
@@ -177,7 +181,9 @@ fn predicate_supported(predicate: &Predicate, port: &Port, group: u32, priority:
     let pattern = FlatPattern {
         predicates: vec![predicate.to_owned()],
     };
-    let fq_patterns = pattern.to_fully_qualified(&vec![]).expect("fully qualified");
+    let fq_patterns = pattern
+        .to_fully_qualified(&vec![])
+        .expect("fully qualified");
     fq_patterns
         .iter()
         .all(|p| pattern_supported(p, port, group, priority))

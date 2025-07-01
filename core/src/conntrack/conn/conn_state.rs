@@ -103,23 +103,23 @@ impl DataLevel {
                 ret.push(StateTransition::L4InPayload(true));
                 ret.push(StateTransition::L4InPayload(false));
             }
-            StateTransition::L4EndHshk |
-                StateTransition::L4InPayload(_) |
-                StateTransition::L7EndPayload |
-                StateTransition::L7InPayload => {
+            StateTransition::L4EndHshk
+            | StateTransition::L4InPayload(_)
+            | StateTransition::L7EndPayload
+            | StateTransition::L7InPayload => {
                 ret.push(StateTransition::L4Terminated);
-            },
+            }
             StateTransition::L7OnDisc => {
                 ret.push(StateTransition::L7EndHdrs);
                 ret.push(StateTransition::L7InHdrs);
-            },
+            }
             StateTransition::L7InHdrs => {
                 ret.push(StateTransition::L7EndHdrs);
-            },
+            }
             StateTransition::L7EndHdrs => {
                 ret.push(StateTransition::L7InPayload);
-            },
-            StateTransition::L4Terminated | StateTransition::None => { }
+            }
+            StateTransition::L4Terminated | StateTransition::None => {}
         }
         ret
     }
@@ -147,8 +147,9 @@ impl DataLevel {
         }
 
         // Different layers
-        if self.name().contains("L4") && !other.name().contains("L4") ||
-           self.name().contains("L7") && !other.name().contains("L7") {
+        if self.name().contains("L4") && !other.name().contains("L4")
+            || self.name().contains("L7") && !other.name().contains("L7")
+        {
             return StateTxOrd::Unknown;
         }
 
@@ -195,7 +196,9 @@ mod tests {
     #[test]
     fn test_data_level_raw() {
         assert_eq!(DataLevel::None.as_usize(), NUM_STATE_TRANSITIONS);
-        assert_eq!(DataLevel::L4InPayload(true).as_usize(),
-                   DataLevel::L4InPayload(false).as_usize());
+        assert_eq!(
+            DataLevel::L4InPayload(true).as_usize(),
+            DataLevel::L4InPayload(false).as_usize()
+        );
     }
 }

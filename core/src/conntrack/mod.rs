@@ -12,9 +12,9 @@ mod timerwheel;
 #[cfg(test)]
 mod tests;
 
-pub use conn::conn_state::{DataLevel, LayerState, StateTransition};
-pub use conn::conn_layers::Layer;
 pub use conn::conn_actions::{Actions, TrackedActions};
+pub use conn::conn_layers::Layer;
+pub use conn::conn_state::{DataLevel, LayerState, StateTransition};
 pub use conn::ConnInfo;
 
 use self::conn::{Conn, L4Conn};

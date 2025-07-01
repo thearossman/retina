@@ -1,5 +1,5 @@
-use std::time::{Instant, Duration};
 use crate::L4Pdu;
+use std::time::{Duration, Instant};
 
 pub trait CallbackTimer {
     fn new(count: u64) -> Self;
@@ -69,7 +69,11 @@ impl CallbackTimer for Bytes {
         let len = pdu.length() as u64;
         if len >= self.count_remaining {
             let over = len - self.count_remaining;
-            self.count_remaining = if over >= self.count { 0 } else { self.count - over };
+            self.count_remaining = if over >= self.count {
+                0
+            } else {
+                self.count - over
+            };
             return true;
         }
         self.count_remaining -= len;

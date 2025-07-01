@@ -75,8 +75,14 @@ where
     /// flag if it has passed through the TCP reassembly module.
     pub(crate) fn new_packet(&mut self, pdu: &L4Pdu, subscription: &Subscription<T::Subscribed>) {
         if self.linfo.actions.needs_update() {
-            if self.tracked.update(pdu, DataLevel::L4InPayload(pdu.ctxt.reassembled)) {
-                self.exec_state_tx(StateTransition::L4InPayload(pdu.ctxt.reassembled), subscription);
+            if self
+                .tracked
+                .update(pdu, DataLevel::L4InPayload(pdu.ctxt.reassembled))
+            {
+                self.exec_state_tx(
+                    StateTransition::L4InPayload(pdu.ctxt.reassembled),
+                    subscription,
+                );
             }
         }
     }
@@ -101,7 +107,9 @@ where
         if !self.layers[0].drop() {
             let tx_ = self.layers[0].process_stream(pdu, &mut self.tracked, registry);
             for tx in tx_ {
-                if tx == StateTransition::None { continue; }
+                if tx == StateTransition::None {
+                    continue;
+                }
                 self.exec_state_tx(tx, subscription);
                 if self.layers[0].needs_process(tx, pdu) {
                     self.layers[0].process_stream(pdu, &mut self.tracked, registry);

@@ -1,7 +1,7 @@
-use crate::L4Pdu;
 use crate::conntrack::StateTransition;
-use crate::protocols::Session;
 use crate::memory::mbuf::Mbuf;
+use crate::protocols::Session;
+use crate::L4Pdu;
 
 /// Interface for datatypes that must be "tracked" throughout
 /// all or part of a connection.
@@ -32,7 +32,9 @@ pub trait Tracked {
 /// any tracked data (i.e., just wants raw packets).
 pub struct TrackedEmpty;
 impl Tracked for TrackedEmpty {
-    fn new(_first_pkt: &L4Pdu) -> Self { TrackedEmpty }
+    fn new(_first_pkt: &L4Pdu) -> Self {
+        TrackedEmpty
+    }
     fn update(&mut self, _pdu: &L4Pdu) {}
     fn phase_tx(&mut self, _tx: StateTransition) {}
     fn clear(&mut self) {}
@@ -56,7 +58,8 @@ pub trait FromMbuf {
 /// so that we can track when it's still needed by active subscriptions.
 #[doc(hidden)]
 pub struct TrackedDataWrapper<T>
-where T: Tracked
+where
+    T: Tracked,
 {
     /// The wrapped tracked data.
     pub data: T,

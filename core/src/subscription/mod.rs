@@ -11,7 +11,7 @@ use crate::stats::{StatExt, TCP_BYTE, TCP_PKT, UDP_BYTE, UDP_PKT};
 pub mod filter;
 pub use filter::StreamingFilter;
 pub mod data;
-pub use data::{Tracked, TrackedEmpty, FromSession, FromMbuf};
+pub use data::{FromMbuf, FromSession, Tracked, TrackedEmpty};
 pub mod callback;
 pub use callback::StreamingCallback;
 pub mod timer;
@@ -81,11 +81,7 @@ where
         }
     }
 
-    pub fn process_packet(
-        &self,
-        mbuf: Mbuf,
-        conn_tracker: &mut ConnTracker<S::Tracked>,
-    ) {
+    pub fn process_packet(&self, mbuf: Mbuf, conn_tracker: &mut ConnTracker<S::Tracked>) {
         if let Ok(ctxt) = L4Context::new(&mbuf) {
             match ctxt.proto {
                 TCP_PROTOCOL => {

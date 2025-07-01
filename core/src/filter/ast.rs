@@ -5,7 +5,7 @@ use std::fmt;
 
 use crate::conntrack::conn::conn_state::StateTxOrd;
 use crate::conntrack::StateTransition;
-use crate::conntrack::{DataLevel, LayerState, conn::conn_layers::SupportedLayer};
+use crate::conntrack::{conn::conn_layers::SupportedLayer, DataLevel, LayerState};
 use crate::protocols::stream::ConnData;
 use bimap::BiMap;
 use ipnet::{Ipv4Net, Ipv6Net};
@@ -108,7 +108,7 @@ pub enum Predicate {
     LayerState {
         layer: SupportedLayer,
         state: LayerState,
-    }
+    },
 }
 
 impl Predicate {
@@ -161,7 +161,7 @@ impl Predicate {
         match self {
             Predicate::Custom { levels, .. } => levels,
             Predicate::Callback { levels, .. } => levels,
-            _ => panic!("Levels called on predicate: {:?}", self)
+            _ => panic!("Levels called on predicate: {:?}", self),
         }
     }
 
@@ -214,10 +214,10 @@ impl Predicate {
         match self {
             Predicate::Callback { .. } | Predicate::Custom { .. } => {
                 return self.levels().clone();
-            },
+            }
             Predicate::LayerState { .. } => {
                 return vec![StateTransition::None];
-            },
+            }
             _ => {
                 if self.on_packet() {
                     return vec![StateTransition::L4FirstPacket];
@@ -227,9 +227,11 @@ impl Predicate {
                 }
                 if self.on_session() {
                     return vec![StateTransition::L7EndHdrs];
-                }
-                else {
-                    panic!("Can't identify layer for unary or binary predicate: {:?}", self);
+                } else {
+                    panic!(
+                        "Can't identify layer for unary or binary predicate: {:?}",
+                        self
+                    );
                 }
             }
         }
@@ -879,15 +881,20 @@ impl fmt::Display for Predicate {
                 op,
                 value,
             } => write!(f, "{}.{} {} {}", protocol, field, op, value),
-            Predicate::Custom {
-                name,
-                levels
-            } => {
-                    let levels = levels.iter().map(|l| l.name() ).collect::<Vec<&str>>().join(",");
-                    write!(f, "{name} ({levels})")
-            },
-            Predicate::Callback { name, levels} => {
-                let levels = levels.iter().map(|l| l.name() ).collect::<Vec<&str>>().join(",");
+            Predicate::Custom { name, levels } => {
+                let levels = levels
+                    .iter()
+                    .map(|l| l.name())
+                    .collect::<Vec<&str>>()
+                    .join(",");
+                write!(f, "{name} ({levels})")
+            }
+            Predicate::Callback { name, levels } => {
+                let levels = levels
+                    .iter()
+                    .map(|l| l.name())
+                    .collect::<Vec<&str>>()
+                    .join(",");
                 write!(f, "{name} ({levels})")
             }
             Predicate::LayerState { layer, state } => {
@@ -913,7 +920,10 @@ impl ProtocolName {
     }
 
     pub fn is_supported(&self) -> bool {
-        LAYERS.node_indices().find(|i| LAYERS[*i] == *self).is_some()
+        LAYERS
+            .node_indices()
+            .find(|i| LAYERS[*i] == *self)
+            .is_some()
     }
 }
 
@@ -955,7 +965,6 @@ impl FuncName {
     pub fn name(&self) -> &str {
         self.0.as_str()
     }
-
 }
 
 impl fmt::Display for FuncName {

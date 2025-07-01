@@ -1,15 +1,15 @@
-use crate::conntrack::*;
+use crate::config::default_config;
 use crate::conntrack::conn::conn_state::NUM_STATE_TRANSITIONS;
-use crate::protocols::stream::ParserRegistry;
-use crate::protocols::packet::tcp::{SYN, TCP_PROTOCOL};
-use crate::subscription::{Subscribable, Trackable};
+use crate::conntrack::*;
+use crate::filter::FilterFactory;
 use crate::lcore::CoreId;
 use crate::memory::mbuf::Mbuf;
-use crate::filter::FilterFactory;
+use crate::protocols::packet::tcp::{SYN, TCP_PROTOCOL};
+use crate::protocols::stream::ParserRegistry;
+use crate::subscription::{Subscribable, Trackable};
 use crate::L4Pdu;
-use crate::config::default_config;
 use crate::Runtime;
-use std::net::{SocketAddr, IpAddr, Ipv4Addr};
+use std::net::{IpAddr, Ipv4Addr, SocketAddr};
 
 ///// Dummy types /////
 
@@ -67,23 +67,14 @@ fn filter() -> FilterFactory<TestTrackable> {
     fn packet_continue(_mbuf: &Mbuf, _core_id: &CoreId) -> bool {
         true
     }
-    fn packet_filter(
-        conn: &mut ConnInfo<TestTrackable>,
-        _mbuf: &Mbuf,
-    ) {
+    fn packet_filter(conn: &mut ConnInfo<TestTrackable>, _mbuf: &Mbuf) {
         conn.linfo.actions.active |= Actions::Update;
         conn.linfo.actions.active |= Actions::PassThrough;
         conn.layers[0].layer_info_mut().actions.active |= Actions::Update;
     }
-    fn proto_filter(
-        _conn: &mut ConnInfo<TestTrackable>,
-    ) { }
-    fn session_filter(
-        _conn: &mut ConnInfo<TestTrackable>,
-    ) { }
-    fn conn_deliver(
-        _conn: &mut ConnInfo<TestTrackable>,
-    ) { }
+    fn proto_filter(_conn: &mut ConnInfo<TestTrackable>) {}
+    fn session_filter(_conn: &mut ConnInfo<TestTrackable>) {}
+    fn conn_deliver(_conn: &mut ConnInfo<TestTrackable>) {}
     FilterFactory::new(
         "",
         packet_continue,
@@ -112,12 +103,8 @@ fn init_subscription() -> Subscription<TestSubscribable> {
 }
 
 fn init_ctxt() -> L4Context {
-    let src = SocketAddr::new(
-        IpAddr::V4(Ipv4Addr::new(192, 168, 1, 1)), 8080
-    );
-    let dst = SocketAddr::new(
-        IpAddr::V4(Ipv4Addr::new(192, 168, 1, 2)), 5000
-    );
+    let src = SocketAddr::new(IpAddr::V4(Ipv4Addr::new(192, 168, 1, 1)), 8080);
+    let dst = SocketAddr::new(IpAddr::V4(Ipv4Addr::new(192, 168, 1, 2)), 5000);
     L4Context {
         src,
         dst,
@@ -147,24 +134,32 @@ fn core_state_tx() {
     // Set up test
     let subscription = init_subscription();
     let config = tracker_config();
-    let mut conntrack = ConnTracker::<TestTrackable>::new(
-        config,
-        TestTrackable::parsers(),
-        CoreId(0)
-    );
+    let mut conntrack =
+        ConnTracker::<TestTrackable>::new(config, TestTrackable::parsers(), CoreId(0));
     let mbuf = Mbuf::from_bytes(&MBUF, mempool).unwrap();
     let mut ctxt = init_ctxt();
     let conn_id = ConnId::new(ctxt.src, ctxt.dst, ctxt.proto);
 
     // Process TCP SYN
     conntrack.process(mbuf.clone(), ctxt, &subscription);
-    assert!(conntrack.size() == 1, "ConnTracker should have one entry after processing a SYN packet.");
+    assert!(
+        conntrack.size() == 1,
+        "ConnTracker should have one entry after processing a SYN packet."
+    );
     {
-        let entry = conntrack.table.get(&conn_id).expect("Connection should exist");
+        let entry = conntrack
+            .table
+            .get(&conn_id)
+            .expect("Connection should exist");
         let info = &entry.info;
-        assert!(info.linfo.state == LayerState::Payload, "ConnTracker should be in L4InPayload state after SYN packet.");
-        assert!(info.linfo.actions.active == Actions::Update | Actions::PassThrough,
-                "ConnTracker should have Update and PassThrough actions after first_packet filter.");
+        assert!(
+            info.linfo.state == LayerState::Payload,
+            "ConnTracker should be in L4InPayload state after SYN packet."
+        );
+        assert!(
+            info.linfo.actions.active == Actions::Update | Actions::PassThrough,
+            "ConnTracker should have Update and PassThrough actions after first_packet filter."
+        );
         let l7 = match info.layers.get(0).unwrap() {
             Layer::L7(layer) => layer,
         };
@@ -175,12 +170,19 @@ fn core_state_tx() {
     conntrack.process(mbuf.clone(), ctxt, &subscription);
     assert!(conntrack.size() == 1);
     {
-        let entry = conntrack.table.get(&conn_id).expect("Connection should exist");
+        let entry = conntrack
+            .table
+            .get(&conn_id)
+            .expect("Connection should exist");
         let info = &entry.info;
-        assert!(info.tracked.invoked[DataLevel::L4InPayload(true).as_usize()] == 2,
-            "Tracked should have invoked L4InPayload after duplicate SYN packet.");
-        assert!(info.linfo.actions.active == Actions::Update | Actions::PassThrough,
-                "ConnTracker should have Update and PassThrough actions after InUpdate filter.");
+        assert!(
+            info.tracked.invoked[DataLevel::L4InPayload(true).as_usize()] == 2,
+            "Tracked should have invoked L4InPayload after duplicate SYN packet."
+        );
+        assert!(
+            info.linfo.actions.active == Actions::Update | Actions::PassThrough,
+            "ConnTracker should have Update and PassThrough actions after InUpdate filter."
+        );
     }
 
     // Process new packet - make parser fail to match
@@ -189,20 +191,32 @@ fn core_state_tx() {
     ctxt.seq_no = 1;
     conntrack.process(mbuf, ctxt, &subscription);
     {
-        let entry = conntrack.table.get(&conn_id).expect("Connection should exist");
+        let entry = conntrack
+            .table
+            .get(&conn_id)
+            .expect("Connection should exist");
         let info = &entry.info;
         assert!(info.tracked.invoked[DataLevel::L4InPayload(true).as_usize()] == 3);
         let l7 = match info.layers.get(0).unwrap() {
             Layer::L7(layer) => layer,
         };
         assert!(l7.linfo.drop()); // Parser should have failed to match
-        assert!(info.tracked.state_tx[DataLevel::L7OnDisc.as_usize()] == 1,
+        assert!(
+            info.tracked.state_tx[DataLevel::L7OnDisc.as_usize()] == 1,
             "Tracked should have state tx after parser failure."
         );
         // 3 packets observed total
-        assert!(entry.flow_len(true).unwrap() == 3,
-                "Observed flow length is {}; should be {}", entry.flow_len(true).unwrap(), 3);
-        assert!(entry.total_len().unwrap() == 3,
-                "Observed total length is {}; should be {}", entry.total_len().unwrap(), 3);
+        assert!(
+            entry.flow_len(true).unwrap() == 3,
+            "Observed flow length is {}; should be {}",
+            entry.flow_len(true).unwrap(),
+            3
+        );
+        assert!(
+            entry.total_len().unwrap() == 3,
+            "Observed total length is {}; should be {}",
+            entry.total_len().unwrap(),
+            3
+        );
     }
 }

@@ -24,16 +24,16 @@ pub mod ptree_flat;
 #[doc(hidden)]
 pub mod subscription;
 
+use crate::conntrack::ConnInfo;
+use crate::filter::ast::Predicate;
 use crate::filter::hardware::{flush_rules, HardwareFilter};
 use crate::filter::parser::FilterParser;
 use crate::filter::pattern::{FlatPattern, LayeredPattern};
 use crate::filter::ptree_flat::FlatPTree;
-use crate::filter::ast::Predicate;
 use crate::lcore::CoreId;
 use crate::memory::mbuf::Mbuf;
 use crate::port::Port;
 use crate::subscription::Trackable;
-use crate::conntrack::ConnInfo;
 
 use std::fmt;
 

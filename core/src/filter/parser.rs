@@ -167,7 +167,7 @@ impl FilterParser {
                         levels: vec![], // Temp value; will be filled in later.
                     })]),
                 }
-            },
+            }
         }
     }
 

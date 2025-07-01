@@ -9,7 +9,8 @@ use crate::L4Pdu;
 /// request updates on each packet, and maintain their own timer for any
 /// separate processing.
 pub trait StreamingCallback<T>
-where T: Tracked
+where
+    T: Tracked,
 {
     /// Initializes internal data, if applicable.
     /// Called on first packet in connection.
@@ -51,11 +52,11 @@ where
     timer: Option<R>,
 }
 
-impl <T, C, R> CallbackWrapper<T, C, R>
+impl<T, C, R> CallbackWrapper<T, C, R>
 where
     T: Tracked,
     C: StreamingCallback<T>,
-    R: CallbackTimer
+    R: CallbackTimer,
 {
     /// Create a new callback wrapper.
     pub fn new(first_packet: &L4Pdu) -> Self {

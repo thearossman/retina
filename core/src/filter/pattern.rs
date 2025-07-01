@@ -49,7 +49,10 @@ impl FlatPattern {
     }
 
     // Returns a vector of fully qualified patterns from self
-    pub(super) fn to_fully_qualified(&self, custom_filters: &Vec<Predicate>) -> Result<Vec<LayeredPattern>> {
+    pub(super) fn to_fully_qualified(
+        &self,
+        custom_filters: &Vec<Predicate>,
+    ) -> Result<Vec<LayeredPattern>> {
         if self.is_empty() {
             return Ok(Vec::new());
         }
@@ -115,21 +118,32 @@ impl FlatPattern {
         // Get all custom filters that don't belong to a protocol, validate
         // that they are valid custom filters, and insert each at the end of
         // each end-to-end pattern.
-        let custom_preds = self.predicates.iter()
-                                             .filter(|c| c.is_custom())
-                                             .map(|c| c.to_owned())
-                                             .collect::<HashSet<_>>();
-        let valid_custom_preds = custom_filters.into_iter()
-                                                                    .filter(|pred| custom_preds.iter()
-                                                                            .any(|other| pred.get_name() == other.get_name()))
-                                                                    .cloned()
-                                                                    .collect::<HashSet<_>>();
+        let custom_preds = self
+            .predicates
+            .iter()
+            .filter(|c| c.is_custom())
+            .map(|c| c.to_owned())
+            .collect::<HashSet<_>>();
+        let valid_custom_preds = custom_filters
+            .into_iter()
+            .filter(|pred| {
+                custom_preds
+                    .iter()
+                    .any(|other| pred.get_name() == other.get_name())
+            })
+            .cloned()
+            .collect::<HashSet<_>>();
         if custom_preds.len() != valid_custom_preds.len() {
-            let diff = custom_preds.iter()
-                        .filter(|a| !valid_custom_preds.iter().any(|b| b.get_name() == a.get_name()))
-                        .map(|a| a.get_name().name())
-                        .collect::<Vec<_>>()
-                        .join(",");
+            let diff = custom_preds
+                .iter()
+                .filter(|a| {
+                    !valid_custom_preds
+                        .iter()
+                        .any(|b| b.get_name() == a.get_name())
+                })
+                .map(|a| a.get_name().name())
+                .collect::<Vec<_>>()
+                .join(",");
             bail!(FilterError::InvalidCustomFilter(diff));
         }
         if !valid_custom_preds.is_empty() {
@@ -140,7 +154,10 @@ impl FlatPattern {
             // ...or as standalone pattern
             if fq_patterns.is_empty() {
                 fq_patterns.push(LayeredPattern::new());
-                fq_patterns.last_mut().unwrap().extend_patterns(&valid_custom_preds);
+                fq_patterns
+                    .last_mut()
+                    .unwrap()
+                    .extend_patterns(&valid_custom_preds);
             }
         }
 
@@ -200,11 +217,14 @@ impl LayeredPattern {
         if self.0.is_empty() {
             self.0.insert(
                 ProtocolName::none().clone(),
-                predicates.iter().map(|p| p.to_owned()).collect()
+                predicates.iter().map(|p| p.to_owned()).collect(),
             );
             return;
         }
-        self.0.insert(ProtocolName::none().clone(), predicates.iter().cloned().collect());
+        self.0.insert(
+            ProtocolName::none().clone(),
+            predicates.iter().cloned().collect(),
+        );
     }
 
     // Adds predicates on protocol header. Returns true on success
@@ -225,7 +245,9 @@ impl LayeredPattern {
                     && match pred {
                         Predicate::Unary { .. } => false,
                         Predicate::Binary { protocol, .. } => protocol == &proto_name,
-                        Predicate::Custom { .. } | Predicate::Callback { .. } | Predicate::LayerState { .. } => false,
+                        Predicate::Custom { .. }
+                        | Predicate::Callback { .. }
+                        | Predicate::LayerState { .. } => false,
                     }
             }
         } else {
@@ -295,16 +317,17 @@ impl fmt::Display for LayeredPattern {
 #[cfg(test)]
 mod tests {
 
-    use crate::{conntrack::DataLevel, filter::{ast::Predicate, parser::FilterParser, ptree_flat::FlatPTree}};
     use super::*;
+    use crate::{
+        conntrack::DataLevel,
+        filter::{ast::Predicate, parser::FilterParser, ptree_flat::FlatPTree},
+    };
 
     lazy_static! {
-        static ref CUSTOM_FILTERS: Vec<Predicate> = vec![
-            Predicate::Custom {
-                name: filterfunc!("my_filter"),
-                levels: vec![DataLevel::L4InPayload(false)],
-            }
-        ];
+        static ref CUSTOM_FILTERS: Vec<Predicate> = vec![Predicate::Custom {
+            name: filterfunc!("my_filter"),
+            levels: vec![DataLevel::L4InPayload(false)],
+        }];
     }
 
     #[test]
@@ -313,37 +336,55 @@ mod tests {
         let filter_raw = "my_filter";
         let raw_patterns = FilterParser::parse_filter(filter_raw).unwrap();
         // Vector of patterns. Expect one pattern and for this pattern to have one predicate.
-        assert!(raw_patterns.len() == 1 &&
-                raw_patterns.first().unwrap().len() == 1 &&
-                raw_patterns.first().unwrap().first().unwrap().is_custom());
-        let flat_patterns = raw_patterns.into_iter()
-                                        .map(|p| FlatPattern { predicates: p })
-                                        .collect::<Vec<_>>();
-        let fq_patterns = flat_patterns[0].to_fully_qualified(&CUSTOM_FILTERS).unwrap();
-        assert!(fq_patterns.len() == 1 &&
-                fq_patterns[0].0
-                              .get(ProtocolName::none())
-                              .expect("Expecting `none` protocol entry")
-                              .get(0)
-                              .expect("Expecting `none` protocol with 1 predicate")
-                              .get_name() == &filterfunc!("my_filter"));
+        assert!(
+            raw_patterns.len() == 1
+                && raw_patterns.first().unwrap().len() == 1
+                && raw_patterns.first().unwrap().first().unwrap().is_custom()
+        );
+        let flat_patterns = raw_patterns
+            .into_iter()
+            .map(|p| FlatPattern { predicates: p })
+            .collect::<Vec<_>>();
+        let fq_patterns = flat_patterns[0]
+            .to_fully_qualified(&CUSTOM_FILTERS)
+            .unwrap();
+        assert!(
+            fq_patterns.len() == 1
+                && fq_patterns[0]
+                    .0
+                    .get(ProtocolName::none())
+                    .expect("Expecting `none` protocol entry")
+                    .get(0)
+                    .expect("Expecting `none` protocol with 1 predicate")
+                    .get_name()
+                    == &filterfunc!("my_filter")
+        );
     }
 
     #[test]
     fn test_custom_pattern() {
         let filter_raw = "tcp.port = 80 and tls and my_filter";
         let raw_patterns = FilterParser::parse_filter(filter_raw).unwrap();
-        let flat_patterns = raw_patterns.into_iter()
-                                        .map(|p| FlatPattern { predicates: p })
-                                        .collect::<Vec<_>>();
-        let fq_patterns = flat_patterns[0].to_fully_qualified(&CUSTOM_FILTERS).unwrap();
+        let flat_patterns = raw_patterns
+            .into_iter()
+            .map(|p| FlatPattern { predicates: p })
+            .collect::<Vec<_>>();
+        let fq_patterns = flat_patterns[0]
+            .to_fully_qualified(&CUSTOM_FILTERS)
+            .unwrap();
         assert!(fq_patterns.len() == 2); // branches for ipv4/ipv6
-        assert!(fq_patterns[0].0 // my_filter in end of each branch
-                              .get(ProtocolName::none())
-                              .expect("Expecting `none` protocol entry")
-                              .len() == 1);
-        assert!(fq_patterns[0].0.back().unwrap().0 == ProtocolName::none(),
-                "`none` should be at back of patterns.");
+        assert!(
+            fq_patterns[0]
+                .0 // my_filter in end of each branch
+                .get(ProtocolName::none())
+                .expect("Expecting `none` protocol entry")
+                .len()
+                == 1
+        );
+        assert!(
+            fq_patterns[0].0.back().unwrap().0 == ProtocolName::none(),
+            "`none` should be at back of patterns."
+        );
 
         let flat_patterns: Vec<_> = fq_patterns.iter().map(|p| p.to_flat_pattern()).collect();
         let mut ptree = FlatPTree::new(&flat_patterns);
@@ -358,12 +399,13 @@ mod tests {
     fn test_custom_invalid() {
         let filter_raw = "tcp.port = 80 and tls and my_filter and invalid_filter";
         let raw_patterns = FilterParser::parse_filter(filter_raw).unwrap();
-        let flat_patterns = raw_patterns.into_iter()
-                                        .map(|p| FlatPattern { predicates: p })
-                                        .collect::<Vec<_>>();
-        let _err = flat_patterns[0].to_fully_qualified(&CUSTOM_FILTERS)
-                                          .expect_err("Should have failed on invalid_filter") ;
+        let flat_patterns = raw_patterns
+            .into_iter()
+            .map(|p| FlatPattern { predicates: p })
+            .collect::<Vec<_>>();
+        let _err = flat_patterns[0]
+            .to_fully_qualified(&CUSTOM_FILTERS)
+            .expect_err("Should have failed on invalid_filter");
         // println!("Error thrown: {:?}", err);
     }
-
 }

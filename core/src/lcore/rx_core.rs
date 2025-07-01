@@ -132,8 +132,7 @@ where
 
                     let cont = self.subscription.continue_packet(&mbuf, &self.id);
                     if cont {
-                        self.subscription
-                            .process_packet(mbuf, &mut conn_table);
+                        self.subscription.process_packet(mbuf, &mut conn_table);
                     } else {
                         IGNORED_BY_PACKET_FILTER_PKT.inc();
                         IGNORED_BY_PACKET_FILTER_BYTE.inc_by(mbuf.data_len() as u64);
