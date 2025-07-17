@@ -8,7 +8,8 @@ use hashlink::LinkedHashMap;
 use petgraph::algo;
 use petgraph::graph::NodeIndex;
 
-use crate::filter::FilterError;
+use crate::conntrack::conn::conn_state::StateTxOrd;
+use crate::{conntrack::StateTransition, filter::FilterError};
 use crate::port::Port;
 
 use anyhow::{bail, Result};
@@ -179,6 +180,21 @@ impl FlatPattern {
                 .filter(|p| p.is_hardware_filterable(port))
                 .collect::<Vec<_>>(),
         }
+    }
+
+    // Returns the predicates in FlatPattern that come after (or may come after)
+    // the given StateTransition.
+    pub(super) fn next_pred(&self, curr: StateTransition) -> Vec<StateTransition> {
+        self.predicates
+            .iter()
+            .flat_map(|p| p.levels())
+            .filter(|l|
+                matches!(l.compare(&curr), StateTxOrd::Unknown | StateTxOrd::Greater)
+            )
+            .collect::<HashSet<_>>() // dedup
+            .into_iter()
+            .cloned()
+            .collect()
     }
 }
 
