@@ -245,6 +245,13 @@ impl Predicate {
             .all(|l| matches!(l.compare(&curr), StateTxOrd::Less))
     }
 
+    // Returns true if the predicate `self` cannot be checked at `curr`
+    pub(super) fn is_next_layer(&self, curr: StateTransition) -> bool {
+        self.state_tx()
+            .iter()
+            .all(|l| matches!(l.compare(&curr), StateTxOrd::Greater))
+    }
+
     pub(super) fn default_pred() -> Predicate {
         Predicate::Unary {
             protocol: protocol!("ethernet"),
@@ -881,21 +888,11 @@ impl fmt::Display for Predicate {
                 op,
                 value,
             } => write!(f, "{}.{} {} {}", protocol, field, op, value),
-            Predicate::Custom { name, levels } => {
-                let levels = levels
-                    .iter()
-                    .map(|l| l.name())
-                    .collect::<Vec<&str>>()
-                    .join(",");
-                write!(f, "{name} ({levels})")
+            Predicate::Custom { name, .. } => {
+                write!(f, "{name}")
             }
-            Predicate::Callback { name, levels } => {
-                let levels = levels
-                    .iter()
-                    .map(|l| l.name())
-                    .collect::<Vec<&str>>()
-                    .join(",");
-                write!(f, "{name} ({levels})")
+            Predicate::Callback { name, .. } => {
+                write!(f, "{name}")
             }
             Predicate::LayerState { layer, state } => {
                 write!(f, "{:?}[{:?}]", layer, state)

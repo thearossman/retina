@@ -5,9 +5,6 @@
 //! Retina application.
 //!
 
-pub mod actions;
-pub use actions::{ActionData, Actions};
-
 #[doc(hidden)]
 #[macro_use]
 pub mod macros;

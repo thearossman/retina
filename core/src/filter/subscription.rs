@@ -1,9 +1,11 @@
 use std::collections::HashSet;
+use std::hash::{Hash, Hasher};
 
 use crate::conntrack::conn::conn_layers::{SupportedLayer, NUM_LAYERS};
 use crate::conntrack::conn::conn_state::StateTxOrd;
 use crate::conntrack::{Actions, DataLevel, LayerState, StateTransition, TrackedActions};
 
+use super::ast::Predicate;
 use super::pattern::FlatPattern;
 
 /// The Actions to be tracked for any subset of subscription components
@@ -15,6 +17,10 @@ use super::pattern::FlatPattern;
 /// for different layer states and (2) APIs for adding the `refresh_at`
 /// components of actions.
 ///
+/// **One of these must be built for every filter pattern
+///   (i.e., root-to-node path) due to potential differences in
+///   filter predicate needs.**
+///
 /// TODO ideally we'd use the LayerState predicate type more effectively.
 #[derive(Debug, Clone, Eq, PartialEq, Ord, PartialOrd)]
 pub(crate) struct DataActions {
@@ -24,9 +30,6 @@ pub(crate) struct DataActions {
     /// Tracked Actions at the transport layer
     transport: TrackedActions,
     /// Tracked Actions at encapsulated layers
-    /// Note: SupportedLayers enum must include L4 (transport) for concisely representing
-    /// StateTransitions as Predicates in PTrees. The (runtime) conntrack structure
-    /// separates the transport protocol from its list of encapsulated protocols.
     layers: [TrackedActions; NUM_LAYERS],
 }
 
@@ -87,7 +90,7 @@ impl DataActions {
 /// This must be built up by first adding `datatypes` and custom filters and then
 /// adding `next predicates` or `streaming callbacks` to determine when the node's
 /// actions could potentially be updated.
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Eq, PartialEq)]
 pub(crate) struct NodeActions {
     /// Essentially, there will be multiple elements here if there are different
     /// branches depending on some layer's state.
@@ -152,17 +155,29 @@ impl NodeActions {
 
     /// Must be added after full subscription spec has been built up with all datatypes,
     /// including the datatypes required for filters.
-    /// `streaming_level` should indicate the level at which the callback could unsubscribe.
+    /// `level` should indicate the level at which the callback could unsubscribe.
     /// Updates subscription Actions to be "refreshed" at this point.
-    pub(crate) fn push_streaming_cb(&mut self, streaming_level: &StateTransition) {
-        self.push_filter_pred(streaming_level);
+    pub(crate) fn push_cb(&mut self, level: StateTransition) {
+        self.push_filter_pred(&level);
+    }
+
+    /// Merge two NodeActions together.
+    /// This is typically needed when a Node already has actions
+    /// accumulated and another subscription (sub-)pattern terminates
+    /// at the node.
+    pub(crate) fn merge(&mut self, peer: &NodeActions) {
+        assert!(self.end_datatypes && peer.end_datatypes);
+        assert!(self.filter_layer == peer.filter_layer);
+        for a in &peer.actions {
+            self.push_action(a.clone());
+        }
     }
 }
 
 /// Compile-time struct for representing a datatype required for a callback
 /// or custom filter predicate.
 /// Might also be used to represent a stateful custom filter predicate.
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct DatatypeSpec {
     /// Updates: streaming updates and state transitions requested.
     /// This should include the `level` above.
@@ -172,15 +187,24 @@ pub struct DatatypeSpec {
 }
 
 impl DatatypeSpec {
+
+    /// From a filter predicate
+    pub(crate) fn from_pred(pred: &Predicate) -> Self {
+        Self {
+            updates: pred.levels().clone(),
+            name: format!("{}", pred)
+        }
+    }
+
     /// For a given filter layer (state transition), return the actions that the
     /// datatype requires.
     ///
     /// Example: A TLS handshake requires a "headers parsed" state TX. We must generate
-    /// the actions that will allow that state transition to execute. In general, the
+    /// the actions that will allow that state transition to execute. The
     /// framework must (1) 'pass through' at the transport layer (to L7) and (2) parse
     /// at L7, and it must continue doing this _until_ the L7 headers are parsed or
-    /// we fail to identify the protocol fails to identify.
-    /// In other words: if the filter layer is guaranteed to execute before the end
+    /// we fail to identify the protocol.
+    /// If the filter layer is guaranteed to execute before the end
     /// of the L7 headers, then we can proceed with these actions. If the layer is
     /// guaranteed to execute after the end of the L7 headers, we should do nothing.
     /// If the layers are not comparable (may happen in any order), then the actions
@@ -349,6 +373,34 @@ impl DatatypeSpec {
     }
 }
 
+/// Structure representing a single callback function.
+///
+/// If a subscription specifies multiple callback functions (i.e.,
+/// on a struct), one of these must be created for each function.
+#[derive(Debug, Clone, Eq, PartialEq)]
+pub struct CallbackSpec {
+    /// If the callback explicitly specifies when to be invoked
+    pub stream: Option<DataLevel>,
+    /// Datatype inputs to the callback
+    pub datatypes: Vec<DatatypeSpec>,
+    /// This callback cannot be optimized out.
+    /// Typically true if ``FilterStr`` (i.e., information
+    /// about the specific filter matched) is a parameter.
+    pub must_deliver: bool,
+    /// String representation
+    pub as_str: String,
+    /// Callback ID
+    pub id: usize,
+    /// Subscription ID
+    pub subscription_id: usize,
+}
+
+impl Hash for CallbackSpec {
+    fn hash<H: Hasher>(&self, state: &mut H) {
+        self.as_str.hash(state); // Only hash the `name` field
+    }
+}
+
 /// Utility for tracking, for a subscription pattern*, the Levels needed to
 /// correctly apply (1) all filter predicates, (2) all datatype updates,
 /// and (3), if applicable, updates to a streaming callback.
@@ -378,7 +430,7 @@ impl SubscriptionLevel {
         for p in &preds.predicates {
             ret.add_filter_pred(&p.state_tx());
         }
-        ret.callback = cb;
+        ret.add_callback(cb);
         ret
     }
 
@@ -420,9 +472,8 @@ impl SubscriptionLevel {
     }
 
     /// Add the Level of the streaming callback (e.g., "In L4 payload")
-    pub(crate) fn add_stream_callback(&mut self, level: DataLevel) {
-        assert!(level.is_streaming());
-        self.callback = Some(level);
+    pub(crate) fn add_callback(&mut self, level: Option<DataLevel>) {
+        self.callback = level;
     }
 
     /// Add a datatype requested in a callback
@@ -557,7 +608,7 @@ mod tests {
                 == Actions::Update | Actions::PassThrough | Actions::Track
         );
         // Indicate that this will be in a streaming callback
-        node.push_streaming_cb(&StateTransition::L4InPayload(false));
+        node.push_cb(StateTransition::L4InPayload(false));
         assert!(
             node.actions[0].transport.refresh_at[StateTransition::L4InPayload(false).as_usize()]
                 == Actions::Update | Actions::PassThrough | Actions::Track

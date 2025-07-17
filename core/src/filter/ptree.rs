@@ -1,97 +1,49 @@
-use super::actions::*;
-use super::ast::*;
-use super::pattern::FlatPattern;
-use super::{Level, SubscriptionSpec};
-
-use std::cmp::{Ordering, PartialOrd};
+use core::fmt;
 use std::collections::HashSet;
-use std::fmt;
 
-#[derive(Debug, Clone, Copy)]
-pub enum FilterLayer {
-    // Quick-pass filter per-packet
-    PacketContinue,
-    // Packet delivery | packet filter
-    Packet,
-    // Connection (protocol) filter
-    Protocol,
-    // Session delivery | session filter
-    Session,
-    // Connection delivery (conn. termination)
-    ConnectionDeliver,
-    // Packet delivery (packet datatype match at later layer)
-    PacketDeliver,
-}
+use crate::conntrack::{DataLevel, StateTransition};
 
-impl fmt::Display for FilterLayer {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        match self {
-            FilterLayer::PacketContinue => write!(f, "Pkt (pass)"),
-            FilterLayer::Packet => write!(f, "Pkt"),
-            FilterLayer::Protocol => write!(f, "Proto"),
-            FilterLayer::Session => write!(f, "S"),
-            FilterLayer::ConnectionDeliver => write!(f, "C (D)"),
-            FilterLayer::PacketDeliver => write!(f, "Pkt (D)"),
-        }
-    }
-}
-
-// Represents a subscription (callback, datatype)
-// that will be delivered at a given filter node.
-// Used in compile-time filter generation.
-#[derive(Hash, Debug, Clone, PartialEq, Eq)]
-pub struct Deliver {
-    // Subscription ID as given by filtergen module
-    pub id: usize,
-    // Subscription spec formatted as CB(datatypes)
-    pub as_str: String,
-    // This callback should not be optimized out
-    pub must_deliver: bool,
-}
+use super::{ast::Predicate, pattern::FlatPattern, subscription::{CallbackSpec, DatatypeSpec, NodeActions, SubscriptionLevel}};
 
 // A node representing a predicate in the tree
 #[derive(Debug, Clone)]
 pub struct PNode {
-    // ID of node
-    pub id: usize,
-
     // Predicate represented by this PNode
     pub pred: Predicate,
-
-    // Actions to apply at this node
-    // [for action filters]
-    pub actions: Actions,
-
-    // Subscriptions to deliver, by index, at this node
-    // Empty for non-delivery filters.
-    pub deliver: HashSet<Deliver>,
-
-    // Subscriptions to begin streaming, by index, at this node
-    pub stream: HashSet<Deliver>,
-
-    // The patterns for which the predicate is a part of
-    pub patterns: Vec<usize>,
 
     // Child PNodes
     pub children: Vec<PNode>,
 
-    // Mutually exclusive with the node preceding it in child list
+    // Predicate is mutually exclusive with the
+    // predicate in the node preceding it in child list
     pub if_else: bool,
+
+    // `Actions` struct for this node.
+    pub actions: NodeActions,
+
+    // Subscriptions that can be invoked (or CB timer started)
+    // at this node. That is, all for which `can_deliver`
+    // on its `SubscriptionLevel`` returned true.
+    pub deliver: HashSet<CallbackSpec>,
+
+    // Identifier
+    pub id: usize,
 }
 
 impl PNode {
-    fn new(pred: Predicate, id: usize) -> Self {
+    fn new(pred: Predicate, level: DataLevel,
+           id: usize,) -> Self {
         PNode {
-            id,
             pred,
-            actions: Actions::new(),
-            deliver: HashSet::new(),
-            stream: HashSet::new(),
-            patterns: vec![],
             children: vec![],
             if_else: false,
+            actions: NodeActions::new(level),
+            deliver: HashSet::new(),
+            id
         }
     }
+
+    /// -- Utilities for comparing predicates when inserting nodes -- //
 
     // Utility to check whether a descendant exists
     // Helper for `get_descendant`, which must be invoked in an `if` block
@@ -203,13 +155,13 @@ impl PNode {
     // Returns `true` if a condition cannot be removed from the filter due to
     // its role extracting data needed for a subsequent condition.
     // For example, getting `ipv4` is necessary for checking `ipv4.src_addr`.
-    fn extracts_protocol(&self, filter_layer: FilterLayer) -> bool {
+    fn extracts_protocol(&self, filter_layer: DataLevel) -> bool {
         // Filters that parse raw packets are special case
         // Need upper layers to extract inner from mbuf
         // E.g.: need ipv4 header to parse tcp
         if matches!(
             filter_layer,
-            FilterLayer::PacketDeliver | FilterLayer::Packet
+            DataLevel::L4FirstPacket
         ) && self.pred.is_unary()
             && self.children.iter().any(|n| n.pred.is_unary())
         {
@@ -222,7 +174,7 @@ impl PNode {
                 .any(|n| self.pred.get_protocol() == n.pred.get_protocol() && n.pred.is_binary())
     }
 
-    // Populates `paths` will all root-to-leaf paths originating
+    // Populates `paths` with all root-to-leaf paths originating
     // at node `self`.
     fn get_paths(&self, curr_path: &mut Vec<String>, paths: &mut Vec<String>) {
         if self.children.is_empty() && !curr_path.is_empty() {
@@ -236,6 +188,10 @@ impl PNode {
         curr_path.pop();
     }
 
+    // Returns true if all root-to-leaf paths originating at `self`
+    // are the same as all root-to-leaf paths originating at `other`.
+    // This is applied to determine if two nodes have the same outcome
+    // (subsequent conditions, actions, delivery) if predicate is `true`.
     fn all_paths_eq(&self, other: &PNode) -> bool {
         if self.children.is_empty() && other.children.is_empty() {
             return true;
@@ -253,22 +209,15 @@ impl PNode {
 impl fmt::Display for PNode {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         write!(f, "{}", self.pred)?;
-        if !self.actions.drop() {
-            write!(f, " -- A: {:?}", self.actions)?;
+        if !self.actions.actions.is_empty() {
+            // TODO implement Display for Actions!
+            write!(f, " -- A: {:?}", self.actions.actions)?;
         }
         if !self.deliver.is_empty() {
             write!(f, " D: ")?;
             write!(f, "( ")?;
             for d in &self.deliver {
                 write!(f, "{}, ", d.as_str)?;
-            }
-            write!(f, ")")?;
-        }
-        if !self.stream.is_empty() {
-            write!(f, " Stream (start): ")?;
-            write!(f, "( ")?;
-            for s in &self.stream {
-                write!(f, "{}, ", s.as_str)?;
             }
             write!(f, ")")?;
         }
@@ -290,11 +239,8 @@ pub struct PTree {
     // Number of nodes in tree
     pub size: usize,
 
-    // Possible actions
-    pub actions: Actions,
-
     // Which filter this PTree represents
-    pub filter_layer: FilterLayer,
+    pub filter_layer: StateTransition,
 
     // Has `collapse` been applied?
     // Use to ensure no filters are applied after `collapse`
@@ -302,503 +248,131 @@ pub struct PTree {
 }
 
 impl PTree {
-    pub fn new_empty(filter_layer: FilterLayer) -> Self {
+    pub fn new_empty(filter_layer: StateTransition) -> Self {
         let pred = Predicate::Unary {
             protocol: protocol!("ethernet"),
         };
         Self {
-            root: PNode::new(pred, 0),
-            size: 1,
-            actions: Actions::new(),
+            root: PNode::new(pred, filter_layer, 0),
+            size: 0,
             filter_layer,
             collapsed: false,
         }
     }
 
-    // Add a filter to an existing PTree
-    // Applied for multiple subscriptions, when multiple actions
-    // and/or delivery filters will be checked at the same stage
-    pub fn add_filter(
+    pub fn add_subscription(
         &mut self,
+        // Filter patterns
         patterns: &[FlatPattern],
-        subscription: &SubscriptionSpec,
-        deliver: &Deliver,
+        // Individual callbacks; each has datatypes
+        callbacks: &Vec<CallbackSpec>,
     ) {
         if self.collapsed {
             panic!("Cannot add filter to tree after collapsing");
         }
-        if matches!(self.filter_layer, FilterLayer::PacketDeliver)
-            && !matches!(subscription.level, Level::Packet)
-        {
-            return;
-        }
-        if matches!(self.filter_layer, FilterLayer::ConnectionDeliver)
-            && !matches!(subscription.level, Level::Connection | Level::Static)
-        {
-            return;
-        }
-        self.build_tree(patterns, subscription, deliver);
-    }
-
-    // Add all given patterns (root-to-leaf paths) to a PTree
-    fn build_tree(
-        &mut self,
-        patterns: &[FlatPattern],
-        subscription: &SubscriptionSpec,
-        deliver: &Deliver,
-    ) {
-        // add each pattern to tree
-        let mut added = false;
-        for (i, pattern) in patterns.iter().enumerate() {
-            if pattern.is_prev_layer(self.filter_layer, subscription) {
-                continue;
+        assert!(patterns.len() > 0 ||
+                patterns.iter().all(|p| p.predicates.is_empty()),
+                "Empty filter pattern must have default predicate.");
+        for pattern in patterns {
+            // Extract required datatypes in filter pattern
+            let mut datatypes: Vec<_> = pattern.predicates
+                                               .iter()
+                                               .map(|p| DatatypeSpec::from_pred(p))
+                                               .collect();
+            // Add datatypes required by callback
+            for callback in callbacks {
+                datatypes.extend(callback.datatypes.iter().cloned());
+                if let Some(stream) = callback.stream {
+                    // Requires streaming `updates` or the level cannot be
+                    // inferred from the datatype alone
+                    datatypes.push(
+                        DatatypeSpec {
+                            updates: vec![stream],
+                            name: callback.as_str.clone()
+                        }
+                    );
+                }
             }
-            added = added || !pattern.predicates.is_empty();
-            self.add_pattern(pattern, i, subscription, deliver);
-        }
-
-        if !added
-            && self
-                .root
-                .pred
-                .is_prev_layer(self.filter_layer, subscription)
-            && !subscription.should_stream(self.filter_layer, &self.root.pred)
-        {
-            // Filter would have fully matched and, if applicable, data would have
-            // been delivered.
-            return;
-        }
-
-        // Need to terminate somewhere
-        if !added {
-            let pred = Predicate::default_pred();
-            if subscription.should_deliver(self.filter_layer, &pred) {
-                self.root.deliver.insert(deliver.clone());
-            } else if subscription.should_stream(self.filter_layer, &self.root.pred) {
-                self.root.stream.insert(deliver.clone());
-            } else {
-                let actions = subscription.with_term_filter(self.filter_layer, &pred);
-                self.root.actions.push(&actions);
-                self.actions.push(&actions);
+            // Construct node actions
+            let mut node_actions = NodeActions::new(self.filter_layer);
+            // Actions required for all datatypes (including filters)
+            for spec in &datatypes {
+                node_actions.add_datatype(spec);
+            }
+            // Update `refresh_at` based on where next filter predicate(s)
+            // may be applied.
+            for next_pred in pattern.next_pred(self.filter_layer) {
+                node_actions.push_filter_pred(&next_pred);
+            }
+            // Allow callback to `unsubscribe`
+            for callback in callbacks {
+                if let Some(cb_level) = &callback.stream {
+                    node_actions.push_cb(*cb_level);
+                }
+            }
+            for callback in callbacks {
+                self.add_pattern(pattern, &node_actions, callback);
             }
         }
     }
 
-    // Add a single pattern (root-to-leaf path) to the tree.
-    // Add nodes that don't exist. Update actions or subscription IDs
-    // for terminal nodes at this stage.
     fn add_pattern(
         &mut self,
-        pattern: &FlatPattern,
-        pattern_id: usize,
-        subscription: &SubscriptionSpec,
-        deliver: &Deliver,
+        full_pattern: &FlatPattern,
+        actions: &NodeActions,
+        callback: &CallbackSpec
     ) {
+        let level = SubscriptionLevel::new(
+            &callback.datatypes,
+            full_pattern,
+            callback.stream
+        );
+        if level.can_skip(&self.filter_layer) {
+            return;
+        }
+
+        let pattern: Vec<_> = full_pattern.predicates
+                                          .iter()
+                                          .filter(|p| !p.is_next_layer(self.filter_layer))
+                                          .cloned()
+                                          .collect();
+        assert!(pattern.len() <= full_pattern.predicates.len());
+        if pattern.len() < full_pattern.predicates.len() {
+            assert!(!level.can_deliver(&self.filter_layer));
+        }
+
         let mut node = &mut self.root;
-        node.patterns.push(pattern_id);
-        for predicate in pattern.predicates.iter() {
-            // Next predicate shouldn't be processed;
-            // node should be a non-terminal leaf node
-            if predicate.is_next_layer(self.filter_layer) {
-                let actions = subscription.with_nonterm_filter(self.filter_layer);
-                node.actions.push(&actions);
-                self.actions.push(&actions);
-                // Stop descending - no terminal actions for this predicate
-                return;
-            }
-
-            if !matches!(self.filter_layer, FilterLayer::PacketContinue) && predicate.req_packet() {
-                // To get similar behavior, users should subscribe to individual mbufs or
-                // the mbuf list, then filter within the callback.
-                // Because (for now) all packets would need to be tracked anyway, doing this
-                // is equivalent performance-wise to implementing similar functionality in the
-                // framework.
-                panic!("Cannot access per-packet fields (e.g., TCP flags, length) after packet filter.\n\
-                       Subscribe to `ZcFrame` or list of mbufs instead.");
-            }
-
-            // Predicate is already present
-
+        for predicate in pattern.iter() {
+            // Case 1: Predicate is already present
             if node.has_descendant(predicate) {
                 node = node.get_descendant(predicate).unwrap();
-                node.patterns.push(pattern_id);
                 continue;
             }
-
-            // Predicate should be added as child of existing node
+            // Case 2: Predicate should be added as child of existing node
             if node.has_parent(predicate) {
                 node = node.get_parent(predicate, self.size).unwrap();
             }
-
-            // Children of curr node should be children of new node
+            // Case 3: Children of curr node should be children of new node
             let children = match node.has_children_of(predicate) {
                 true => node.get_children_of(predicate),
                 false => {
                     vec![]
                 }
             };
-
             // Create new node
             if !node.has_child(predicate) {
-                node.children.push(PNode::new(predicate.clone(), self.size));
+                node.children.push(PNode::new(predicate.clone(), self.filter_layer,
+                                   self.size));
                 self.size += 1;
             }
             // Move on, pushing any new children if applicable
             node = node.get_child(predicate);
             node.children.extend(children);
-            node.patterns.push(pattern_id);
         }
-        if subscription.should_deliver(self.filter_layer, &node.pred) {
-            node.deliver.insert(deliver.clone());
-        } else if subscription.should_stream(self.filter_layer, &node.pred) {
-            node.stream.insert(deliver.clone());
+        if level.can_deliver(&self.filter_layer) {
+            node.deliver.insert(callback.clone());
         }
-        let actions = subscription.with_term_filter(self.filter_layer, &node.pred);
-        if !actions.drop() {
-            node.actions.push(&actions);
-            self.actions.push(&actions);
-        }
-    }
-
-    // Returns a copy of the subtree rooted at Node `id`
-    pub fn get_subtree(&self, id: usize) -> Option<PNode> {
-        fn get_subtree(id: usize, node: &PNode) -> Option<PNode> {
-            if node.id == id {
-                return Some(node.clone());
-            }
-            for child in node.children.iter() {
-                if let Some(node) = get_subtree(id, child) {
-                    return Some(node);
-                }
-            }
-            None
-        }
-        get_subtree(id, &self.root)
-    }
-
-    // Sorts the PTree according to predicates
-    // Useful as a pre-step for marking mutual exclusion; places
-    // conditions with the same protocols/fields next to each other.
-    fn sort(&mut self) {
-        fn sort(node: &mut PNode) {
-            for child in node.children.iter_mut() {
-                sort(child);
-            }
-            node.children.sort();
-        }
-        sort(&mut self.root);
-    }
-
-    // If only one callback is present in the tree, this function
-    // returns it. Otherwise, it returns None.
-    fn get_single_callback(&self) -> Option<Deliver> {
-        fn check_callbacks(node: &PNode, callbacks: &mut HashSet<Deliver>) {
-            if !node.deliver.is_empty() {
-                callbacks.extend(node.deliver.iter().cloned());
-            }
-            if callbacks.len() > 1 {
-                return;
-            }
-            for child in &node.children {
-                check_callbacks(child, callbacks);
-            }
-        }
-        let mut callbacks = HashSet::new();
-        check_callbacks(&self.root, &mut callbacks);
-        if callbacks.len() != 1 {
-            return None;
-        }
-        Some(callbacks.iter().next().unwrap().clone())
-    }
-
-    // Remove all nodes and callbacks from the tree
-    fn clear(&mut self) {
-        let pred = Predicate::Unary {
-            protocol: protocol!("ethernet"),
-        };
-        self.root = PNode::new(pred, 0);
-        self.size = 1;
-        self.actions = Actions::new();
-        self.collapsed = false;
-    }
-
-    // Best-effort to give the filter generator hints as to where an "else"
-    // statement can go between two predicates.
-    fn mark_mutual_exclusion(&mut self) {
-        fn mark_mutual_exclusion(node: &mut PNode) {
-            for idx in 0..node.children.len() {
-                // Recurse for children/descendants
-                mark_mutual_exclusion(&mut node.children[idx]);
-                if idx == 0 {
-                    continue;
-                }
-
-                // Look for mutually exclusive predicates in direct children
-                if node.children[idx]
-                    .pred
-                    .is_excl(&node.children[idx - 1].pred)
-                {
-                    node.children[idx].if_else = true;
-                }
-                // If the result is equivalent (e.g., same actions)
-                // for child nodes, then we can safely use first match.
-                // (Similar to "early return.")
-                if node.children[idx].outcome_eq(&node.children[idx - 1]) {
-                    node.children[idx].if_else = true;
-                }
-            }
-        }
-        mark_mutual_exclusion(&mut self.root);
-    }
-
-    // After collapsing the tree, make sure node IDs and sizes are correct.
-    fn update_size(&mut self) {
-        fn count_nodes(node: &mut PNode, id: &mut usize) -> usize {
-            node.id = *id;
-            *id += 1;
-            let mut count = 1;
-            for child in &mut node.children {
-                count += count_nodes(child, id);
-            }
-            count
-        }
-        let mut id = 0;
-        self.size = count_nodes(&mut self.root, &mut id);
-    }
-
-    // Removes some patterns that are covered by others
-    fn prune_branches(&mut self) {
-        fn prune(
-            node: &mut PNode,
-            on_path_actions: &Actions,
-            on_path_deliver: &HashSet<String>,
-            on_path_stream: &HashSet<String>,
-        ) {
-            // 1. Remove callbacks that would have already been invoked on this path
-            let mut my_deliver = on_path_deliver.clone();
-            let mut new_ids = HashSet::new();
-            for i in &node.deliver {
-                if !my_deliver.contains(&i.as_str) {
-                    my_deliver.insert(i.as_str.clone());
-                    new_ids.insert(i.clone());
-                } else if i.must_deliver {
-                    new_ids.insert(i.clone());
-                }
-            }
-            node.deliver = new_ids;
-
-            // 2. Remove streaming CBs that would have already been started on this path
-            let mut my_stream = on_path_stream.clone();
-            let mut new_ids = HashSet::new();
-            for i in &node.stream {
-                if !my_stream.contains(&i.as_str) {
-                    my_stream.insert(i.as_str.clone());
-                    new_ids.insert(i.clone());
-                } else if i.must_deliver {
-                    new_ids.insert(i.clone());
-                }
-            }
-            node.stream = new_ids;
-
-            // 3. Remove actions that would have already been invoked on this path
-            let mut my_actions = on_path_actions.clone();
-            if !node.actions.drop() {
-                node.actions.clear_intersection(&my_actions);
-                my_actions.push(&node.actions);
-            }
-
-            // 4. Repeat for each child
-            node.children
-                .iter_mut()
-                .for_each(|child| prune(child, &my_actions, &my_deliver, &my_stream));
-
-            // 5. Remove empty children
-            let children = std::mem::take(&mut node.children);
-            node.children = children
-                .into_iter()
-                .filter(|child| {
-                    !child.actions.drop() || !child.children.is_empty() || !child.deliver.is_empty()
-                })
-                .collect();
-        }
-
-        let on_path_actions = Actions::new();
-        let on_path_deliver = HashSet::new();
-        let on_path_stream = HashSet::new();
-        prune(
-            &mut self.root,
-            &on_path_actions,
-            &on_path_deliver,
-            &on_path_stream,
-        );
-    }
-
-    // Avoid re-checking packet-level conditions that, on the basis of previous
-    // filters, are guaranteed to be already met.
-    // For example, if all subscriptions filter for "tcp", then all non-tcp
-    // connections will have been filtered out at the PacketContinue layer.
-    // We only do this for packet-level conditions, as connection-level
-    // conditions are needed to extract sessions.
-    fn prune_packet_conditions(&mut self) {
-        fn prune_packet_conditions(node: &mut PNode, filter_layer: FilterLayer, can_prune: bool) {
-            if !node.pred.on_packet() {
-                return;
-            }
-            // Can only safely remove children if
-            // current branches are mutually exclusive
-            let can_prune_next = node
-                .children
-                .windows(2)
-                .all(|w| w[0].pred.is_excl(&w[1].pred));
-            for child in &mut node.children {
-                prune_packet_conditions(child, filter_layer, can_prune_next);
-            }
-            if !can_prune {
-                return;
-            }
-            // Tree layer is only drop/keep (i.e., one condition),
-            // and condition checked at prev. layer
-            while node.children.len() == 1 && node.children[0].pred.on_packet() {
-                // If the protocol needs to be extracted, can't remove node
-                // Look for unary predicate (e.g., `ipv4`) and child with
-                // binary predicate of same protocol (e.g., `ipv4.addr = ...`)
-                let child = &mut node.children[0];
-                if child.extracts_protocol(filter_layer) {
-                    break;
-                }
-                node.actions.push(&child.actions);
-                node.deliver.extend(child.deliver.iter().cloned());
-                node.children = std::mem::take(&mut child.children);
-            }
-        }
-
-        // Can't prune from the first filter
-        // \Note future optimization could prune based on HW filtering if
-        // confirmed that HW filtering will be enabled.
-        if matches!(self.filter_layer, FilterLayer::PacketContinue) {
-            return;
-        }
-        let can_prune_next = self
-            .root
-            .children
-            .windows(2)
-            .all(|w| w[0].pred.is_excl(&w[1].pred));
-        prune_packet_conditions(&mut self.root, self.filter_layer, can_prune_next);
-    }
-
-    // Avoid applying conditions that (1) are not needed for filtering *out*
-    // (i.e., would have already been checked by prev layer), and (2) end in
-    // the same result.
-    // Example: two different IP addresses in a packet filter followed by
-    // a TCP/UDP disambiguation.
-    fn prune_redundant_branches(&mut self) {
-        fn prune_redundant_branches(node: &mut PNode, filter_layer: FilterLayer, can_prune: bool) {
-            if !node.pred.is_prev_layer_pred(filter_layer) {
-                return;
-            }
-
-            // Can only safely remove children if
-            // current branches are mutually exclusive
-            let can_prune_next = node
-                .children
-                .windows(2)
-                .all(|w| w[0].pred.is_excl(&w[1].pred));
-
-            for child in &mut node.children {
-                prune_redundant_branches(child, filter_layer, can_prune_next);
-            }
-            if !can_prune {
-                return;
-            }
-
-            let (must_keep, could_drop): (Vec<PNode>, Vec<PNode>) =
-                node.children.iter().cloned().partition(|child| {
-                    !child.actions.drop()
-                        || !child.stream.is_empty()
-                        || !child.deliver.is_empty()
-                        || !child.pred.is_prev_layer_pred(filter_layer)
-                        || child.extracts_protocol(filter_layer)
-                });
-            let mut new_children = vec![];
-            for child in &could_drop {
-                // Can "upgrade" descendants if all children in a layer
-                // have the same descendant conditions.
-                if node.children.iter().all(|c| child.all_paths_eq(c)) {
-                    new_children.extend(child.children.clone());
-                } else {
-                    new_children.push(child.clone());
-                }
-            }
-
-            new_children.extend(must_keep);
-            new_children.sort();
-            new_children.dedup();
-            node.children = new_children;
-        }
-        if matches!(self.filter_layer, FilterLayer::PacketContinue) {
-            return;
-        }
-        let can_prune_next = self
-            .root
-            .children
-            .windows(2)
-            .all(|w| w[0].pred.is_excl(&w[1].pred));
-        prune_redundant_branches(&mut self.root, self.filter_layer, can_prune_next);
-    }
-
-    // Apply all filter tree optimizations.
-    // This must only be invoked AFTER the tree is completely built.
-    pub fn collapse(&mut self) {
-        if matches!(
-            self.filter_layer,
-            FilterLayer::PacketDeliver | FilterLayer::ConnectionDeliver
-        ) {
-            self.collapsed = true;
-
-            // The delivery filter will only be invoked if a previous filter
-            // determined that delivery is needed at the corresponding stage.
-            // If disambiguation is not needed (i.e., only one possible delivery
-            // outcome), then no filter condition is needed.
-            if let Some(deliver) = self.get_single_callback() {
-                self.clear();
-                self.root.deliver.insert(deliver);
-                self.update_size();
-                return;
-            }
-        }
-        self.prune_redundant_branches();
-        self.prune_packet_conditions();
-        self.prune_branches();
-        self.sort();
-        self.mark_mutual_exclusion(); // Must be last
-        self.update_size();
-    }
-
-    pub fn to_flat_patterns(&self) -> Vec<FlatPattern> {
-        fn build_pattern(
-            patterns: &mut Vec<FlatPattern>,
-            predicates: &mut Vec<Predicate>,
-            node: &PNode,
-        ) {
-            if *node.pred.get_protocol() != protocol!("ethernet") {
-                predicates.push(node.pred.to_owned());
-            }
-            if node.children.is_empty() {
-                patterns.push(FlatPattern {
-                    predicates: predicates.to_vec(),
-                });
-            } else {
-                for child in node.children.iter() {
-                    build_pattern(patterns, predicates, child);
-                }
-            }
-            predicates.pop();
-        }
-        let mut patterns = vec![];
-        let mut predicates = vec![];
-
-        build_pattern(&mut patterns, &mut predicates, &self.root);
-        patterns
+        node.actions.merge(actions);
     }
 
     // modified from https://vallentin.dev/2019/05/14/pretty-print-tree
@@ -825,92 +399,11 @@ impl PTree {
         pprint(&mut s, &self.root, "".to_string(), true);
         s
     }
-
-    // Displays the conditions in the PTree as a filter string
-    pub fn to_filter_string(&self) -> String {
-        fn to_filter_string(p: &PNode, all: &mut Vec<String>, curr: String) {
-            let mut curr = curr;
-            if curr.is_empty() {
-                curr.push('(');
-            } else {
-                curr.push_str(&format!("({})", p.pred));
-            }
-            if p.children.is_empty() {
-                let mut path_str = curr.clone();
-                path_str.push(')');
-                all.push(path_str);
-            } else {
-                if curr != "(" {
-                    curr.push_str(" and ");
-                }
-                for child in &p.children {
-                    to_filter_string(child, all, curr.clone());
-                }
-            }
-        }
-
-        let mut all_filters = Vec::new();
-        let curr_filter = String::new();
-        if self.root.children.is_empty() {
-            return "".into();
-        }
-        to_filter_string(&self.root, &mut all_filters, curr_filter);
-        all_filters.join(" or ")
-    }
 }
 
 impl fmt::Display for PTree {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(f, "Tree {}\n,{}", &self.filter_layer, self.pprint())?;
+        write!(f, "Tree {:?}\n,{}", &self.filter_layer, self.pprint())?;
         Ok(())
-    }
-}
-
-// Compares the contents of the nodes, ignoring children
-// To consider children, use outcome_eq
-impl PartialEq for PNode {
-    fn eq(&self, other: &PNode) -> bool {
-        self.pred == other.pred && self.actions == other.actions && self.deliver == other.deliver
-    }
-}
-
-impl Eq for PNode {}
-
-impl PartialOrd for PNode {
-    fn partial_cmp(&self, other: &PNode) -> Option<Ordering> {
-        Some(self.cmp(other))
-    }
-}
-
-// Used for ordering nodes by protocol and field
-// Does NOT consider contents of the node
-impl Ord for PNode {
-    fn cmp(&self, other: &PNode) -> Ordering {
-        if let Predicate::Binary {
-            protocol: proto,
-            field: field_name,
-            op: _op,
-            value: _val,
-        } = &self.pred
-        {
-            if let Predicate::Binary {
-                protocol: peer_proto,
-                field: peer_field_name,
-                op: _peer_op,
-                value: _peer_val,
-            } = &other.pred
-            {
-                // Same protocol; sort fields
-                if proto == peer_proto {
-                    return field_name.name().cmp(peer_field_name.name());
-                }
-            }
-        }
-
-        // Sort by protocol name
-        self.pred
-            .get_protocol()
-            .name()
-            .cmp(other.pred.get_protocol().name())
     }
 }
