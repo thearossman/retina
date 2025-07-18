@@ -50,10 +50,7 @@ impl FlatPattern {
     }
 
     // Returns a vector of fully qualified patterns from self
-    pub(super) fn to_fully_qualified(
-        &self,
-        custom_filters: &Vec<Predicate>,
-    ) -> Result<Vec<LayeredPattern>> {
+    pub(super) fn to_fully_qualified(&self) -> Result<Vec<LayeredPattern>> {
         if self.is_empty() {
             return Ok(Vec::new());
         }
@@ -125,32 +122,10 @@ impl FlatPattern {
             .filter(|c| c.is_custom())
             .map(|c| c.to_owned())
             .collect::<HashSet<_>>();
-        let valid_custom_preds = custom_filters
-            .into_iter()
-            .filter(|pred| {
-                custom_preds
-                    .iter()
-                    .any(|other| pred.get_name() == other.get_name())
-            })
-            .cloned()
-            .collect::<HashSet<_>>();
-        if custom_preds.len() != valid_custom_preds.len() {
-            let diff = custom_preds
-                .iter()
-                .filter(|a| {
-                    !valid_custom_preds
-                        .iter()
-                        .any(|b| b.get_name() == a.get_name())
-                })
-                .map(|a| a.get_name().name())
-                .collect::<Vec<_>>()
-                .join(",");
-            bail!(FilterError::InvalidCustomFilter(diff));
-        }
-        if !valid_custom_preds.is_empty() {
+        if !custom_preds.is_empty() {
             // Add custom filter predicate to end of all patterns
             for pattern in fq_patterns.iter_mut() {
-                pattern.extend_patterns(&valid_custom_preds);
+                pattern.extend_patterns(&custom_preds);
             }
             // ...or as standalone pattern
             if fq_patterns.is_empty() {
@@ -158,7 +133,7 @@ impl FlatPattern {
                 fq_patterns
                     .last_mut()
                     .unwrap()
-                    .extend_patterns(&valid_custom_preds);
+                    .extend_patterns(&custom_preds);
             }
         }
 
@@ -168,6 +143,22 @@ impl FlatPattern {
             bail!(FilterError::InvalidPatternLayers(self.to_owned()));
         }
         Ok(fq_patterns)
+    }
+
+    // Validate and populate DataLevels for the custom predicates
+    // When building a filter from a string, only the name of the custom filter is available.
+    // To populate needed data, we need to correlate these names with the information parsed
+    // at compile-time from the defined custom filters.
+    pub(super) fn handle_custom_predicates(&mut self, valid_preds: &Vec<Predicate>) -> Result<()> {
+        for p_empty in &mut self.predicates {
+            if p_empty.is_custom() {
+                let p = valid_preds.iter()
+                                       .find(|p| p.get_name() == p_empty.get_name())
+                                       .ok_or(FilterError::InvalidCustomFilter(p_empty.get_name().clone()))?;
+                *p_empty = p.clone();
+            }
+        }
+        Ok(())
     }
 
     // Returns FlatPattern of only predicates that can be filtered in hardware
@@ -359,10 +350,14 @@ mod tests {
         );
         let flat_patterns = raw_patterns
             .into_iter()
-            .map(|p| FlatPattern { predicates: p })
+            .map(|p| {
+                let mut patt = FlatPattern { predicates: p };
+                patt.handle_custom_predicates(&CUSTOM_FILTERS).unwrap();
+                patt
+            })
             .collect::<Vec<_>>();
         let fq_patterns = flat_patterns[0]
-            .to_fully_qualified(&CUSTOM_FILTERS)
+            .to_fully_qualified()
             .unwrap();
         assert!(
             fq_patterns.len() == 1
@@ -383,10 +378,14 @@ mod tests {
         let raw_patterns = FilterParser::parse_filter(filter_raw).unwrap();
         let flat_patterns = raw_patterns
             .into_iter()
-            .map(|p| FlatPattern { predicates: p })
+            .map(|p| {
+                let mut patt = FlatPattern { predicates: p };
+                patt.handle_custom_predicates(&CUSTOM_FILTERS).unwrap();
+                patt
+            })
             .collect::<Vec<_>>();
         let fq_patterns = flat_patterns[0]
-            .to_fully_qualified(&CUSTOM_FILTERS)
+            .to_fully_qualified()
             .unwrap();
         assert!(fq_patterns.len() == 2); // branches for ipv4/ipv6
         assert!(
@@ -415,13 +414,12 @@ mod tests {
     fn test_custom_invalid() {
         let filter_raw = "tcp.port = 80 and tls and my_filter and invalid_filter";
         let raw_patterns = FilterParser::parse_filter(filter_raw).unwrap();
-        let flat_patterns = raw_patterns
+        let mut flat_patterns = raw_patterns
             .into_iter()
             .map(|p| FlatPattern { predicates: p })
             .collect::<Vec<_>>();
-        let _err = flat_patterns[0]
-            .to_fully_qualified(&CUSTOM_FILTERS)
-            .expect_err("Should have failed on invalid_filter");
+        flat_patterns[0].handle_custom_predicates(&CUSTOM_FILTERS)
+                        .expect_err("Should have failed on invalid_filter");
         // println!("Error thrown: {:?}", err);
     }
 }

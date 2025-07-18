@@ -153,14 +153,13 @@ impl FlatPTree {
     // converting back to LayeredPatterns
     pub(crate) fn to_layered_patterns(
         &self,
-        custom_filters: &Vec<Predicate>,
     ) -> Vec<LayeredPattern> {
         let flat_patterns = self.to_flat_patterns();
         let mut layered = vec![];
         for pattern in flat_patterns.iter() {
             layered.extend(
                 pattern
-                    .to_fully_qualified(custom_filters)
+                    .to_fully_qualified()
                     .expect("fully qualified"),
             );
         }

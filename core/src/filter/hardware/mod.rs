@@ -61,7 +61,7 @@ impl<'a> HardwareFilter<'a> {
             // converts to LayeredPattern
             layered.extend(
                 pattern
-                    .to_fully_qualified(&vec![])
+                    .to_fully_qualified()
                     .expect("fully qualified"),
             );
         }
@@ -182,7 +182,7 @@ fn predicate_supported(predicate: &Predicate, port: &Port, group: u32, priority:
         predicates: vec![predicate.to_owned()],
     };
     let fq_patterns = pattern
-        .to_fully_qualified(&vec![])
+        .to_fully_qualified()
         .expect("fully qualified");
     fq_patterns
         .iter()

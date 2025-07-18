@@ -35,6 +35,7 @@ use crate::subscription::Trackable;
 use std::fmt;
 
 use anyhow::{bail, Result};
+use ast::FuncName;
 use thiserror::Error;
 
 // Filter functions
@@ -101,17 +102,20 @@ pub struct Filter {
 }
 
 impl Filter {
-    pub fn new(filter_raw: &str, custom_filters: &Vec<Predicate>) -> Result<Filter> {
+    pub fn new(filter_raw: &str, valid_custom_preds: &Vec<Predicate>) -> Result<Filter> {
         let raw_patterns = FilterParser::parse_filter(filter_raw)?;
 
         let flat_patterns = raw_patterns
             .into_iter()
-            .map(|p| FlatPattern { predicates: p })
-            .collect::<Vec<_>>();
+            .map(|p| {
+                let mut patt = FlatPattern { predicates: p };
+                patt.handle_custom_predicates(valid_custom_preds).unwrap();
+                patt
+            }).collect::<Vec<_>>();
 
         let mut fq_patterns = vec![];
         for pattern in flat_patterns.iter() {
-            fq_patterns.extend(pattern.to_fully_qualified(custom_filters)?);
+            fq_patterns.extend(pattern.to_fully_qualified()?);
         }
 
         // deduplicate fully qualified patterns
@@ -125,7 +129,7 @@ impl Filter {
         ptree.prune_branches();
 
         Ok(Filter {
-            patterns: ptree.to_layered_patterns(custom_filters),
+            patterns: ptree.to_layered_patterns(),
         })
     }
 
@@ -226,7 +230,7 @@ pub enum FilterError {
     },
 
     #[error("Invalid Custom Filter: {0}")]
-    InvalidCustomFilter(String),
+    InvalidCustomFilter(FuncName),
 }
 
 // Nice-to-have: tests for filter string parsing
