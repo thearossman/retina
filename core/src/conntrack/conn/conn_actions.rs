@@ -112,3 +112,17 @@ impl TrackedActions {
         }
     }
 }
+
+impl std::fmt::Display for TrackedActions {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{:?}", self.active)?;
+        let mut refresh_at = vec![];
+        for i in 0..NUM_STATE_TRANSITIONS {
+            if self.refresh_at[i] != 0 {
+                refresh_at.push(format!(" {}: {:?}", StateTransition::from_usize(i), self.refresh_at[i].clone()));
+            }
+        }
+        write!(f, " (Until: {})", refresh_at.join(","))?;
+        Ok(())
+    }
+}

@@ -33,6 +33,19 @@ pub struct DataActions {
     pub layers: [TrackedActions; NUM_LAYERS],
 }
 
+impl std::fmt::Display for DataActions {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        let mut pref = "";
+        if let Some(if_matches) = self.if_matches {
+            write!(f, "{:?}:{:?}", if_matches.0, if_matches.1)?;
+            pref = "\n- ";
+        }
+        write!(f, "{}L4: {} ", pref, self.transport)?;
+        write!(f, "{}L7: {}", pref, self.layers[0])?;
+        Ok(())
+    }
+}
+
 impl DataActions {
     pub(crate) fn new() -> Self {
         DataActions {
@@ -103,6 +116,15 @@ pub struct NodeActions {
     pub(crate) filter_layer: StateTransition,
 }
 
+impl std::fmt::Display for NodeActions {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        for d in &self.actions {
+            write!(f, "{}", d)?;
+        }
+        Ok(())
+    }
+}
+
 impl NodeActions {
     pub(crate) fn new(filter_layer: StateTransition) -> Self {
         Self {
@@ -153,6 +175,11 @@ impl NodeActions {
         }
     }
 
+    /// Manually indicate that we're done adding new data
+    pub(crate) fn end_datatypes(&mut self) {
+        self.end_datatypes = true;
+    }
+
     /// Must be added after full subscription spec has been built up with all datatypes,
     /// including the datatypes required for filters.
     /// `level` should indicate the level at which the callback could unsubscribe.
@@ -166,11 +193,13 @@ impl NodeActions {
     /// accumulated and another subscription (sub-)pattern terminates
     /// at the node.
     pub(crate) fn merge(&mut self, peer: &NodeActions) {
-        assert!(self.end_datatypes && peer.end_datatypes || self.actions.len() == 0);
+        assert!(self.end_datatypes && peer.end_datatypes || self.actions.len() == 0,
+                "SELF: {}\nPEER: {}", self, peer);
         assert!(self.filter_layer == peer.filter_layer);
         for a in &peer.actions {
             self.push_action(a.clone());
         }
+        self.end_datatypes = true;
     }
 
     /// Returns `true` if no actions

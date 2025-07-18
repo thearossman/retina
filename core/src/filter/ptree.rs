@@ -213,7 +213,7 @@ impl fmt::Display for PNode {
         write!(f, "{}", self.pred)?;
         if !self.actions.actions.is_empty() {
             // TODO implement Display for Actions!
-            write!(f, " -- A: {:?}", self.actions.actions)?;
+            write!(f, " -- A: {}", self.actions)?;
         }
         if !self.deliver.is_empty() {
             write!(f, " D: ")?;
@@ -355,6 +355,7 @@ impl PTree {
             }
             // Update `refresh_at` based on where next filter predicate(s)
             // may be applied.
+            node_actions.end_datatypes();
             for next_pred in pattern.next_pred(self.filter_layer) {
                 node_actions.push_filter_pred(&next_pred);
             }
@@ -843,5 +844,50 @@ mod tests {
             node.actions.actions[0].transport.needs_update()
                 && !node.actions.actions[0].transport.has_next_layer()
         );
+    }
+
+    lazy_static! {
+        static ref FIVETUPLE_DATATYPE: DatatypeSpec = DatatypeSpec {
+            updates: vec![DataLevel::L4FirstPacket],
+            name: "FiveTuple".into(),
+        };
+
+        static ref FIVETUPLE_SUB: Vec<CallbackSpec> = vec![CallbackSpec {
+            stream: None,
+            datatypes: vec![FIVETUPLE_DATATYPE.clone()],
+            must_deliver: false,
+            as_str: "basic_static".into(),
+            id: 0,
+            subscription_id: 0,
+        }];
+    }
+
+    #[test]
+    fn test_multi() {
+        let filter = Filter::new("tls", &vec![]).unwrap();
+        let patterns_1 = filter.get_patterns_flat();
+        let filter = Filter::new("tls and my_filter", &CUSTOM_FILTERS).unwrap();
+        let patterns_2: Vec<FlatPattern> = filter.get_patterns_flat();
+        let filter = Filter::new("ipv4 and tcp.port = 80", &vec![]).unwrap();
+        let patterns_3 = filter.get_patterns_flat();
+
+        // - First packet: check optimizations
+        let mut tree = PTree::new_empty(DataLevel::L4FirstPacket);
+        tree.add_subscription(&patterns_1, &TLS_SUB);
+        tree.add_subscription(&patterns_2, &STREAMING_SUB);
+        assert!(tree.size == 5);
+        let mut collapsed_tree = tree.clone();
+        collapsed_tree.collapse();
+        // "tcp" optimized out - `tcp` would have been filtered out at initial packet filter
+        assert!(collapsed_tree.size == 3);
+
+        tree.add_subscription(&patterns_3, &FIVETUPLE_SUB);
+        println!("{}", tree);
+        let mut collapsed_tree = tree.clone();
+        collapsed_tree.collapse();
+        // Can't optimize tcp anymore for ipv4, but still can for ipv6
+        println!("{}", collapsed_tree);
+        assert!(collapsed_tree.size == 6, "Actual value: {}", collapsed_tree.size);
+
     }
 }
