@@ -166,8 +166,7 @@ impl NodeActions {
     /// accumulated and another subscription (sub-)pattern terminates
     /// at the node.
     pub(crate) fn merge(&mut self, peer: &NodeActions) {
-        assert!(self.end_datatypes && peer.end_datatypes ||
-                self.actions.len() == 0);
+        assert!(self.end_datatypes && peer.end_datatypes || self.actions.len() == 0);
         assert!(self.filter_layer == peer.filter_layer);
         for a in &peer.actions {
             self.push_action(a.clone());
@@ -176,15 +175,16 @@ impl NodeActions {
 
     /// Returns `true` if no actions
     pub(crate) fn drop(&self) -> bool {
-        self.actions.len() == 0 ||
-            self.actions.iter().all(|a| a.transport.drop())
+        self.actions.len() == 0 || self.actions.iter().all(|a| a.transport.drop())
     }
 
     /// Clear the actions that intersect with `peer`
     pub(crate) fn clear_intersection(&mut self, peer: &NodeActions) {
         for a in &mut self.actions {
             for a_peer in &peer.actions {
-                if a.if_matches != a_peer.if_matches { continue; }
+                if a.if_matches != a_peer.if_matches {
+                    continue;
+                }
                 a.transport.clear_intersection(&a_peer.transport);
                 a.layers[0].clear_intersection(&a_peer.layers[0]);
             }
@@ -205,12 +205,11 @@ pub struct DatatypeSpec {
 }
 
 impl DatatypeSpec {
-
     /// From a filter predicate
     pub(crate) fn from_pred(pred: &Predicate) -> Self {
         Self {
             updates: pred.levels().clone(),
-            name: format!("{}", pred)
+            name: format!("{}", pred),
         }
     }
 
@@ -248,8 +247,7 @@ impl DatatypeSpec {
                             a.transport.refresh_at[level.as_usize()] |= Actions::Parse;
                             // Only if pre-handshake
                             if matches!(cmp, StateTxOrd::Unknown) {
-                                a.if_matches =
-                                    Some((SupportedLayer::L4, LayerState::Headers));
+                                a.if_matches = Some((SupportedLayer::L4, LayerState::Headers));
                             }
                             actions.push_action(a);
                         }
@@ -279,8 +277,7 @@ impl DatatypeSpec {
                             a.layers[l7_idx].active |= Actions::Parse;
                             a.layers[l7_idx].refresh_at[level.as_usize()] |= Actions::Parse;
                             if matches!(cmp, StateTxOrd::Unknown) {
-                                a.if_matches =
-                                    Some((SupportedLayer::L7, LayerState::Discovery));
+                                a.if_matches = Some((SupportedLayer::L7, LayerState::Discovery));
                             }
                             actions.push_action(a);
                         }
@@ -312,8 +309,7 @@ impl DatatypeSpec {
                                     [StateTransition::L7EndHdrs.as_usize()] |= Actions::Update;
                             }
                             if matches!(cmp, StateTxOrd::Unknown) {
-                                a.if_matches =
-                                    Some((SupportedLayer::L7, LayerState::Headers));
+                                a.if_matches = Some((SupportedLayer::L7, LayerState::Headers));
                             }
                             actions.push_action(a);
                         }
@@ -328,15 +324,9 @@ impl DatatypeSpec {
                         a.layers[l7_idx].refresh_at[level.as_usize()] |= Actions::Parse;
                         if matches!(cmp, StateTxOrd::Unknown) {
                             // Differentiate between L7 Disc, Headers
-                            a.if_matches = Some((
-                                SupportedLayer::L7,
-                                LayerState::Discovery,
-                            ));
+                            a.if_matches = Some((SupportedLayer::L7, LayerState::Discovery));
                             actions.push_action(a.clone());
-                            a.if_matches = Some((
-                                SupportedLayer::L7,
-                                LayerState::Headers,
-                            ));
+                            a.if_matches = Some((SupportedLayer::L7, LayerState::Headers));
                         }
                         actions.push_action(a);
                     }
@@ -370,18 +360,11 @@ impl DatatypeSpec {
                     }
                     // Different layer: depends on L7 state
                     else if cmp == StateTxOrd::Unknown {
-                        pre_payload.if_matches = Some((
-                            SupportedLayer::L7,
-                            LayerState::Discovery,
-                        ));
+                        pre_payload.if_matches = Some((SupportedLayer::L7, LayerState::Discovery));
                         actions.push_action(pre_payload.clone());
-                        pre_payload.if_matches = Some((
-                            SupportedLayer::L7,
-                            LayerState::Headers,
-                        ));
+                        pre_payload.if_matches = Some((SupportedLayer::L7, LayerState::Headers));
                         actions.push_action(pre_payload);
-                        in_payload.if_matches =
-                            Some((SupportedLayer::L7, LayerState::Payload));
+                        in_payload.if_matches = Some((SupportedLayer::L7, LayerState::Payload));
                         actions.push_action(in_payload);
                     }
                 }

@@ -9,8 +9,8 @@ use petgraph::algo;
 use petgraph::graph::NodeIndex;
 
 use crate::conntrack::conn::conn_state::StateTxOrd;
-use crate::{conntrack::StateTransition, filter::FilterError};
 use crate::port::Port;
+use crate::{conntrack::StateTransition, filter::FilterError};
 
 use anyhow::{bail, Result};
 
@@ -152,17 +152,16 @@ impl FlatPattern {
     pub(super) fn handle_custom_predicates(&mut self, valid_preds: &Vec<Predicate>) -> Result<()> {
         for p_empty in &mut self.predicates {
             if p_empty.is_custom() {
-                let p = valid_preds.iter()
-                                       .find(|p| p.get_name() == p_empty.get_name())
-                                       .ok_or(FilterError::InvalidCustomFilter(p_empty.get_name().clone()))?;
+                let p = valid_preds
+                    .iter()
+                    .find(|p| p.get_name() == p_empty.get_name())
+                    .ok_or(FilterError::InvalidCustomFilter(p_empty.get_name().clone()))?;
                 *p_empty = p.clone();
             }
         }
         // empty unary "none" predicates may have been added during parsing
         self.predicates
-            .retain(|p|
-                    !p.is_unary() ||
-                    p.get_protocol() != ProtocolName::none());
+            .retain(|p| !p.is_unary() || p.get_protocol() != ProtocolName::none());
         Ok(())
     }
 
@@ -184,9 +183,7 @@ impl FlatPattern {
         self.predicates
             .iter()
             .flat_map(|p| p.levels())
-            .filter(|l|
-                matches!(l.compare(&curr), StateTxOrd::Unknown | StateTxOrd::Greater)
-            )
+            .filter(|l| matches!(l.compare(&curr), StateTxOrd::Unknown | StateTxOrd::Greater))
             .collect::<HashSet<_>>() // dedup
             .into_iter()
             .collect()
@@ -362,9 +359,7 @@ mod tests {
                 patt
             })
             .collect::<Vec<_>>();
-        let fq_patterns = flat_patterns[0]
-            .to_fully_qualified()
-            .unwrap();
+        let fq_patterns = flat_patterns[0].to_fully_qualified().unwrap();
         assert!(
             fq_patterns.len() == 1
                 && fq_patterns[0]
@@ -390,9 +385,7 @@ mod tests {
                 patt
             })
             .collect::<Vec<_>>();
-        let fq_patterns = flat_patterns[0]
-            .to_fully_qualified()
-            .unwrap();
+        let fq_patterns = flat_patterns[0].to_fully_qualified().unwrap();
         assert!(fq_patterns.len() == 2); // branches for ipv4/ipv6
         assert!(
             fq_patterns[0]
@@ -423,8 +416,9 @@ mod tests {
             .into_iter()
             .map(|p| FlatPattern { predicates: p })
             .collect::<Vec<_>>();
-        flat_patterns[0].handle_custom_predicates(&CUSTOM_FILTERS)
-                        .expect_err("Should have failed on invalid_filter");
+        flat_patterns[0]
+            .handle_custom_predicates(&CUSTOM_FILTERS)
+            .expect_err("Should have failed on invalid_filter");
         // println!("Error thrown: {:?}", err);
     }
 }

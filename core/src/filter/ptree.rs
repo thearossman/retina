@@ -1,10 +1,14 @@
 use core::fmt;
-use std::collections::HashSet;
 use std::cmp::{Ordering, PartialOrd};
+use std::collections::HashSet;
 
 use crate::conntrack::{DataLevel, StateTransition};
 
-use super::{ast::Predicate, pattern::FlatPattern, subscription::{CallbackSpec, DatatypeSpec, NodeActions, SubscriptionLevel}};
+use super::{
+    ast::Predicate,
+    pattern::FlatPattern,
+    subscription::{CallbackSpec, DatatypeSpec, NodeActions, SubscriptionLevel},
+};
 
 // A node representing a predicate in the tree
 #[derive(Debug, Clone)]
@@ -32,15 +36,14 @@ pub struct PNode {
 }
 
 impl PNode {
-    fn new(pred: Predicate, level: DataLevel,
-           id: usize,) -> Self {
+    fn new(pred: Predicate, level: DataLevel, id: usize) -> Self {
         PNode {
             pred,
             children: vec![],
             if_else: false,
             actions: NodeActions::new(level),
             deliver: HashSet::new(),
-            id
+            id,
         }
     }
 
@@ -160,10 +163,8 @@ impl PNode {
         // Filters that parse raw packets are special case
         // Need upper layers to extract inner from mbuf
         // E.g.: need ipv4 header to parse tcp
-        if matches!(
-            filter_layer,
-            DataLevel::L4FirstPacket
-        ) && self.pred.is_unary()
+        if matches!(filter_layer, DataLevel::L4FirstPacket)
+            && self.pred.is_unary()
             && self.children.iter().any(|n| n.pred.is_unary())
         {
             return true;
@@ -323,27 +324,27 @@ impl PTree {
         if self.collapsed {
             panic!("Cannot add filter to tree after collapsing");
         }
-        assert!(patterns.len() > 0 ||
-                patterns.iter().all(|p| p.predicates.is_empty()),
-                "Empty filter pattern must have default predicate.");
+        assert!(
+            patterns.len() > 0 || patterns.iter().all(|p| p.predicates.is_empty()),
+            "Empty filter pattern must have default predicate."
+        );
         for pattern in patterns {
             // Extract required datatypes in filter pattern
-            let mut datatypes: Vec<_> = pattern.predicates
-                                               .iter()
-                                               .map(|p| DatatypeSpec::from_pred(p))
-                                               .collect();
+            let mut datatypes: Vec<_> = pattern
+                .predicates
+                .iter()
+                .map(|p| DatatypeSpec::from_pred(p))
+                .collect();
             // Add datatypes required by callback
             for callback in callbacks {
                 datatypes.extend(callback.datatypes.iter().cloned());
                 if let Some(stream) = callback.stream {
                     // Requires streaming `updates` or the level cannot be
                     // inferred from the datatype alone
-                    datatypes.push(
-                        DatatypeSpec {
-                            updates: vec![stream],
-                            name: callback.as_str.clone()
-                        }
-                    );
+                    datatypes.push(DatatypeSpec {
+                        updates: vec![stream],
+                        name: callback.as_str.clone(),
+                    });
                 }
             }
             // Construct node actions
@@ -373,22 +374,19 @@ impl PTree {
         &mut self,
         full_pattern: &FlatPattern,
         actions: &NodeActions,
-        callback: &CallbackSpec
+        callback: &CallbackSpec,
     ) {
-        let level = SubscriptionLevel::new(
-            &callback.datatypes,
-            full_pattern,
-            callback.stream
-        );
+        let level = SubscriptionLevel::new(&callback.datatypes, full_pattern, callback.stream);
         if level.can_skip(&self.filter_layer) {
             return;
         }
 
-        let pattern: Vec<_> = full_pattern.predicates
-                                          .iter()
-                                          .filter(|p| !p.is_next_layer(self.filter_layer))
-                                          .cloned()
-                                          .collect();
+        let pattern: Vec<_> = full_pattern
+            .predicates
+            .iter()
+            .filter(|p| !p.is_next_layer(self.filter_layer))
+            .cloned()
+            .collect();
         assert!(pattern.len() <= full_pattern.predicates.len());
         if pattern.len() < full_pattern.predicates.len() {
             assert!(!level.can_deliver(&self.filter_layer));
@@ -414,8 +412,8 @@ impl PTree {
             };
             // Create new node
             if !node.has_child(predicate) {
-                node.children.push(PNode::new(predicate.clone(), self.filter_layer,
-                                   self.size));
+                node.children
+                    .push(PNode::new(predicate.clone(), self.filter_layer, self.size));
                 self.size += 1;
             }
             // Move on, pushing any new children if applicable
@@ -577,11 +575,7 @@ impl PTree {
 
         let on_path_actions = NodeActions::new(self.filter_layer);
         let on_path_deliver = HashSet::new();
-        prune(
-            &mut self.root,
-            &on_path_actions,
-            &on_path_deliver,
-        );
+        prune(&mut self.root, &on_path_actions, &on_path_deliver);
     }
 
     // Avoid re-checking packet-level conditions that, on the basis of previous
@@ -690,10 +684,7 @@ impl PTree {
     // Apply all filter tree optimizations.
     // This must only be invoked AFTER the tree is completely built.
     pub fn collapse(&mut self) {
-        if matches!(
-            self.filter_layer,
-            DataLevel::L4Terminated
-        ) {
+        if matches!(self.filter_layer, DataLevel::L4Terminated) {
             self.collapsed = true;
 
             // The delivery filter will only be invoked if a previous filter
@@ -702,7 +693,9 @@ impl PTree {
             // outcome), then no filter condition is needed.
             if self.deliver.len() == 1 {
                 self.clear();
-                self.root.deliver.insert(self.deliver.iter().next().unwrap().clone());
+                self.root
+                    .deliver
+                    .insert(self.deliver.iter().next().unwrap().clone());
                 self.update_size();
                 return;
             }
@@ -714,7 +707,6 @@ impl PTree {
         self.mark_mutual_exclusion(); // Must be last
         self.update_size();
     }
-
 }
 
 impl fmt::Display for PTree {
@@ -724,10 +716,12 @@ impl fmt::Display for PTree {
     }
 }
 
-
 #[cfg(test)]
 mod tests {
-    use crate::{conntrack::{conn::conn_layers::SupportedLayer, Actions, LayerState}, filter::Filter};
+    use crate::{
+        conntrack::{conn::conn_layers::SupportedLayer, Actions, LayerState},
+        filter::Filter,
+    };
 
     use super::*;
 
@@ -756,12 +750,8 @@ mod tests {
 
         let mut tree = PTree::new_empty(DataLevel::L4FirstPacket);
         // On first packet: set up parsing
-        tree.add_subscription(
-            &patterns,
-            &TLS_SUB
-        );
-        assert!(tree.size == 5,
-                "Tree size is: {}", tree.size);
+        tree.add_subscription(&patterns, &TLS_SUB);
+        assert!(tree.size == 5, "Tree size is: {}", tree.size);
         let node = tree.get_subtree(2).unwrap();
         assert!(node.actions.actions.len() == 1);
         let transp_actions = node.actions.actions[0].transport.clone();
@@ -792,8 +782,12 @@ mod tests {
         tree.add_subscription(&patterns, &TLS_SUB);
         let node = tree.get_subtree(3).unwrap(); // TLS Node
         assert!(node.actions.actions.len() == 2); // Differentiate in discovery, headers; no actions otherwise
-        assert!(node.actions.actions[0].if_matches == Some((SupportedLayer::L7, LayerState::Discovery)));
-        assert!(node.actions.actions[1].if_matches == Some((SupportedLayer::L7, LayerState::Headers)));
+        assert!(
+            node.actions.actions[0].if_matches == Some((SupportedLayer::L7, LayerState::Discovery))
+        );
+        assert!(
+            node.actions.actions[1].if_matches == Some((SupportedLayer::L7, LayerState::Headers))
+        );
 
         // Nothing to do
         let mut tree = PTree::new_empty(DataLevel::L7InPayload);
@@ -802,17 +796,14 @@ mod tests {
     }
 
     lazy_static! {
-
         static ref CUSTOM_FILTERS: Vec<Predicate> = vec![Predicate::Custom {
             name: filterfunc!("my_filter"),
             levels: vec![DataLevel::L4InPayload(false)],
         }];
-
         static ref SESS_RECORD_DATATYPE: DatatypeSpec = DatatypeSpec {
             updates: vec![DataLevel::L4InPayload(false), DataLevel::L7EndHdrs],
             name: "ConnAndSession".into(),
         };
-
         static ref STREAMING_SUB: Vec<CallbackSpec> = vec![CallbackSpec {
             stream: Some(DataLevel::L4InPayload(false)),
             datatypes: vec![TLS_DATATYPE.clone(), SESS_RECORD_DATATYPE.clone()],
@@ -836,10 +827,10 @@ mod tests {
         assert!(node.actions.actions.len() == 1);
         assert!(node.actions.actions[0].transport.active == Actions::PassThrough | Actions::Update);
         let l7_actions = &node.actions.actions[0].layers[0];
-        assert!(l7_actions.refresh_at[DataLevel::L4InPayload(false).as_usize()]
-                == Actions::Parse &&
-                l7_actions.refresh_at[DataLevel::L7OnDisc.as_usize()]
-                == Actions::Parse);
+        assert!(
+            l7_actions.refresh_at[DataLevel::L4InPayload(false).as_usize()] == Actions::Parse
+                && l7_actions.refresh_at[DataLevel::L7OnDisc.as_usize()] == Actions::Parse
+        );
 
         // On L7 Headers Parsed
         // Done with TLS filter and with parsing TLS handshake
@@ -848,7 +839,9 @@ mod tests {
         assert!(tree.size == 9);
         let node = tree.get_subtree(4).unwrap(); // my_filter
         assert!(node.actions.actions.len() == 1);
-        assert!(node.actions.actions[0].transport.needs_update() &&
-                !node.actions.actions[0].transport.has_next_layer());
+        assert!(
+            node.actions.actions[0].transport.needs_update()
+                && !node.actions.actions[0].transport.has_next_layer()
+        );
     }
 }

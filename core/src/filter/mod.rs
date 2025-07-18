@@ -111,7 +111,8 @@ impl Filter {
                 let mut patt = FlatPattern { predicates: p };
                 patt.handle_custom_predicates(valid_custom_preds).unwrap();
                 patt
-            }).collect::<Vec<_>>();
+            })
+            .collect::<Vec<_>>();
 
         let mut fq_patterns = vec![];
         for pattern in flat_patterns.iter() {
