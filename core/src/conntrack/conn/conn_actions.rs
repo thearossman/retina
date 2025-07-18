@@ -53,6 +53,15 @@ impl TrackedActions {
         self.active &= actions.not();
     }
 
+    /// Clear intersection of actions with `peer`, including `update_at`
+    #[inline]
+    pub fn clear_intersection(&mut self, peer: &TrackedActions) {
+        self.clear(&peer.active);
+        for i in 0..NUM_STATE_TRANSITIONS {
+            self.refresh_at[i] &= peer.refresh_at[i].not();
+        }
+    }
+
     /// All actions are empty; nothing to do for future packets in connection.
     #[inline]
     pub fn drop(&self) -> bool {

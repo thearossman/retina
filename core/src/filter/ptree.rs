@@ -1,5 +1,6 @@
 use core::fmt;
 use std::collections::HashSet;
+use std::cmp::{Ordering, PartialOrd};
 
 use crate::conntrack::{DataLevel, StateTransition};
 
@@ -228,6 +229,55 @@ impl fmt::Display for PNode {
     }
 }
 
+// Compares the contents of the nodes, ignoring children
+// To consider children, use outcome_eq
+impl PartialEq for PNode {
+    fn eq(&self, other: &PNode) -> bool {
+        self.pred == other.pred && self.actions == other.actions && self.deliver == other.deliver
+    }
+}
+
+impl Eq for PNode {}
+
+impl PartialOrd for PNode {
+    fn partial_cmp(&self, other: &PNode) -> Option<Ordering> {
+        Some(self.cmp(other))
+    }
+}
+
+// Used for ordering nodes by protocol and field
+// Does NOT consider contents of the node
+impl Ord for PNode {
+    fn cmp(&self, other: &PNode) -> Ordering {
+        if let Predicate::Binary {
+            protocol: proto,
+            field: field_name,
+            op: _op,
+            value: _val,
+        } = &self.pred
+        {
+            if let Predicate::Binary {
+                protocol: peer_proto,
+                field: peer_field_name,
+                op: _peer_op,
+                value: _peer_val,
+            } = &other.pred
+            {
+                // Same protocol; sort fields
+                if proto == peer_proto {
+                    return field_name.name().cmp(peer_field_name.name());
+                }
+            }
+        }
+
+        // Sort by protocol name
+        self.pred
+            .get_protocol()
+            .name()
+            .cmp(other.pred.get_protocol().name())
+    }
+}
+
 // A n-ary tree representing a Filter.
 // Paths from root to leaf represent a pattern for data to match.
 // Filter returns action(s) or delivers data.
@@ -245,18 +295,21 @@ pub struct PTree {
     // Has `collapse` been applied?
     // Use to ensure no filters are applied after `collapse`
     collapsed: bool,
+
+    // All actions, callbacks across all nodes in the tree
+    actions: NodeActions,
+    deliver: HashSet<CallbackSpec>,
 }
 
 impl PTree {
     pub fn new_empty(filter_layer: StateTransition) -> Self {
-        let pred = Predicate::Unary {
-            protocol: protocol!("ethernet"),
-        };
         Self {
-            root: PNode::new(pred, filter_layer, 0),
+            root: PNode::new(Predicate::default_pred(), filter_layer, 0),
             size: 1,
             filter_layer,
             collapsed: false,
+            actions: NodeActions::new(filter_layer),
+            deliver: HashSet::new(),
         }
     }
 
@@ -371,8 +424,10 @@ impl PTree {
         }
         if level.can_deliver(&self.filter_layer) {
             node.deliver.insert(callback.clone());
+            self.deliver.insert(callback.clone());
         }
         node.actions.merge(actions);
+        self.actions.merge(actions);
     }
 
     // modified from https://vallentin.dev/2019/05/14/pretty-print-tree
@@ -415,6 +470,251 @@ impl PTree {
         }
         get_subtree(id, &self.root)
     }
+
+    // Sorts the PTree according to predicates
+    // Useful as a pre-step for marking mutual exclusion; places
+    // conditions with the same protocols/fields next to each other.
+    fn sort(&mut self) {
+        fn sort(node: &mut PNode) {
+            for child in node.children.iter_mut() {
+                sort(child);
+            }
+            node.children.sort();
+        }
+        sort(&mut self.root);
+    }
+
+    // Remove all nodes and callbacks from the tree
+    fn clear(&mut self) {
+        *self = PTree::new_empty(self.filter_layer);
+    }
+
+    // Best-effort to give the filter generator hints as to where an "else"
+    // statement can go between two predicates. That is, if branches A and B
+    // are mutually exclusive, we want the runtime to take at most one of them.
+    fn mark_mutual_exclusion(&mut self) {
+        fn mark_mutual_exclusion(node: &mut PNode) {
+            for idx in 0..node.children.len() {
+                // Recurse for children/descendants
+                mark_mutual_exclusion(&mut node.children[idx]);
+                if idx == 0 {
+                    continue;
+                }
+                // Look for mutually exclusive predicates in direct children
+                if node.children[idx]
+                    .pred
+                    .is_excl(&node.children[idx - 1].pred)
+                {
+                    node.children[idx].if_else = true;
+                }
+                // If the result is equivalent (e.g., same actions)
+                // for child nodes, then we can safely use first match.
+                // (Similar to "early return.")
+                if node.children[idx].outcome_eq(&node.children[idx - 1]) {
+                    node.children[idx].if_else = true;
+                }
+            }
+        }
+        mark_mutual_exclusion(&mut self.root);
+    }
+
+    // After collapsing the tree, make sure node IDs and sizes are correct.
+    fn update_size(&mut self) {
+        fn count_nodes(node: &mut PNode, id: &mut usize) -> usize {
+            node.id = *id;
+            *id += 1;
+            let mut count = 1;
+            for child in &mut node.children {
+                count += count_nodes(child, id);
+            }
+            count
+        }
+        let mut id = 0;
+        self.size = count_nodes(&mut self.root, &mut id);
+    }
+
+    // Removes some patterns that are covered by others
+    fn prune_branches(&mut self) {
+        fn prune(
+            node: &mut PNode,
+            on_path_actions: &NodeActions,
+            on_path_deliver: &HashSet<String>,
+        ) {
+            // 1. Remove callbacks that would have already been invoked on this path
+            let mut my_deliver = on_path_deliver.clone();
+            let mut new_ids = HashSet::new();
+            for i in &node.deliver {
+                if !my_deliver.contains(&i.as_str) {
+                    my_deliver.insert(i.as_str.clone());
+                    new_ids.insert(i.clone());
+                } else if i.must_deliver {
+                    new_ids.insert(i.clone());
+                }
+            }
+            node.deliver = new_ids;
+
+            // 2. Remove actions that would have already been invoked on this path
+            let mut my_actions = on_path_actions.clone();
+            if !node.actions.drop() {
+                node.actions.clear_intersection(&my_actions);
+                my_actions.merge(&node.actions);
+            }
+
+            // 4. Repeat for each child
+            node.children
+                .iter_mut()
+                .for_each(|child| prune(child, &my_actions, &my_deliver));
+
+            // 5. Remove empty children
+            let children = std::mem::take(&mut node.children);
+            node.children = children
+                .into_iter()
+                .filter(|child| {
+                    !child.actions.drop() || !child.children.is_empty() || !child.deliver.is_empty()
+                })
+                .collect();
+        }
+
+        let on_path_actions = NodeActions::new(self.filter_layer);
+        let on_path_deliver = HashSet::new();
+        prune(
+            &mut self.root,
+            &on_path_actions,
+            &on_path_deliver,
+        );
+    }
+
+    // Avoid re-checking packet-level conditions that, on the basis of previous
+    // filters, are guaranteed to be already met.
+    // For example, if all subscriptions filter for "tcp", then all non-tcp
+    // connections will have been filtered out at the PacketContinue layer.
+    // We only do this for packet-level conditions, as connection-level
+    // conditions are needed to extract sessions.
+    fn prune_packet_conditions(&mut self) {
+        fn prune_packet_conditions(node: &mut PNode, filter_layer: DataLevel, can_prune: bool) {
+            if !node.pred.on_packet() {
+                return;
+            }
+            // Can only safely remove children if
+            // current branches are mutually exclusive
+            let can_prune_next = node
+                .children
+                .windows(2)
+                .all(|w| w[0].pred.is_excl(&w[1].pred));
+            for child in &mut node.children {
+                prune_packet_conditions(child, filter_layer, can_prune_next);
+            }
+            if !can_prune {
+                return;
+            }
+            // Tree layer is only drop/keep (i.e., one condition),
+            // and condition checked at prev. layer
+            while node.children.len() == 1 && node.children[0].pred.on_packet() {
+                // If the protocol needs to be extracted, can't remove node
+                // Look for unary predicate (e.g., `ipv4`) and child with
+                // binary predicate of same protocol (e.g., `ipv4.addr = ...`)
+                let child = &mut node.children[0];
+                if child.extracts_protocol(filter_layer) {
+                    break;
+                }
+                node.actions.merge(&child.actions);
+                node.deliver.extend(child.deliver.iter().cloned());
+                node.children = std::mem::take(&mut child.children);
+            }
+        }
+
+        let can_prune_next = self
+            .root
+            .children
+            .windows(2)
+            .all(|w| w[0].pred.is_excl(&w[1].pred));
+        prune_packet_conditions(&mut self.root, self.filter_layer, can_prune_next);
+    }
+
+    // Avoid applying conditions that (1) are not needed for filtering *out*
+    // (i.e., would have already been checked by prev layer), and (2) end in
+    // the same result.
+    // Example: two different IP addresses in a packet filter followed by
+    // a TCP/UDP disambiguation.
+    fn prune_redundant_branches(&mut self) {
+        fn prune_redundant_branches(node: &mut PNode, filter_layer: DataLevel, can_prune: bool) {
+            if !node.pred.is_prev_layer(filter_layer) {
+                return;
+            }
+
+            // Can only safely remove children if
+            // current branches are mutually exclusive
+            let can_prune_next = node
+                .children
+                .windows(2)
+                .all(|w| w[0].pred.is_excl(&w[1].pred));
+
+            for child in &mut node.children {
+                prune_redundant_branches(child, filter_layer, can_prune_next);
+            }
+            if !can_prune {
+                return;
+            }
+
+            let (must_keep, could_drop): (Vec<PNode>, Vec<PNode>) =
+                node.children.iter().cloned().partition(|child| {
+                    !child.actions.drop()
+                        || !child.deliver.is_empty()
+                        || !child.pred.is_prev_layer(filter_layer)
+                        || child.extracts_protocol(filter_layer)
+                });
+            let mut new_children = vec![];
+            for child in &could_drop {
+                // Can "upgrade" descendants if all children in a layer
+                // have the same descendant conditions.
+                if node.children.iter().all(|c| child.all_paths_eq(c)) {
+                    new_children.extend(child.children.clone());
+                } else {
+                    new_children.push(child.clone());
+                }
+            }
+
+            new_children.extend(must_keep);
+            new_children.sort();
+            new_children.dedup();
+            node.children = new_children;
+        }
+        let can_prune_next = self
+            .root
+            .children
+            .windows(2)
+            .all(|w| w[0].pred.is_excl(&w[1].pred));
+        prune_redundant_branches(&mut self.root, self.filter_layer, can_prune_next);
+    }
+
+    // Apply all filter tree optimizations.
+    // This must only be invoked AFTER the tree is completely built.
+    pub fn collapse(&mut self) {
+        if matches!(
+            self.filter_layer,
+            DataLevel::L4Terminated
+        ) {
+            self.collapsed = true;
+
+            // The delivery filter will only be invoked if a previous filter
+            // determined that delivery is needed at the corresponding stage.
+            // If disambiguation is not needed (i.e., only one possible delivery
+            // outcome), then no filter condition is needed.
+            if self.deliver.len() == 1 {
+                self.clear();
+                self.root.deliver.insert(self.deliver.iter().next().unwrap().clone());
+                self.update_size();
+                return;
+            }
+        }
+        self.prune_redundant_branches();
+        self.prune_packet_conditions();
+        self.prune_branches();
+        self.sort();
+        self.mark_mutual_exclusion(); // Must be last
+        self.update_size();
+    }
+
 }
 
 impl fmt::Display for PTree {

@@ -173,6 +173,23 @@ impl NodeActions {
             self.push_action(a.clone());
         }
     }
+
+    /// Returns `true` if no actions
+    pub(crate) fn drop(&self) -> bool {
+        self.actions.len() == 0 ||
+            self.actions.iter().all(|a| a.transport.drop())
+    }
+
+    /// Clear the actions that intersect with `peer`
+    pub(crate) fn clear_intersection(&mut self, peer: &NodeActions) {
+        for a in &mut self.actions {
+            for a_peer in &peer.actions {
+                if a.if_matches != a_peer.if_matches { continue; }
+                a.transport.clear_intersection(&a_peer.transport);
+                a.layers[0].clear_intersection(&a_peer.layers[0]);
+            }
+        }
+    }
 }
 
 /// Compile-time struct for representing a datatype required for a callback
