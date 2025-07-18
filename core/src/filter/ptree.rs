@@ -31,6 +31,10 @@ pub struct PNode {
     // on its `SubscriptionLevel`` returned true.
     pub deliver: HashSet<CallbackSpec>,
 
+    // Datatypes that remain "in scope" at this node
+    // Only tracked for "expensive" datatypes
+    pub datatypes: HashSet<String>,
+
     // Identifier
     pub id: usize,
 }
@@ -43,6 +47,7 @@ impl PNode {
             if_else: false,
             actions: NodeActions::new(level),
             deliver: HashSet::new(),
+            datatypes: HashSet::new(),
             id,
         }
     }
@@ -116,11 +121,11 @@ impl PNode {
     }
 
     // Returns true if (1) both `self` and `peer` have equal node-to-leaf paths
-    // and (2) actions/CB are the same.
+    // and (2) actions/CB/tracked datatypes are the same.
     // This is useful for marking nodes as mutually exclusive even
     // if there predicates are not mutually exclusive.
     fn outcome_eq(&self, peer: &PNode) -> bool {
-        if self.actions != peer.actions || self.deliver != peer.deliver {
+        if self != peer {
             return false;
         }
         (self.children.is_empty() && peer.children.is_empty()) || self.all_paths_eq(peer)
@@ -223,6 +228,14 @@ impl fmt::Display for PNode {
             }
             write!(f, ")")?;
         }
+        if !self.datatypes.is_empty() {
+            write!(f, " Data: ")?;
+            write!(f, "( ")?;
+            for d in &self.datatypes {
+                write!(f, "{}", d)?;
+            }
+            write!(f, ")")?;
+        }
         if self.if_else {
             write!(f, " x")?;
         }
@@ -234,7 +247,10 @@ impl fmt::Display for PNode {
 // To consider children, use outcome_eq
 impl PartialEq for PNode {
     fn eq(&self, other: &PNode) -> bool {
-        self.pred == other.pred && self.actions == other.actions && self.deliver == other.deliver
+        self.pred == other.pred &&
+            self.actions == other.actions &&
+            self.deliver == other.deliver &&
+            self.datatypes == other.datatypes
     }
 }
 
@@ -297,9 +313,10 @@ pub struct PTree {
     // Use to ensure no filters are applied after `collapse`
     collapsed: bool,
 
-    // All actions, callbacks across all nodes in the tree
+    // All actions, callbacks, tracked datatypes across all nodes in the tree
     actions: NodeActions,
     deliver: HashSet<CallbackSpec>,
+    datatypes: HashSet<String>,
 }
 
 impl PTree {
@@ -311,6 +328,7 @@ impl PTree {
             collapsed: false,
             actions: NodeActions::new(filter_layer),
             deliver: HashSet::new(),
+            datatypes: HashSet::new(),
         }
     }
 
@@ -426,7 +444,9 @@ impl PTree {
             self.deliver.insert(callback.clone());
         }
         node.actions.merge(actions);
+        node.datatypes.extend(callback.tracked_data.iter().cloned());
         self.actions.merge(actions);
+        self.datatypes.extend(callback.tracked_data.iter().cloned());
     }
 
     // modified from https://vallentin.dev/2019/05/14/pretty-print-tree
@@ -741,6 +761,7 @@ mod tests {
             as_str: "basic_tls".into(),
             id: 0,
             subscription_id: 0,
+            tracked_data: vec![],
         }];
     }
 
@@ -812,6 +833,7 @@ mod tests {
             as_str: "basic_streaming".into(),
             id: 0,
             subscription_id: 0,
+            tracked_data: vec![],
         }];
     }
 
@@ -859,6 +881,7 @@ mod tests {
             as_str: "basic_static".into(),
             id: 0,
             subscription_id: 0,
+            tracked_data: vec![],
         }];
     }
 

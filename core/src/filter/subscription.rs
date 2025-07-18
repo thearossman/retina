@@ -434,6 +434,11 @@ pub struct CallbackSpec {
     pub id: usize,
     /// Subscription ID
     pub subscription_id: usize,
+    /// "Expensive" tracked datatypes (by name)
+    /// Used to indicate that a tree should track the match state of the
+    /// datatype in order to `clear` it if it goes out of scope.
+    /// This may limit filter optimizations.
+    pub tracked_data: Vec<String>,
 }
 
 impl Hash for CallbackSpec {
