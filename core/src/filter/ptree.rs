@@ -254,7 +254,7 @@ impl PTree {
         };
         Self {
             root: PNode::new(pred, filter_layer, 0),
-            size: 0,
+            size: 1,
             filter_layer,
             collapsed: false,
         }
@@ -399,6 +399,22 @@ impl PTree {
         pprint(&mut s, &self.root, "".to_string(), true);
         s
     }
+
+    // Returns a copy of the subtree rooted at Node `id`
+    pub fn get_subtree(&self, id: usize) -> Option<PNode> {
+        fn get_subtree(id: usize, node: &PNode) -> Option<PNode> {
+            if node.id == id {
+                return Some(node.clone());
+            }
+            for child in node.children.iter() {
+                if let Some(node) = get_subtree(id, child) {
+                    return Some(node);
+                }
+            }
+            None
+        }
+        get_subtree(id, &self.root)
+    }
 }
 
 impl fmt::Display for PTree {
@@ -411,5 +427,128 @@ impl fmt::Display for PTree {
 
 #[cfg(test)]
 mod tests {
+    use crate::{conntrack::{conn::conn_layers::SupportedLayer, Actions, LayerState}, filter::Filter};
+
     use super::*;
+
+    lazy_static! {
+
+        static ref TLS_DATATYPE: DatatypeSpec = DatatypeSpec {
+            updates: vec![DataLevel::L7EndHdrs],
+            name: "TlsHandshake".into(),
+        };
+
+        // fn basic_tls(tls: &TlsHandshake) { ... }
+        static ref TLS_SUB: Vec<CallbackSpec> = vec![CallbackSpec {
+            stream: None,
+            datatypes: vec![TLS_DATATYPE.clone()],
+            must_deliver: false,
+            as_str: "basic_tls".into(),
+            id: 0,
+            subscription_id: 0,
+        }];
+    }
+
+    #[test]
+    fn test_ptree_basic() {
+        let filter = Filter::new("tls", &vec![]).unwrap();
+        let patterns = filter.get_patterns_flat();
+
+        let mut tree = PTree::new_empty(DataLevel::L4FirstPacket);
+        // On first packet: set up parsing
+        tree.add_subscription(
+            &patterns,
+            &TLS_SUB
+        );
+        assert!(tree.size == 5,
+                "Tree size is: {}", tree.size);
+        let node = tree.get_subtree(2).unwrap();
+        assert!(node.actions.actions.len() == 1);
+        let transp_actions = node.actions.actions[0].transport.clone();
+        assert!(transp_actions.has_next_layer());
+        assert!(transp_actions.refresh_at[DataLevel::L7OnDisc.as_usize()] == Actions::PassThrough);
+        let l7_actions = node.actions.actions[0].layers[0].clone();
+        assert!(l7_actions.needs_parse());
+        assert!(l7_actions.refresh_at[DataLevel::L7OnDisc.as_usize()] == Actions::Parse);
+
+        // On protocol discovery: continue parsing until end of headers
+        let mut tree = PTree::new_empty(DataLevel::L7OnDisc);
+        tree.add_subscription(&patterns, &TLS_SUB);
+        assert!(tree.size == 7); // + 2 TLS nodes
+        let node = tree.get_subtree(3).unwrap(); // TLS node
+        let transp_actions = node.actions.actions[0].transport.clone();
+        assert!(transp_actions.refresh_at[DataLevel::L7EndHdrs.as_usize()] == Actions::PassThrough);
+
+        // Inlined delivery
+        let mut tree = PTree::new_empty(DataLevel::L7EndHdrs);
+        tree.add_subscription(&patterns, &TLS_SUB);
+        assert!(tree.size == 7);
+        let node = tree.get_subtree(3).unwrap();
+        assert!(node.actions.actions.len() == 0);
+        assert!(node.deliver.len() == 1);
+
+        // "Maintenance"
+        let mut tree = PTree::new_empty(DataLevel::L4InPayload(false));
+        tree.add_subscription(&patterns, &TLS_SUB);
+        let node = tree.get_subtree(3).unwrap(); // TLS Node
+        assert!(node.actions.actions.len() == 2); // Differentiate in discovery, headers; no actions otherwise
+        assert!(node.actions.actions[0].if_matches == Some((SupportedLayer::L7, LayerState::Discovery)));
+        assert!(node.actions.actions[1].if_matches == Some((SupportedLayer::L7, LayerState::Headers)));
+
+        // Nothing to do
+        let mut tree = PTree::new_empty(DataLevel::L7InPayload);
+        tree.add_subscription(&patterns, &TLS_SUB);
+        assert!(tree.size == 1); // Just root; no actions
+    }
+
+    lazy_static! {
+
+        static ref CUSTOM_FILTERS: Vec<Predicate> = vec![Predicate::Custom {
+            name: filterfunc!("my_filter"),
+            levels: vec![DataLevel::L4InPayload(false)],
+        }];
+
+        static ref SESS_RECORD_DATATYPE: DatatypeSpec = DatatypeSpec {
+            updates: vec![DataLevel::L4InPayload(false), DataLevel::L7EndHdrs],
+            name: "ConnAndSession".into(),
+        };
+
+        static ref STREAMING_SUB: Vec<CallbackSpec> = vec![CallbackSpec {
+            stream: Some(DataLevel::L4InPayload(false)),
+            datatypes: vec![TLS_DATATYPE.clone(), SESS_RECORD_DATATYPE.clone()],
+            must_deliver: false,
+            as_str: "basic_streaming".into(),
+            id: 0,
+            subscription_id: 0,
+        }];
+    }
+
+    #[test]
+    fn test_with_streaming() {
+        let filter = Filter::new("tls and my_filter", &CUSTOM_FILTERS).unwrap();
+        let patterns = filter.get_patterns_flat();
+
+        // On first packet: set up parsing, streaming
+        // Refresh at: L4InPayload (my_filter) and L7OnDisc ("tls")
+        let mut tree = PTree::new_empty(DataLevel::L4FirstPacket);
+        tree.add_subscription(&patterns, &STREAMING_SUB);
+        let node = tree.get_subtree(2).unwrap(); // "tcp" node
+        assert!(node.actions.actions.len() == 1);
+        assert!(node.actions.actions[0].transport.active == Actions::PassThrough | Actions::Update);
+        let l7_actions = &node.actions.actions[0].layers[0];
+        assert!(l7_actions.refresh_at[DataLevel::L4InPayload(false).as_usize()]
+                == Actions::Parse &&
+                l7_actions.refresh_at[DataLevel::L7OnDisc.as_usize()]
+                == Actions::Parse);
+
+        // On L7 Headers Parsed
+        // Done with TLS filter and with parsing TLS handshake
+        let mut tree = PTree::new_empty(DataLevel::L7EndHdrs);
+        tree.add_subscription(&patterns, &STREAMING_SUB);
+        assert!(tree.size == 9);
+        let node = tree.get_subtree(4).unwrap(); // my_filter
+        assert!(node.actions.actions.len() == 1);
+        assert!(node.actions.actions[0].transport.needs_update() &&
+                !node.actions.actions[0].transport.has_next_layer());
+    }
 }

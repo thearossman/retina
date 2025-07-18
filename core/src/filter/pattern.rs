@@ -158,6 +158,11 @@ impl FlatPattern {
                 *p_empty = p.clone();
             }
         }
+        // empty unary "none" predicates may have been added during parsing
+        self.predicates
+            .retain(|p|
+                    !p.is_unary() ||
+                    p.get_protocol() != ProtocolName::none());
         Ok(())
     }
 
@@ -184,7 +189,6 @@ impl FlatPattern {
             )
             .collect::<HashSet<_>>() // dedup
             .into_iter()
-            .cloned()
             .collect()
     }
 }
@@ -275,9 +279,11 @@ impl LayeredPattern {
     pub(super) fn to_flat_pattern(&self) -> FlatPattern {
         let mut predicates = vec![];
         for (protocol, field_preds) in self.0.iter() {
-            predicates.push(Predicate::Unary {
-                protocol: protocol.to_owned(),
-            });
+            if protocol != ProtocolName::none() {
+                predicates.push(Predicate::Unary {
+                    protocol: protocol.to_owned(),
+                });
+            }
             predicates.extend(field_preds.to_owned());
         }
         FlatPattern { predicates }
@@ -404,10 +410,9 @@ mod tests {
         let flat_patterns: Vec<_> = fq_patterns.iter().map(|p| p.to_flat_pattern()).collect();
         let mut ptree = FlatPTree::new(&flat_patterns);
         ptree.prune_branches();
-        // ipv4 -> tcp -> port -> tls -> none -> my_filter
-        // + same for ipv4
-        // "none" = empty node to indicate start of custom filters
-        assert!(ptree.size == 13);
+        // ipv4 -> tcp -> port -> tls -> my_filter
+        // + same for ipv6
+        assert!(ptree.size == 11);
     }
 
     #[test]

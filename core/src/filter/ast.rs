@@ -157,11 +157,23 @@ impl Predicate {
 
     // Returns a reference to the `levels` vector for a custom filter.
     // Inapplicable to static predicates and LayerState.
-    pub fn levels(&self) -> &Vec<DataLevel> {
+    pub fn levels(&self) -> Vec<DataLevel> {
         match self {
-            Predicate::Custom { levels, .. } => levels,
-            Predicate::Callback { levels, .. } => levels,
-            _ => panic!("Levels called on predicate: {:?}", self),
+            Predicate::Custom { levels, .. } => levels.clone(),
+            Predicate::Callback { levels, .. } => levels.clone(),
+            Predicate::LayerState { .. } => panic!("No Level associated with LayerState"),
+            _ => {
+                if self.on_packet() {
+                    return vec![DataLevel::L4FirstPacket];
+                }
+                if self.on_proto() {
+                    return vec![DataLevel::L7OnDisc];
+                }
+                if self.on_session() {
+                    return vec![DataLevel::L7EndHdrs];
+                }
+                panic!("Unknown predicate layer: {}", self);
+            }
         }
     }
 

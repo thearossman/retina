@@ -23,14 +23,14 @@ use super::pattern::FlatPattern;
 ///
 /// TODO ideally we'd use the LayerState predicate type more effectively.
 #[derive(Debug, Clone, Eq, PartialEq, Ord, PartialOrd)]
-pub(crate) struct DataActions {
+pub struct DataActions {
     /// Optional conditional: these actions are only applied if layer is in
     /// one of the listed states.
-    if_matches: Option<(SupportedLayer, Vec<LayerState>)>,
+    pub if_matches: Option<(SupportedLayer, LayerState)>,
     /// Tracked Actions at the transport layer
-    transport: TrackedActions,
+    pub transport: TrackedActions,
     /// Tracked Actions at encapsulated layers
-    layers: [TrackedActions; NUM_LAYERS],
+    pub layers: [TrackedActions; NUM_LAYERS],
 }
 
 impl DataActions {
@@ -91,11 +91,11 @@ impl DataActions {
 /// adding `next predicates` or `streaming callbacks` to determine when the node's
 /// actions could potentially be updated.
 #[derive(Debug, Clone, Eq, PartialEq)]
-pub(crate) struct NodeActions {
+pub struct NodeActions {
     /// Essentially, there will be multiple elements here if there are different
     /// branches depending on some layer's state.
     /// TODO shouldn't need this in future - use LayerState pred.
-    pub(crate) actions: Vec<DataActions>,
+    pub actions: Vec<DataActions>,
     /// Set to `true` the first time a filter predicate or streaming callback level
     /// is added to ensure that no further datatypes are added afterwards.
     pub(crate) end_datatypes: bool,
@@ -166,7 +166,8 @@ impl NodeActions {
     /// accumulated and another subscription (sub-)pattern terminates
     /// at the node.
     pub(crate) fn merge(&mut self, peer: &NodeActions) {
-        assert!(self.end_datatypes && peer.end_datatypes);
+        assert!(self.end_datatypes && peer.end_datatypes ||
+                self.actions.len() == 0);
         assert!(self.filter_layer == peer.filter_layer);
         for a in &peer.actions {
             self.push_action(a.clone());
@@ -231,7 +232,7 @@ impl DatatypeSpec {
                             // Only if pre-handshake
                             if matches!(cmp, StateTxOrd::Unknown) {
                                 a.if_matches =
-                                    Some((SupportedLayer::L4, vec![LayerState::Headers]));
+                                    Some((SupportedLayer::L4, LayerState::Headers));
                             }
                             actions.push_action(a);
                         }
@@ -262,7 +263,7 @@ impl DatatypeSpec {
                             a.layers[l7_idx].refresh_at[level.as_usize()] |= Actions::Parse;
                             if matches!(cmp, StateTxOrd::Unknown) {
                                 a.if_matches =
-                                    Some((SupportedLayer::L7, vec![LayerState::Discovery]));
+                                    Some((SupportedLayer::L7, LayerState::Discovery));
                             }
                             actions.push_action(a);
                         }
@@ -295,7 +296,7 @@ impl DatatypeSpec {
                             }
                             if matches!(cmp, StateTxOrd::Unknown) {
                                 a.if_matches =
-                                    Some((SupportedLayer::L7, vec![LayerState::Headers]));
+                                    Some((SupportedLayer::L7, LayerState::Headers));
                             }
                             actions.push_action(a);
                         }
@@ -309,9 +310,15 @@ impl DatatypeSpec {
                         a.layers[l7_idx].active |= Actions::Parse;
                         a.layers[l7_idx].refresh_at[level.as_usize()] |= Actions::Parse;
                         if matches!(cmp, StateTxOrd::Unknown) {
+                            // Differentiate between L7 Disc, Headers
                             a.if_matches = Some((
                                 SupportedLayer::L7,
-                                vec![LayerState::Discovery, LayerState::Headers],
+                                LayerState::Discovery,
+                            ));
+                            actions.push_action(a.clone());
+                            a.if_matches = Some((
+                                SupportedLayer::L7,
+                                LayerState::Headers,
                             ));
                         }
                         actions.push_action(a);
@@ -348,11 +355,16 @@ impl DatatypeSpec {
                     else if cmp == StateTxOrd::Unknown {
                         pre_payload.if_matches = Some((
                             SupportedLayer::L7,
-                            vec![LayerState::Discovery, LayerState::Headers],
+                            LayerState::Discovery,
+                        ));
+                        actions.push_action(pre_payload.clone());
+                        pre_payload.if_matches = Some((
+                            SupportedLayer::L7,
+                            LayerState::Headers,
                         ));
                         actions.push_action(pre_payload);
                         in_payload.if_matches =
-                            Some((SupportedLayer::L7, vec![LayerState::Payload]));
+                            Some((SupportedLayer::L7, LayerState::Payload));
                         actions.push_action(in_payload);
                     }
                 }
@@ -583,8 +595,8 @@ mod tests {
         let actions = l7_fingerprint
             .to_actions(StateTransition::L4InPayload(false))
             .actions;
-        // Two added "nodes" for LayerState checks
-        assert!(actions.len() == 2);
+        // Added "nodes" for LayerState checks: L7 disc, headers, payload
+        assert!(actions.len() == 3);
         assert!(actions[0].if_matches.is_some() || actions[1].if_matches.is_some());
     }
 
