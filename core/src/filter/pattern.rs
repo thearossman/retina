@@ -1,4 +1,5 @@
 use super::ast::*;
+use super::subscription::DatatypeSpec;
 
 use std::cmp::Ordering;
 use std::collections::HashSet;
@@ -52,6 +53,7 @@ impl FlatPattern {
     }
 
     // Returns a vector of fully qualified patterns from self
+    // TODO can rethink ordering here
     pub(super) fn to_fully_qualified(&self) -> Result<Vec<LayeredPattern>> {
         if self.is_empty() {
             return Ok(Vec::new());
@@ -180,6 +182,78 @@ impl FlatPattern {
         }
     }
 
+    // Some custom streaming filters can be `matched` or `continuing`.
+    // We need to distinguish between these at runtime.
+    // Split patterns by streaming filter match state: `matched` vs. `continue`
+    // Note - this could be done more efficiently
+    pub(super) fn split_custom(&self) -> Vec<Self> {
+        if self.predicates.iter().all(|p| !p.is_custom()) {
+            return vec![];
+        }
+        let mut all_patterns: Vec<Self> = vec![Self { predicates: vec![] }];
+        for pred in &self.predicates {
+            // For each predicate, either add 1x to each partial or split
+            // patterns by custom streaming/non-custom streaming
+            if pred.is_custom() && pred.is_streaming() {
+                let mut new_pats = vec![];
+                for partial in &all_patterns {
+                    // Original pattern with matched=true
+                    let mut term_pat = partial.clone();
+                    term_pat.predicates.push(pred.clone());
+
+                    // New pattern with matched=false
+                    let mut nonterm_pat  = partial.clone();
+                    let mut pred = pred.clone();
+                    if let Predicate::Custom { matched, .. } = &mut pred {
+                        *matched = false;
+                    }
+                    nonterm_pat.predicates.push(pred);
+
+                    new_pats.push(term_pat);
+                    new_pats.push(nonterm_pat);
+                }
+                all_patterns = new_pats;
+            } else {
+                // Push new predicates
+                for partial in &mut all_patterns {
+                    partial.predicates.push(pred.clone());
+                }
+            }
+        }
+        // Filter out the original pattern: all custom patterns have `matched=true`,
+        // which is covered by the original pattern
+        // That is, retain those for which ANY custom predicate has !matched
+        all_patterns.retain(|pat| {
+                        pat
+                         .predicates
+                         .iter()
+                         .any( |pred | {
+                            pred.is_custom() && pred.is_matching()
+                         })
+                    });
+        all_patterns
+    }
+
+    // `true` if this filter contains a custom filter that may not have
+    // fully matched
+    pub(super) fn contains_nonterminal(&self) -> bool {
+        self.predicates
+            .iter()
+            .any(|p| {
+                p.is_custom() && p.is_matching()
+            })
+    }
+
+    // Get datatypes from the pattern in order to build up `actions`
+    // Note: this skips filter predicates that have already matched
+    pub(super) fn get_datatypes(&self) -> Vec<DatatypeSpec> {
+        self
+            .predicates
+            .iter()
+            .filter_map(|p| DatatypeSpec::from_pred(p))
+            .collect()
+    }
+
     pub(super) fn with_l7_state(&self) -> Self {
         let mut predicates = self.predicates.clone();
         // LayerState::Discovery
@@ -215,15 +289,31 @@ impl FlatPattern {
     }
 
     // Returns the predicates in FlatPattern that come after (or may come after)
-    // the given StateTransition.
+    // the given StateTransition. TODO make more effic.
     pub(super) fn next_pred(&self, curr: StateTransition) -> Vec<StateTransition> {
-        self.predicates
+        // All levels that may come after `curr`
+        let mut pat: Vec<_> = self.predicates
             .iter()
             .flat_map(|p| p.levels())
-            .filter(|l| matches!(l.compare(&curr), StateTxOrd::Unknown | StateTxOrd::Greater))
+            .filter(|l|
+                matches!(l.compare(&curr), StateTxOrd::Unknown | StateTxOrd::Greater)
+            )
             .collect::<HashSet<_>>() // dedup
             .into_iter()
-            .collect()
+            .collect();
+        // For `matching` streaming filters that are applied at this state,
+        // need to update at future iterations of this filter.
+        if curr.is_streaming() {
+            if self.predicates
+                   .iter()
+                   .any(|p| {
+                        p.is_custom() && p.is_matching() &&
+                        p.levels().iter().any(|l| l == &curr)
+            }) {
+                pat.push(curr);
+            }
+        }
+        pat
     }
 }
 
@@ -374,6 +464,7 @@ mod tests {
         static ref CUSTOM_FILTERS: Vec<Predicate> = vec![Predicate::Custom {
             name: filterfunc!("my_filter"),
             levels: vec![DataLevel::L4InPayload(false)],
+            matched: true,
         }];
     }
 

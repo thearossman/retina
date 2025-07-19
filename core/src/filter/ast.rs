@@ -95,6 +95,8 @@ pub enum Predicate {
         /// (e.g., "packets in the L4 payload") and/or phase transition
         /// updates (e.g., "parsed session").
         levels: Vec<DataLevel>,
+        /// Predicate for `partial match` (Continue) or `matched` (Accept)
+        matched: bool,
     },
     /// Streaming callback, which may need to be checked for "unsubscribe"
     /// to determine Actions. This will only be used in filter sub-trees.
@@ -146,6 +148,13 @@ impl Predicate {
         matches!(self, Predicate::Custom { .. })
     }
 
+    // Returns `true` if predicate contains a streaming level
+    pub fn is_streaming(&self) -> bool {
+        self.levels()
+            .iter()
+            .any(|l| l.is_streaming())
+    }
+
     // Returns `true` if predicate is a black-box callback defined by a user.
     pub fn is_callback(&self) -> bool {
         matches!(self, Predicate::Callback { .. })
@@ -154,6 +163,32 @@ impl Predicate {
     // Returns `true` if predicate checks a Layer State
     pub fn is_state(&self) -> bool {
         matches!(self, Predicate::LayerState { .. })
+    }
+
+    // Returns `true` if is_state and is state predicate for given LayerState
+    pub fn matches_state(&self, layerstate: Option<(SupportedLayer, LayerState)>) -> bool {
+        if let Some((layer_, state_)) = layerstate {
+            match self {
+                Predicate::LayerState { layer, state, .. } => {
+                    return &layer_ == layer && &state_ == state;
+                }
+                _ => panic!("Invalid op for {:?}", self),
+            }
+        }
+        false
+    }
+
+    pub fn unknown(&self, layer: &DataLevel) -> bool {
+        self.levels()
+            .iter()
+            .any(|p| p.compare(layer) == StateTxOrd::Unknown)
+    }
+
+    pub fn is_matching(&self) -> bool {
+        if let Predicate::Custom { matched, .. } = self {
+            return !*matched;
+        }
+        panic!("Can't check for filter ``matching`` on {:?}", self);
     }
 
     // Returns a reference to the `levels` vector for a custom filter.
@@ -900,8 +935,9 @@ impl fmt::Display for Predicate {
                 op,
                 value,
             } => write!(f, "{}.{} {} {}", protocol, field, op, value),
-            Predicate::Custom { name, .. } => {
-                write!(f, "{name}")
+            Predicate::Custom { name, matched, .. } => {
+                let state = if *matched { "matched" } else { "matching" };
+                write!(f, "{name} ({state})")
             }
             Predicate::Callback { name, .. } => {
                 write!(f, "{name}")

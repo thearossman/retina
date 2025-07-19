@@ -243,11 +243,15 @@ pub struct DatatypeSpec {
 
 impl DatatypeSpec {
     /// From a filter predicate
-    pub(crate) fn from_pred(pred: &Predicate) -> Self {
-        Self {
+    pub(crate) fn from_pred(pred: &Predicate) -> Option<Self> {
+        // Predicates that have already matched don't need add'l actions
+        if pred.is_custom() && !pred.is_matching() {
+            return None;
+        }
+        Some(Self {
             updates: pred.levels().clone(),
             name: format!("{}", pred),
-        }
+        })
     }
 
     /// For a given filter layer (state transition), return the actions that the
@@ -452,6 +456,21 @@ pub struct CallbackSpec {
 impl Hash for CallbackSpec {
     fn hash<H: Hasher>(&self, state: &mut H) {
         self.as_str.hash(state); // Only hash the `name` field
+    }
+}
+
+impl CallbackSpec {
+    pub(super) fn get_datatypes(&self) -> Vec<DatatypeSpec> {
+        let mut datatypes: Vec<_> = self.datatypes.iter().cloned().collect();
+        if let Some(stream) = self.stream {
+            // Requires streaming `updates` or the level cannot be
+            // inferred from the datatype alone
+            datatypes.push(DatatypeSpec {
+                updates: vec![stream],
+                name: self.as_str.clone(),
+            });
+        }
+        datatypes
     }
 }
 

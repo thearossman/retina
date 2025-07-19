@@ -8,7 +8,7 @@ use crate::filter::subscription::DataActions;
 use super::{
     ast::Predicate,
     pattern::FlatPattern,
-    subscription::{CallbackSpec, DatatypeSpec, NodeActions, SubscriptionLevel},
+    subscription::{CallbackSpec, NodeActions, SubscriptionLevel},
 };
 
 // A node representing a predicate in the tree
@@ -58,12 +58,17 @@ impl PNode {
     // Utility to check whether a descendant exists
     // Helper for `get_descendant`, which must be invoked in an `if` block
     // due to borrow checker
-    fn has_descendant(&self, pred: &Predicate) -> bool {
+    fn has_descendant(&self, pred: &Predicate,
+                      state: &Option<Predicate>) -> bool {
         for n in &self.children {
+            if n.pred.is_state() &&
+               (state.is_none() || Some(&n.pred) != state.as_ref()) {
+                return false;
+            }
             if &n.pred == pred {
                 return true;
             }
-            if pred.is_child(&n.pred) && n.has_descendant(pred) {
+            if pred.is_child(&n.pred) && n.has_descendant(pred, state) {
                 return true;
             }
         }
@@ -144,11 +149,17 @@ impl PNode {
 
     // Returns a node that can act as a parent to `pred`, or None.
     // The most "narrow" parent condition will be returned if multiple exist.
-    fn get_parent(&mut self, pred: &Predicate, tree_size: usize) -> Option<&mut PNode> {
+    fn get_parent(&mut self, pred: &Predicate, tree_size: usize,
+                  state: &Option<Predicate>) -> Option<&mut PNode> {
         // This is messy, but directly iterating through children or
         // recursing will raise flags with the borrow checker.
         let mut node = self;
         for _ in 0..tree_size {
+            // Stop traversing if hit a state dependency
+            if node.pred.is_state() &&
+               (state.is_none() || Some(&node.pred) != state.as_ref()) {
+                return None;
+            }
             // Checked for `Some` on last iteration
             let next = node.get_parent_candidate(pred)?;
             if next.get_parent_candidate(pred).is_none() {
@@ -347,88 +358,104 @@ impl PTree {
             patterns.len() > 0 || patterns.iter().all(|p| p.predicates.is_empty()),
             "Empty filter pattern must have default predicate."
         );
+        let ext_patterns = self.split_custom(patterns);
+        for pattern in patterns.iter().chain(ext_patterns.iter()) {
+            self.add_pattern(pattern, callbacks);
+        }
+    }
+
+    // Add patterns for non-terminal matches on streaming filters
+    // TODO may not always need this (if no correctness issues?)
+    fn split_custom(&self, patterns: &[FlatPattern]) -> Vec<FlatPattern> {
+        let mut split_patterns = vec![];
         for pattern in patterns {
-            // Extract required datatypes in filter pattern
-            let mut datatypes: Vec<_> = pattern
-                .predicates
-                .iter()
-                .map(|p| DatatypeSpec::from_pred(p))
-                .collect();
-            // Add datatypes required by callback
+            split_patterns.extend(pattern.split_custom());
+        }
+        split_patterns
+    }
+
+    fn add_pattern(
+        &mut self,
+        pattern: &FlatPattern,
+        callbacks: &Vec<CallbackSpec>
+    ) {
+        let mut truncated = pattern.contains_nonterminal();
+        // Extract required datatypes in filter pattern
+        let mut datatypes = pattern.get_datatypes();
+        // Add datatypes required by callbacks
+        for callback in callbacks {
+            datatypes.extend(callback.get_datatypes().into_iter());
+        }
+        // Construct node actions
+        let mut node_actions = NodeActions::new(self.filter_layer);
+        // Actions required for all datatypes (including filters)
+        for spec in &datatypes {
+            node_actions.add_datatype(spec);
+        }
+        // Update `refresh_at` based on where next filter predicate(s)
+        // may be applied.
+        node_actions.end_datatypes();
+        for next_pred in pattern.next_pred(self.filter_layer) {
+            node_actions.push_filter_pred(&next_pred);
+        }
+
+        // Allow callback to `unsubscribe`
+        for callback in callbacks {
+            if let Some(cb_level) = &callback.stream {
+                node_actions.push_cb(*cb_level);
+            }
+        }
+
+        // Add dependencies separately
+        for action in &node_actions.actions {
+            let mut pattern_ref = pattern;
+            let subpattern: FlatPattern;
+            // Need to insert this as a unique pattern with the relevant L7 state checks
+            if let Some(if_matches) = action.if_matches {
+                subpattern = pattern.get_subpattern(if_matches.0, if_matches.1);
+                // TODO cleaner way to do this
+                truncated = truncated || subpattern.predicates.len() <=
+                            pattern.predicates.len();
+                pattern_ref = &subpattern;
+            }
+
+            // Pattern may have predicates that need to be annotated with
+            // L7 State checks (e.g., only check TLS if L7 >= Headers)
+            let pattern_state;
+            if self.filter_layer.is_streaming() &&
+               self.filter_layer.in_transport() {
+                pattern_state = pattern_ref.with_l7_state();
+                pattern_ref = &pattern_state;
+            }
+
+            // Add pattern for each callback
             for callback in callbacks {
-                datatypes.extend(callback.datatypes.iter().cloned());
-                if let Some(stream) = callback.stream {
-                    // Requires streaming `updates` or the level cannot be
-                    // inferred from the datatype alone
-                    datatypes.push(DatatypeSpec {
-                        updates: vec![stream],
-                        name: callback.as_str.clone(),
-                    });
-                }
+                self.add_pattern_int(pattern_ref, action, callback, truncated);
             }
-            // Construct node actions
-            let mut node_actions = NodeActions::new(self.filter_layer);
-            // Actions required for all datatypes (including filters)
-            for spec in &datatypes {
-                node_actions.add_datatype(spec);
-            }
-            // Update `refresh_at` based on where next filter predicate(s)
-            // may be applied.
-            node_actions.end_datatypes();
-            for next_pred in pattern.next_pred(self.filter_layer) {
-                node_actions.push_filter_pred(&next_pred);
-            }
-            // Allow callback to `unsubscribe`
+        }
+        if node_actions.actions.is_empty() {
             for callback in callbacks {
-                if let Some(cb_level) = &callback.stream {
-                    node_actions.push_cb(*cb_level);
-                }
-            }
-            for action in &node_actions.actions {
-                let mut pattern_ref = pattern;
-                let subpattern: FlatPattern;
-
-                // Need to insert this as a unique pattern with the relevant L7 state checks
-                if let Some(if_matches) = action.if_matches {
-                    subpattern = pattern.get_subpattern(if_matches.0, if_matches.1);
-                    pattern_ref = &subpattern;
-                }
-
-                // Pattern may have predicates that need to be annotated with
-                // L7 State checks (e.g., only check TLS if L7 >= Headers)
-                let pattern_state;
-                if self.filter_layer.is_streaming() &&
-                   self.filter_layer.in_transport() {
-                    pattern_state = pattern_ref.with_l7_state();
-                    pattern_ref = &pattern_state;
-                }
-
-                // Add pattern for each callback
-                for callback in callbacks {
-                    self.add_pattern(pattern_ref, action, callback);
-                }
-            }
-            if node_actions.actions.is_empty() {
-                for callback in callbacks {
-                    let level = SubscriptionLevel::new(&callback.datatypes, pattern, callback.stream);
-                    if level.can_deliver(&self.filter_layer) {
-                        self.add_pattern(pattern, &DataActions::new(), callback);
-                    }
+                let level = SubscriptionLevel::new(&callback.datatypes, pattern, callback.stream);
+                if level.can_deliver(&self.filter_layer) {
+                    self.add_pattern_int(pattern, &DataActions::new(), callback, false);
                 }
             }
         }
     }
 
-    fn add_pattern(
+    fn add_pattern_int(
         &mut self,
         full_pattern: &FlatPattern,
         actions: &DataActions,
         callback: &CallbackSpec,
+        // `full_pattern` was truncated
+        truncated: bool,
     ) {
         let level = SubscriptionLevel::new(&callback.datatypes, full_pattern, callback.stream);
         if level.can_skip(&self.filter_layer) {
             return;
         }
+        let mut state_pred = None;
 
         let pattern: Vec<_> = full_pattern
             .predicates
@@ -444,13 +471,13 @@ impl PTree {
         let mut node = &mut self.root;
         for predicate in pattern.iter() {
             // Case 1: Predicate is already present
-            if node.has_descendant(predicate) {
+            if node.has_descendant(predicate, &state_pred) {
                 node = node.get_descendant(predicate).unwrap();
                 continue;
             }
             // Case 2: Predicate should be added as child of existing node
             if node.has_parent(predicate) {
-                node = node.get_parent(predicate, self.size).unwrap();
+                node = node.get_parent(predicate, self.size, &state_pred).unwrap();
             }
             // Case 3: Children of curr node should be children of new node
             let children = match node.has_children_of(predicate) {
@@ -468,8 +495,11 @@ impl PTree {
             // Move on, pushing any new children if applicable
             node = node.get_child(predicate);
             node.children.extend(children);
+            if node.pred.is_custom() {
+                state_pred = Some(node.pred.clone());
+            }
         }
-        if level.can_deliver(&self.filter_layer) {
+        if !truncated && level.can_deliver(&self.filter_layer) {
             node.deliver.insert(callback.clone());
             self.deliver.insert(callback.clone());
         }
@@ -772,6 +802,7 @@ mod tests {
     use crate::{
         conntrack::Actions,
         filter::Filter,
+        filter::subscription::DatatypeSpec
     };
 
     use super::*;
@@ -834,6 +865,7 @@ mod tests {
         // --> L7=Disc{actions}
         // --> L7>=Headers -> tls -> L7=Headers{actions}
         // -> ipv6 ...
+        println!("{}", tree);
         assert!(tree.size == 13);
         let node = tree.get_subtree(3).unwrap(); // L7=Discovery
         assert!(matches!(node.pred, Predicate::LayerState { .. }));
@@ -850,6 +882,7 @@ mod tests {
         static ref CUSTOM_FILTERS: Vec<Predicate> = vec![Predicate::Custom {
             name: filterfunc!("my_filter"),
             levels: vec![DataLevel::L4InPayload(false)],
+            matched: true,
         }];
         static ref SESS_RECORD_DATATYPE: DatatypeSpec = DatatypeSpec {
             updates: vec![DataLevel::L4InPayload(false), DataLevel::L7EndHdrs],
@@ -887,7 +920,8 @@ mod tests {
         // Done with TLS filter and with parsing TLS handshake
         let mut tree = PTree::new_empty(DataLevel::L7EndHdrs);
         tree.add_subscription(&patterns, &STREAMING_SUB);
-        assert!(tree.size == 9);
+        // Note - splits out my_filter (matched) and (matching)
+        assert!(tree.size == 11);
         let node = tree.get_subtree(4).unwrap(); // my_filter
         assert!(
             node.actions.transport.needs_update()
@@ -932,22 +966,27 @@ mod tests {
         assert!(collapsed_tree.size == 3);
 
         tree.add_subscription(&patterns_3, &FIVETUPLE_SUB);
-        println!("{}", tree);
         let mut collapsed_tree = tree.clone();
         collapsed_tree.collapse();
         // Can't optimize tcp anymore for ipv4, but still can for ipv6
-        println!("{}", collapsed_tree);
         assert!(collapsed_tree.size == 6, "Actual value: {}", collapsed_tree.size);
     }
 
     #[test]
-    fn test_parse() {
-        let filter = Filter::new("tls.sni = \'abc\' and my_filter",
+    fn test_ptree_parse() {
+        let filter = Filter::new("ipv4 and tls.sni = \'abc\' and my_filter",
                                  &CUSTOM_FILTERS).unwrap();
         let patterns = filter.get_patterns_flat();
+
         let mut tree = PTree::new_empty(DataLevel::L4InPayload(false));
         tree.add_subscription(&patterns, &FIVETUPLE_SUB);
         println!("{}", tree);
+        tree.collapse();
+        // TODO - this gets at why the ordering of predicates could definitely be optimized
+        // eth -> L7>=Hdrs -> tls -> my_filter (matched)
+        //                        -> my_filter (matching)
+        //                        -> L7 >= Payload -> tls.sni -> my_filter (matched) | my_filter (matching)
+        assert!(tree.size == 14);
     }
 
 }
