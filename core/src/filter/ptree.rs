@@ -3,6 +3,7 @@ use std::cmp::{Ordering, PartialOrd};
 use std::collections::HashSet;
 
 use crate::conntrack::{DataLevel, StateTransition};
+use crate::filter::subscription::DataActions;
 
 use super::{
     ast::Predicate,
@@ -24,7 +25,7 @@ pub struct PNode {
     pub if_else: bool,
 
     // `Actions` struct for this node.
-    pub actions: NodeActions,
+    pub actions: DataActions,
 
     // Subscriptions that can be invoked (or CB timer started)
     // at this node. That is, all for which `can_deliver`
@@ -40,12 +41,12 @@ pub struct PNode {
 }
 
 impl PNode {
-    fn new(pred: Predicate, level: DataLevel, id: usize) -> Self {
+    fn new(pred: Predicate, id: usize) -> Self {
         PNode {
             pred,
             children: vec![],
             if_else: false,
-            actions: NodeActions::new(level),
+            actions: DataActions::new(),
             deliver: HashSet::new(),
             datatypes: HashSet::new(),
             id,
@@ -216,7 +217,7 @@ impl PNode {
 impl fmt::Display for PNode {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         write!(f, "{}", self.pred)?;
-        if !self.actions.actions.is_empty() {
+        if !self.actions.drop() {
             // TODO implement Display for Actions!
             write!(f, " -- A: {}", self.actions)?;
         }
@@ -322,7 +323,7 @@ pub struct PTree {
 impl PTree {
     pub fn new_empty(filter_layer: StateTransition) -> Self {
         Self {
-            root: PNode::new(Predicate::default_pred(), filter_layer, 0),
+            root: PNode::new(Predicate::default_pred(), 0),
             size: 1,
             filter_layer,
             collapsed: false,
@@ -383,8 +384,37 @@ impl PTree {
                     node_actions.push_cb(*cb_level);
                 }
             }
-            for callback in callbacks {
-                self.add_pattern(pattern, &node_actions, callback);
+            for action in &node_actions.actions {
+                let mut pattern_ref = pattern;
+                let subpattern: FlatPattern;
+
+                // Need to insert this as a unique pattern with the relevant L7 state checks
+                if let Some(if_matches) = action.if_matches {
+                    subpattern = pattern.get_subpattern(if_matches.0, if_matches.1);
+                    pattern_ref = &subpattern;
+                }
+
+                // Pattern may have predicates that need to be annotated with
+                // L7 State checks (e.g., only check TLS if L7 >= Headers)
+                let pattern_state;
+                if self.filter_layer.is_streaming() &&
+                   self.filter_layer.in_transport() {
+                    pattern_state = pattern_ref.with_l7_state();
+                    pattern_ref = &pattern_state;
+                }
+
+                // Add pattern for each callback
+                for callback in callbacks {
+                    self.add_pattern(pattern_ref, action, callback);
+                }
+            }
+            if node_actions.actions.is_empty() {
+                for callback in callbacks {
+                    let level = SubscriptionLevel::new(&callback.datatypes, pattern, callback.stream);
+                    if level.can_deliver(&self.filter_layer) {
+                        self.add_pattern(pattern, &DataActions::new(), callback);
+                    }
+                }
             }
         }
     }
@@ -392,7 +422,7 @@ impl PTree {
     fn add_pattern(
         &mut self,
         full_pattern: &FlatPattern,
-        actions: &NodeActions,
+        actions: &DataActions,
         callback: &CallbackSpec,
     ) {
         let level = SubscriptionLevel::new(&callback.datatypes, full_pattern, callback.stream);
@@ -432,7 +462,7 @@ impl PTree {
             // Create new node
             if !node.has_child(predicate) {
                 node.children
-                    .push(PNode::new(predicate.clone(), self.filter_layer, self.size));
+                    .push(PNode::new(predicate.clone(), self.size));
                 self.size += 1;
             }
             // Move on, pushing any new children if applicable
@@ -445,7 +475,7 @@ impl PTree {
         }
         node.actions.merge(actions);
         node.datatypes.extend(callback.tracked_data.iter().cloned());
-        self.actions.merge(actions);
+        self.actions.push_action(actions.clone());
         self.datatypes.extend(callback.tracked_data.iter().cloned());
     }
 
@@ -556,7 +586,7 @@ impl PTree {
     fn prune_branches(&mut self) {
         fn prune(
             node: &mut PNode,
-            on_path_actions: &NodeActions,
+            on_path_actions: &DataActions,
             on_path_deliver: &HashSet<String>,
         ) {
             // 1. Remove callbacks that would have already been invoked on this path
@@ -594,7 +624,7 @@ impl PTree {
                 .collect();
         }
 
-        let on_path_actions = NodeActions::new(self.filter_layer);
+        let on_path_actions = DataActions::new();
         let on_path_deliver = HashSet::new();
         prune(&mut self.root, &on_path_actions, &on_path_deliver);
     }
@@ -740,7 +770,7 @@ impl fmt::Display for PTree {
 #[cfg(test)]
 mod tests {
     use crate::{
-        conntrack::{conn::conn_layers::SupportedLayer, Actions, LayerState},
+        conntrack::Actions,
         filter::Filter,
     };
 
@@ -775,41 +805,40 @@ mod tests {
         tree.add_subscription(&patterns, &TLS_SUB);
         assert!(tree.size == 5, "Tree size is: {}", tree.size);
         let node = tree.get_subtree(2).unwrap();
-        assert!(node.actions.actions.len() == 1);
-        let transp_actions = node.actions.actions[0].transport.clone();
-        assert!(transp_actions.has_next_layer());
-        assert!(transp_actions.refresh_at[DataLevel::L7OnDisc.as_usize()] == Actions::PassThrough);
-        let l7_actions = node.actions.actions[0].layers[0].clone();
-        assert!(l7_actions.needs_parse());
-        assert!(l7_actions.refresh_at[DataLevel::L7OnDisc.as_usize()] == Actions::Parse);
+        assert!(!node.actions.drop());
+        assert!(node.actions.transport.has_next_layer());
+        assert!(node.actions.transport.refresh_at[DataLevel::L7OnDisc.as_usize()] == Actions::PassThrough);
+        assert!(node.actions.layers[0].needs_parse());
+        assert!(node.actions.layers[0].refresh_at[DataLevel::L7OnDisc.as_usize()] == Actions::Parse);
 
         // On protocol discovery: continue parsing until end of headers
         let mut tree = PTree::new_empty(DataLevel::L7OnDisc);
         tree.add_subscription(&patterns, &TLS_SUB);
         assert!(tree.size == 7); // + 2 TLS nodes
         let node = tree.get_subtree(3).unwrap(); // TLS node
-        let transp_actions = node.actions.actions[0].transport.clone();
-        assert!(transp_actions.refresh_at[DataLevel::L7EndHdrs.as_usize()] == Actions::PassThrough);
+        assert!(node.actions.transport.refresh_at[DataLevel::L7EndHdrs.as_usize()] == Actions::PassThrough);
 
         // Inlined delivery
         let mut tree = PTree::new_empty(DataLevel::L7EndHdrs);
         tree.add_subscription(&patterns, &TLS_SUB);
         assert!(tree.size == 7);
         let node = tree.get_subtree(3).unwrap();
-        assert!(node.actions.actions.len() == 0);
+        assert!(node.actions.drop());
         assert!(node.deliver.len() == 1);
 
         // "Maintenance"
         let mut tree = PTree::new_empty(DataLevel::L4InPayload(false));
         tree.add_subscription(&patterns, &TLS_SUB);
-        let node = tree.get_subtree(3).unwrap(); // TLS Node
-        assert!(node.actions.actions.len() == 2); // Differentiate in discovery, headers; no actions otherwise
-        assert!(
-            node.actions.actions[0].if_matches == Some((SupportedLayer::L7, LayerState::Discovery))
-        );
-        assert!(
-            node.actions.actions[1].if_matches == Some((SupportedLayer::L7, LayerState::Headers))
-        );
+        // eth
+        // -> ipv4 -> tcp
+        // --> L7=Disc{actions}
+        // --> L7>=Headers -> tls -> L7=Headers{actions}
+        // -> ipv6 ...
+        assert!(tree.size == 13);
+        let node = tree.get_subtree(3).unwrap(); // L7=Discovery
+        assert!(matches!(node.pred, Predicate::LayerState { .. }));
+        let node = tree.get_subtree(5).unwrap(); // tls
+        assert!(node.pred.get_protocol() == &protocol!("tls"));
 
         // Nothing to do
         let mut tree = PTree::new_empty(DataLevel::L7InPayload);
@@ -847,9 +876,8 @@ mod tests {
         let mut tree = PTree::new_empty(DataLevel::L4FirstPacket);
         tree.add_subscription(&patterns, &STREAMING_SUB);
         let node = tree.get_subtree(2).unwrap(); // "tcp" node
-        assert!(node.actions.actions.len() == 1);
-        assert!(node.actions.actions[0].transport.active == Actions::PassThrough | Actions::Update);
-        let l7_actions = &node.actions.actions[0].layers[0];
+        assert!(node.actions.transport.active == Actions::PassThrough | Actions::Update);
+        let l7_actions = &node.actions.layers[0];
         assert!(
             l7_actions.refresh_at[DataLevel::L4InPayload(false).as_usize()] == Actions::Parse
                 && l7_actions.refresh_at[DataLevel::L7OnDisc.as_usize()] == Actions::Parse
@@ -861,10 +889,9 @@ mod tests {
         tree.add_subscription(&patterns, &STREAMING_SUB);
         assert!(tree.size == 9);
         let node = tree.get_subtree(4).unwrap(); // my_filter
-        assert!(node.actions.actions.len() == 1);
         assert!(
-            node.actions.actions[0].transport.needs_update()
-                && !node.actions.actions[0].transport.has_next_layer()
+            node.actions.transport.needs_update()
+                && !node.actions.transport.has_next_layer()
         );
     }
 
@@ -911,6 +938,16 @@ mod tests {
         // Can't optimize tcp anymore for ipv4, but still can for ipv6
         println!("{}", collapsed_tree);
         assert!(collapsed_tree.size == 6, "Actual value: {}", collapsed_tree.size);
-
     }
+
+    #[test]
+    fn test_parse() {
+        let filter = Filter::new("tls.sni = \'abc\' and my_filter",
+                                 &CUSTOM_FILTERS).unwrap();
+        let patterns = filter.get_patterns_flat();
+        let mut tree = PTree::new_empty(DataLevel::L4InPayload(false));
+        tree.add_subscription(&patterns, &FIVETUPLE_SUB);
+        println!("{}", tree);
+    }
+
 }

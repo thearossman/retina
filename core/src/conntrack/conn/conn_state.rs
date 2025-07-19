@@ -4,7 +4,7 @@ use strum::IntoEnumIterator;
 
 /// State that each Layer maintains, based on what it has
 /// seen so far in the connection.
-#[derive(PartialEq, Eq, Debug, Copy, Clone, Ord, PartialOrd, Hash)]
+#[derive(PartialEq, Eq, Debug, Copy, Clone, Ord, PartialOrd, Hash, EnumIter)]
 pub enum LayerState {
     /// Determining protocol
     /// For L4, this indicates pre-handshake

@@ -38,7 +38,7 @@ impl std::fmt::Display for DataActions {
         let mut pref = "";
         if let Some(if_matches) = self.if_matches {
             write!(f, "{:?}:{:?}", if_matches.0, if_matches.1)?;
-            pref = "\n- ";
+            pref = "- ";
         }
         write!(f, "{}L4: {} ", pref, self.transport)?;
         write!(f, "{}L7: {}", pref, self.layers[0])?;
@@ -53,6 +53,24 @@ impl DataActions {
             transport: TrackedActions::new(),
             layers: [TrackedActions::new(); NUM_LAYERS],
         }
+    }
+
+    pub(crate) fn merge(&mut self, peer: &DataActions) {
+        self.transport.extend(&peer.transport);
+        self.layers[0].extend(&peer.layers[0]);
+    }
+
+    pub(crate) fn drop(&self) -> bool {
+        self.transport.drop() && self.layers[0].drop()
+    }
+
+    /// Clear the actions that intersect with `peer`
+    pub(crate) fn clear_intersection(&mut self, peer: &DataActions) {
+        if self.if_matches != peer.if_matches {
+            return;
+        }
+        self.transport.clear_intersection(&peer.transport);
+        self.layers[0].clear_intersection(&peer.layers[0]);
     }
 
     // --PSEUDOCODE-- for what the actual code will look like
@@ -192,6 +210,7 @@ impl NodeActions {
     /// This is typically needed when a Node already has actions
     /// accumulated and another subscription (sub-)pattern terminates
     /// at the node.
+    #[allow(dead_code)]
     pub(crate) fn merge(&mut self, peer: &NodeActions) {
         assert!(self.end_datatypes && peer.end_datatypes || self.actions.len() == 0,
                 "SELF: {}\nPEER: {}", self, peer);
@@ -203,22 +222,11 @@ impl NodeActions {
     }
 
     /// Returns `true` if no actions
+    #[allow(dead_code)]
     pub(crate) fn drop(&self) -> bool {
         self.actions.len() == 0 || self.actions.iter().all(|a| a.transport.drop())
     }
 
-    /// Clear the actions that intersect with `peer`
-    pub(crate) fn clear_intersection(&mut self, peer: &NodeActions) {
-        for a in &mut self.actions {
-            for a_peer in &peer.actions {
-                if a.if_matches != a_peer.if_matches {
-                    continue;
-                }
-                a.transport.clear_intersection(&a_peer.transport);
-                a.layers[0].clear_intersection(&a_peer.layers[0]);
-            }
-        }
-    }
 }
 
 /// Compile-time struct for representing a datatype required for a callback
@@ -474,7 +482,7 @@ impl SubscriptionLevel {
             ret.add_datatype(d);
         }
         for p in &preds.predicates {
-            ret.add_filter_pred(&p.state_tx());
+            ret.add_filter_pred(&p.levels());
         }
         ret.add_callback(cb);
         ret

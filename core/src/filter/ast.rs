@@ -108,6 +108,7 @@ pub enum Predicate {
     LayerState {
         layer: SupportedLayer,
         state: LayerState,
+        op: BinOp, // ge, le, lt, gt or eq
     },
 }
 
@@ -161,7 +162,8 @@ impl Predicate {
         match self {
             Predicate::Custom { levels, .. } => levels.clone(),
             Predicate::Callback { levels, .. } => levels.clone(),
-            Predicate::LayerState { .. } => panic!("No Level associated with LayerState"),
+            // can be checked anytime
+            Predicate::LayerState { .. } => vec![DataLevel::L4FirstPacket],
             _ => {
                 if self.on_packet() {
                     return vec![DataLevel::L4FirstPacket];
@@ -221,29 +223,27 @@ impl Predicate {
             || has_path(self.get_protocol(), &protocol!("udp"))
     }
 
-    // Returns the `StateTransition(s)` at which this predicate can be applied.
-    pub(super) fn state_tx(&self) -> Vec<StateTransition> {
-        match self {
-            Predicate::Callback { .. } | Predicate::Custom { .. } => {
-                return self.levels().clone();
-            }
-            Predicate::LayerState { .. } => {
-                return vec![StateTransition::None];
-            }
-            _ => {
-                if self.on_packet() {
-                    return vec![StateTransition::L4FirstPacket];
-                }
-                if self.on_proto() {
-                    return vec![StateTransition::L7OnDisc];
-                }
-                if self.on_session() {
-                    return vec![StateTransition::L7EndHdrs];
-                } else {
-                    panic!(
-                        "Can't identify layer for unary or binary predicate: {:?}",
-                        self
-                    );
+    // `self` can (or potentially can) be applied if `layer` is in `state`
+    pub(super) fn is_compatible(&self, layer: SupportedLayer, state: LayerState) -> bool {
+        let levels = self.levels();
+        if levels.contains(&DataLevel::L4Terminated) { return false; }
+        match layer {
+            SupportedLayer::L4 => true,
+            SupportedLayer::L7 => {
+                match state {
+                    LayerState::Discovery => {
+                        // Does not require a session-layer state
+                        levels.iter().all(|l| l.layer_idx().is_none())
+                    },
+                    LayerState::Headers => {
+                        // Does not require a session-layer state or only
+                        // requires L7 protocol discovery
+                        levels.iter().all(|l|
+                            l.layer_idx().is_none() || *l == DataLevel::L7OnDisc
+                        )
+                    },
+                    LayerState::Payload => true,
+                    LayerState::None => panic!("Should not have LayerState::None predicate"),
                 }
             }
         }
@@ -252,14 +252,14 @@ impl Predicate {
     // Returns true if the predicate `self` would have been checked at prev. layer
     // Does not consider subscription type; meant to be used for filter collapse only.
     pub(super) fn is_prev_layer(&self, curr: StateTransition) -> bool {
-        self.state_tx()
+        self.levels()
             .iter()
             .all(|l| matches!(l.compare(&curr), StateTxOrd::Less))
     }
 
     // Returns true if the predicate `self` cannot be checked at `curr`
     pub(super) fn is_next_layer(&self, curr: StateTransition) -> bool {
-        self.state_tx()
+        self.levels()
             .iter()
             .all(|l| matches!(l.compare(&curr), StateTxOrd::Greater))
     }
@@ -906,8 +906,8 @@ impl fmt::Display for Predicate {
             Predicate::Callback { name, .. } => {
                 write!(f, "{name}")
             }
-            Predicate::LayerState { layer, state } => {
-                write!(f, "{:?}[{:?}]", layer, state)
+            Predicate::LayerState { layer, state, op } => {
+                write!(f, "{:?}{}{:?}", layer, op, state)
             }
         }
     }

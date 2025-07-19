@@ -8,7 +8,9 @@ use hashlink::LinkedHashMap;
 use petgraph::algo;
 use petgraph::graph::NodeIndex;
 
+use crate::conntrack::conn::conn_layers::SupportedLayer;
 use crate::conntrack::conn::conn_state::StateTxOrd;
+use crate::conntrack::LayerState;
 use crate::port::Port;
 use crate::{conntrack::StateTransition, filter::FilterError};
 
@@ -163,6 +165,41 @@ impl FlatPattern {
         self.predicates
             .retain(|p| !p.is_unary() || p.get_protocol() != ProtocolName::none());
         Ok(())
+    }
+
+    // Get the subset of patterns that can be applied if [layer] is in [state]
+    pub(super) fn get_subpattern(&self, layer: SupportedLayer, state: LayerState) -> FlatPattern {
+        let mut predicates: Vec<_> = self.predicates
+                             .iter()
+                             .cloned()
+                             .filter(|x| x.is_compatible(layer, state))
+                             .collect();
+        predicates.push(Predicate::LayerState { layer, state, op: BinOp::Eq });
+        Self {
+            predicates,
+        }
+    }
+
+    pub(super) fn with_l7_state(&self) -> Self {
+        let mut predicates = self.predicates.clone();
+        // LayerState::Discovery
+        // LayerState::Headers
+        // LayerState::Payload
+        if let Some(i) = predicates.iter().position(|x|
+            x.on_proto()) {
+            predicates.insert(i,
+                Predicate::LayerState { layer: SupportedLayer::L7,
+                    state: LayerState::Headers, op: BinOp::Ge });
+        }
+        if let Some(i) = predicates.iter().position(|x|
+            x.on_session()) {
+                predicates.insert(i,
+                    Predicate::LayerState { layer: SupportedLayer::L7,
+                        state: LayerState::Payload, op: BinOp::Ge });
+        }
+        Self {
+            predicates,
+        }
     }
 
     // Returns FlatPattern of only predicates that can be filtered in hardware
@@ -330,7 +367,7 @@ mod tests {
     use super::*;
     use crate::{
         conntrack::DataLevel,
-        filter::{ast::Predicate, parser::FilterParser, ptree_flat::FlatPTree},
+        filter::{ast::Predicate, parser::FilterParser, ptree_flat::FlatPTree, Filter},
     };
 
     lazy_static! {
@@ -420,5 +457,19 @@ mod tests {
             .handle_custom_predicates(&CUSTOM_FILTERS)
             .expect_err("Should have failed on invalid_filter");
         // println!("Error thrown: {:?}", err);
+    }
+
+    #[test]
+    fn test_subpattern() {
+        let filter_raw = "tcp.port = 80 and tls.sni = \'abc\'";
+        let filter = Filter::new(filter_raw, &vec![]).unwrap();
+        let pattern = filter.get_patterns_flat();
+        let pattern = pattern.get(0).unwrap();
+        let subpattern = pattern.get_subpattern(SupportedLayer::L7, LayerState::Discovery);
+        // "tls" and SNI field checks removed
+        assert!(subpattern.predicates.iter().all(|x| x.get_protocol() != &protocol!("tls")));
+        let subpattern = pattern.get_subpattern(SupportedLayer::L7, LayerState::Headers);
+        // SNI field check removed
+        assert!(subpattern.predicates.iter().all(|x| x.get_protocol() != &protocol!("tls") || x.is_unary()));
     }
 }
