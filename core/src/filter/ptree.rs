@@ -865,7 +865,6 @@ mod tests {
         // --> L7=Disc{actions}
         // --> L7>=Headers -> tls -> L7=Headers{actions}
         // -> ipv6 ...
-        println!("{}", tree);
         assert!(tree.size == 13);
         let node = tree.get_subtree(3).unwrap(); // L7=Discovery
         assert!(matches!(node.pred, Predicate::LayerState { .. }));
@@ -972,6 +971,7 @@ mod tests {
         assert!(collapsed_tree.size == 6, "Actual value: {}", collapsed_tree.size);
     }
 
+    //// THIS IS WRONG ////
     #[test]
     fn test_ptree_parse() {
         let filter = Filter::new("ipv4 and tls.sni = \'abc\' and my_filter",

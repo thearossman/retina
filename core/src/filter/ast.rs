@@ -258,6 +258,35 @@ impl Predicate {
             || has_path(self.get_protocol(), &protocol!("udp"))
     }
 
+    // `self` depends on (layer, state)
+    pub(super) fn depends_on(&self, layer: SupportedLayer, state: LayerState) -> bool {
+        match layer {
+            SupportedLayer::L4 => false,
+            SupportedLayer::L7 => {
+                if let Predicate::LayerState { layer: l, state: s, .. } = self {
+                    return &layer == l && &state <= s;
+                }
+                let levels = self.levels();
+                match state {
+                    LayerState::Discovery => {
+                        false
+                    },
+                    LayerState::Headers => {
+                        // Requires L7 protocol
+                        levels.iter().any(|l| l.layer_idx().is_some())
+                    },
+                    LayerState::Payload => {
+                        // Requires payload or parsed session
+                        levels.iter().any(|l|
+                            *l == DataLevel::L7EndHdrs || *l == DataLevel::L7InPayload
+                        )
+                    },
+                    LayerState::None => panic!("Should not have LayerState::None predicate"),
+                }
+            }
+        }
+    }
+
     // `self` can (or potentially can) be applied if `layer` is in `state`
     pub(super) fn is_compatible(&self, layer: SupportedLayer, state: LayerState) -> bool {
         let levels = self.levels();

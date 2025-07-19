@@ -271,6 +271,21 @@ impl FlatPattern {
                     Predicate::LayerState { layer: SupportedLayer::L7,
                         state: LayerState::Payload, op: BinOp::Ge });
         }
+
+        // Move up anything that doesn't rely on the state predicate
+        // TODO do this recursively
+        if let Some(first_state) = predicates.iter().position(|p| p.is_state()) {
+            if first_state < predicates.len() - 1 {
+                if let Predicate::LayerState { layer, state, .. } = predicates[first_state] {
+                    let back: Vec<_> = predicates.drain(first_state + 1..).collect();
+                    let (pre_state, post_state): (Vec<_>, Vec<_>) = back
+                        .into_iter()
+                        .partition(|p| !p.depends_on(layer, state));
+                    predicates.splice(first_state..first_state, pre_state);
+                    predicates.extend(post_state);
+                }
+            }
+        }
         Self {
             predicates,
         }
@@ -562,5 +577,16 @@ mod tests {
         let subpattern = pattern.get_subpattern(SupportedLayer::L7, LayerState::Headers);
         // SNI field check removed
         assert!(subpattern.predicates.iter().all(|x| x.get_protocol() != &protocol!("tls") || x.is_unary()));
+    }
+
+    #[test]
+    fn test_with_l7_state() {
+        let filter_raw = "tcp.port = 80 and tls.sni = \'abc\' and my_filter";
+        let filter = Filter::new(filter_raw, &CUSTOM_FILTERS).unwrap();
+        let pattern = filter.get_patterns_flat();
+        let pattern = pattern.get(0).unwrap();
+        let with_state = pattern.with_l7_state();
+        assert!(with_state.predicates[3].is_custom());
+        assert!(with_state.predicates[4].is_state());
     }
 }
