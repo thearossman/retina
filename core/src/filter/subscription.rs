@@ -73,6 +73,42 @@ impl DataActions {
         self.layers[0].clear_intersection(&peer.layers[0]);
     }
 
+    // Get the actions associated with a matching `pred`.
+    pub(crate) fn from_stream_pred(pred: &Predicate,
+                                   next_preds: Vec<StateTransition>,
+                                   filter_layer: StateTransition,
+                                   curr_state_pred: &Option<Predicate>) -> DataActions
+    {
+        if let Predicate::Custom { name, levels, matched } = pred {
+            assert!(!*matched);
+            let spec = DatatypeSpec {
+                updates: levels.clone(),
+                name: name.clone().0,
+            };
+            let actions = spec.to_actions(filter_layer);
+            let curr_state = match curr_state_pred {
+                Some(p) => {
+                    match p {
+                        Predicate::LayerState {layer, state, .. } => Some((*layer, *state)),
+                        _ => panic!("State predicate is {}", p),
+                    }
+                },
+                None => None,
+            };
+            for mut a in actions.actions {
+                if a.if_matches == curr_state {
+                    for p in next_preds {
+                        a.transport.refresh_at[p.as_usize()] |= a.transport.active;
+                        a.layers[0].refresh_at[p.as_usize()] |= a.layers[0].active;
+                    }
+                    return a;
+                }
+            }
+            return DataActions::new();
+        }
+        panic!("From_stream_pred called on {:?}", pred);
+    }
+
     // --PSEUDOCODE-- for what the actual code will look like
     // \TODO - this means that Predicate::LayerState won't be required
     // pub(crate) fn to_tokens(&self) -> proc_macro2::TokenStream {
@@ -245,7 +281,8 @@ impl DatatypeSpec {
     /// From a filter predicate
     pub(crate) fn from_pred(pred: &Predicate) -> Option<Self> {
         // Predicates that have already matched don't need add'l actions
-        if pred.is_custom() && !pred.is_matching() {
+        // Predicates that are matching are handled separately
+        if pred.is_custom() {
             return None;
         }
         Some(Self {
