@@ -291,6 +291,12 @@ impl Predicate {
     pub(super) fn is_compatible(&self, layer: SupportedLayer, state: LayerState) -> bool {
         let levels = self.levels();
         if levels.contains(&DataLevel::L4Terminated) { return false; }
+        if let Predicate::LayerState { state: s, .. } = self {
+            // Can apply `self` if different layer (e.g., can check L4-payload after L7-headers)
+            // For simplicity, only apply `self` if equivalent
+            // (TODO maybe could optimize by better enforcing order in patterns of state preds)
+            return s == &state;
+        }
         match layer {
             SupportedLayer::L4 => true,
             SupportedLayer::L7 => {

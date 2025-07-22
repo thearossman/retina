@@ -376,10 +376,20 @@ impl PTree {
 
     fn add_pattern(
         &mut self,
-        pattern: &FlatPattern,
+        pattern_: &FlatPattern,
         callbacks: &Vec<CallbackSpec>
     ) {
-        let mut truncated = pattern.contains_nonterminal();
+        let mut pattern = pattern_;
+
+        // Pattern may have predicates that need to be annotated with
+        // L7 State checks (e.g., only check TLS if L7 >= Headers)
+        let pattern_state;
+        if self.filter_layer.is_streaming() &&
+           self.filter_layer.in_transport() {
+            pattern_state = pattern.with_l7_state();
+            pattern = &pattern_state;
+        }
+
         // Extract required datatypes in filter pattern
         let mut datatypes = pattern.get_datatypes();
         // Add datatypes required by callbacks
@@ -406,38 +416,39 @@ impl PTree {
             }
         }
 
+        let contains_nonterminal = pattern.contains_nonterminal();
+        let mut full_pattern_added = false;
+
         // Add dependencies separately
         for action in &node_actions.actions {
             let mut pattern_ref = pattern;
             let subpattern: FlatPattern;
+            let mut truncated = contains_nonterminal;
+
             // Need to insert this as a unique pattern with the relevant L7 state checks
             if let Some(if_matches) = action.if_matches {
                 subpattern = pattern.get_subpattern(if_matches.0, if_matches.1);
-                // TODO cleaner way to do this
                 truncated = truncated || subpattern.predicates.len() <=
                             pattern.predicates.len();
                 pattern_ref = &subpattern;
             }
 
-            // Pattern may have predicates that need to be annotated with
-            // L7 State checks (e.g., only check TLS if L7 >= Headers)
-            let pattern_state;
-            if self.filter_layer.is_streaming() &&
-               self.filter_layer.in_transport() {
-                pattern_state = pattern_ref.with_l7_state();
-                pattern_ref = &pattern_state;
-            }
+            // If all patterns get (retroactively) truncated, we'll need to
+            // make sure (at the end) that callbacks are delivered.
+            full_pattern_added |= !truncated;
 
             // Add pattern for each callback
             for callback in callbacks {
                 self.add_pattern_int(pattern_ref, action, callback, truncated);
             }
         }
-        if node_actions.actions.is_empty() {
+        if !contains_nonterminal &&
+          (!full_pattern_added || node_actions.actions.is_empty())
+        {
             for callback in callbacks {
                 let level = SubscriptionLevel::new(&callback.datatypes, pattern, callback.stream);
                 if level.can_deliver(&self.filter_layer) {
-                    self.add_pattern_int(pattern, &DataActions::new(), callback, false);
+                    self.add_pattern_int(pattern, &DataActions::new(), callback, contains_nonterminal);
                 }
             }
         }
@@ -999,13 +1010,22 @@ mod tests {
 
         let mut tree = PTree::new_empty(DataLevel::L4InPayload(false));
         tree.add_subscription(&patterns, &FIVETUPLE_SUB);
-        println!("{}", tree);
-        // tree.collapse();
-        // TODO - this gets at why the ordering of predicates could definitely be optimized
-        // eth -> L7>=Hdrs -> tls -> my_filter (matched)
-        //                        -> my_filter (matching)
-        //                        -> L7 >= Payload -> tls.sni -> my_filter (matched) | my_filter (matching)
-        // assert!(tree.size == 14);
+        tree.collapse(); // Remove ipv4/tcp
+        // eth -> my filter (matched) -> L7 Disc (Actions - parse)
+        //                            -> L7 >= Headers -> tls (Deliver)
+        //     -> my filter (matching) (Actions - update) -> L7 Disc (Actions - parse)
+        assert!(tree.size == 7);
+
+        let filter = Filter::new("ipv4 and tls.sni = \'abc\' and my_filter",
+                                 &CUSTOM_FILTERS).unwrap();
+        let patterns = filter.get_patterns_flat();
+        let mut tree = PTree::new_empty(DataLevel::L4InPayload(false));
+        tree.add_subscription(&patterns, &FIVETUPLE_SUB);
+        tree.collapse();
+        // Similar to above. Added:
+        // Under "my_filter (matched)": +L7=Headers (A), +L7>=Payload, +tls.sni (D)
+        // Under "my_filter (matching)": +L7>=Headers, +tls, +L7=Headers (A)
+        assert!(tree.size == 13);
     }
 
 }
