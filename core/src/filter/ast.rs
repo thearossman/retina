@@ -102,7 +102,6 @@ pub enum Predicate {
     /// to determine Actions. This will only be used in filter sub-trees.
     Callback {
         name: FuncName,
-        levels: Vec<DataLevel>,
     },
     /// A State that must be checked for, e.g., "if L7 is in payload".
     /// This may be needed for Layers that cannot be ordered to determine
@@ -196,7 +195,7 @@ impl Predicate {
     pub fn levels(&self) -> Vec<DataLevel> {
         match self {
             Predicate::Custom { levels, .. } => levels.clone(),
-            Predicate::Callback { levels, .. } => levels.clone(),
+            Predicate::Callback { .. } => vec![],
             // can be checked anytime
             Predicate::LayerState { .. } => vec![DataLevel::L4FirstPacket],
             _ => {
@@ -329,9 +328,10 @@ impl Predicate {
 
     // Returns true if the predicate `self` cannot be checked at `curr`
     pub(super) fn is_next_layer(&self, curr: StateTransition) -> bool {
-        self.levels()
-            .iter()
-            .all(|l| matches!(l.compare(&curr), StateTxOrd::Greater))
+        !self.levels().is_empty() &&
+            self.levels()
+                .iter()
+                .all(|l| matches!(l.compare(&curr), StateTxOrd::Greater))
     }
 
     pub(super) fn default_pred() -> Predicate {

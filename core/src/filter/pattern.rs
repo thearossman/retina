@@ -182,6 +182,13 @@ impl FlatPattern {
         }
     }
 
+    // Inserts a Callback predicate
+    pub(super) fn with_streaming_cb(&self, name: &String) -> Self {
+        let mut pat = self.clone();
+        pat.predicates.push(Predicate::Callback { name: filterfunc!(name.clone()) });
+        pat
+    }
+
     // Some custom streaming filters can be `matched` or `continuing`.
     // We need to distinguish between these at runtime.
     // Split patterns by streaming filter match state: `matched` vs. `continue`

@@ -2,6 +2,7 @@ use core::fmt;
 use std::cmp::{Ordering, PartialOrd};
 use std::collections::HashSet;
 
+use crate::conntrack::conn::conn_state::StateTxOrd;
 use crate::conntrack::{DataLevel, StateTransition};
 use crate::filter::subscription::DataActions;
 
@@ -350,6 +351,8 @@ impl PTree {
         patterns: &[FlatPattern],
         // Individual callbacks; each has datatypes
         callbacks: &Vec<CallbackSpec>,
+        // String identifier
+        id: &String,
     ) {
         if self.collapsed {
             panic!("Cannot add filter to tree after collapsing");
@@ -360,7 +363,7 @@ impl PTree {
         );
         let ext_patterns = self.split_custom(patterns);
         for pattern in patterns.iter().chain(ext_patterns.iter()) {
-            self.add_pattern(pattern, callbacks);
+            self.add_pattern(pattern, callbacks, id);
         }
     }
 
@@ -377,17 +380,33 @@ impl PTree {
     fn add_pattern(
         &mut self,
         pattern_: &FlatPattern,
-        callbacks: &Vec<CallbackSpec>
+        callbacks: &Vec<CallbackSpec>,
+        cb_id: &String,
     ) {
         let mut pattern = pattern_;
 
         // Pattern may have predicates that need to be annotated with
         // L7 State checks (e.g., only check TLS if L7 >= Headers)
-        let pattern_state;
+        let mut pattern_tmp;
         if self.filter_layer.is_streaming() &&
            self.filter_layer.in_transport() {
-            pattern_state = pattern.with_l7_state();
-            pattern = &pattern_state;
+            pattern_tmp = pattern.with_l7_state();
+            pattern = &pattern_tmp;
+        }
+        // Extend with callback predicates if streaming
+        // If a subscription previously had the opportunity to unsubscribe,
+        // we need to check if it did
+        if callbacks.iter().any(|c| {
+            match c.stream {
+                Some(l) => matches!(l.compare(&self.filter_layer),
+                                               StateTxOrd::Unknown |
+                                               StateTxOrd::Less),
+                None => false,
+            }
+        })
+        {
+            pattern_tmp = pattern.with_streaming_cb(cb_id);
+            pattern = &pattern_tmp;
         }
 
         // Extract required datatypes in filter pattern
@@ -863,7 +882,7 @@ mod tests {
 
         let mut tree = PTree::new_empty(DataLevel::L4FirstPacket);
         // On first packet: set up parsing
-        tree.add_subscription(&patterns, &TLS_SUB);
+        tree.add_subscription(&patterns, &TLS_SUB, &TLS_SUB[0].as_str);
         assert!(tree.size == 5, "Tree size is: {}", tree.size);
         let node = tree.get_subtree(2).unwrap();
         assert!(!node.actions.drop());
@@ -874,14 +893,14 @@ mod tests {
 
         // On protocol discovery: continue parsing until end of headers
         let mut tree = PTree::new_empty(DataLevel::L7OnDisc);
-        tree.add_subscription(&patterns, &TLS_SUB);
+        tree.add_subscription(&patterns, &TLS_SUB, &TLS_SUB[0].as_str);
         assert!(tree.size == 7); // + 2 TLS nodes
         let node = tree.get_subtree(3).unwrap(); // TLS node
         assert!(node.actions.transport.refresh_at[DataLevel::L7EndHdrs.as_usize()] == Actions::PassThrough);
 
         // Inlined delivery
         let mut tree = PTree::new_empty(DataLevel::L7EndHdrs);
-        tree.add_subscription(&patterns, &TLS_SUB);
+        tree.add_subscription(&patterns, &TLS_SUB, &TLS_SUB[0].as_str);
         assert!(tree.size == 7);
         let node = tree.get_subtree(3).unwrap();
         assert!(node.actions.drop());
@@ -889,7 +908,7 @@ mod tests {
 
         // "Maintenance"
         let mut tree = PTree::new_empty(DataLevel::L4InPayload(false));
-        tree.add_subscription(&patterns, &TLS_SUB);
+        tree.add_subscription(&patterns, &TLS_SUB, &TLS_SUB[0].as_str);
         // eth
         // -> ipv4 -> tcp
         // --> L7=Disc{actions}
@@ -903,7 +922,7 @@ mod tests {
 
         // Nothing to do
         let mut tree = PTree::new_empty(DataLevel::L7InPayload);
-        tree.add_subscription(&patterns, &TLS_SUB);
+        tree.add_subscription(&patterns, &TLS_SUB, &TLS_SUB[0].as_str);
         assert!(tree.size == 1); // Just root; no actions
     }
 
@@ -936,7 +955,7 @@ mod tests {
         // On first packet: set up parsing, streaming
         // Refresh at: L4InPayload (my_filter) and L7OnDisc ("tls")
         let mut tree = PTree::new_empty(DataLevel::L4FirstPacket);
-        tree.add_subscription(&patterns, &STREAMING_SUB);
+        tree.add_subscription(&patterns, &STREAMING_SUB, &STREAMING_SUB[0].as_str);
         let node = tree.get_subtree(2).unwrap(); // "tcp" node
         assert!(node.actions.transport.active == Actions::PassThrough | Actions::Update);
         let l7_actions = &node.actions.layers[0];
@@ -948,10 +967,12 @@ mod tests {
         // On L7 Headers Parsed
         // Done with TLS filter and with parsing TLS handshake
         let mut tree = PTree::new_empty(DataLevel::L7EndHdrs);
-        tree.add_subscription(&patterns, &STREAMING_SUB);
+        tree.add_subscription(&patterns, &STREAMING_SUB, &STREAMING_SUB[0].as_str);
+        println!("{}", tree);
         // Note - splits out my_filter (matched) and (matching)
-        assert!(tree.size == 11);
-        let node = tree.get_subtree(4).unwrap(); // my_filter
+        // Adds node(s) to re-check the CB
+        assert!(tree.size == 15);
+        let node = tree.get_subtree(5).unwrap(); // callback node
         assert!(
             node.actions.transport.needs_update()
                 && !node.actions.transport.has_next_layer()
@@ -986,22 +1007,21 @@ mod tests {
 
         // - First packet: check optimizations
         let mut tree = PTree::new_empty(DataLevel::L4FirstPacket);
-        tree.add_subscription(&patterns_1, &TLS_SUB);
-        tree.add_subscription(&patterns_2, &STREAMING_SUB);
+        tree.add_subscription(&patterns_1, &TLS_SUB, &TLS_SUB[0].as_str);
+        tree.add_subscription(&patterns_2, &STREAMING_SUB, &STREAMING_SUB[0].as_str);
         assert!(tree.size == 5);
         let mut collapsed_tree = tree.clone();
         collapsed_tree.collapse();
         // "tcp" optimized out - `tcp` would have been filtered out at initial packet filter
         assert!(collapsed_tree.size == 3);
 
-        tree.add_subscription(&patterns_3, &FIVETUPLE_SUB);
+        tree.add_subscription(&patterns_3, &FIVETUPLE_SUB, &FIVETUPLE_SUB[0].as_str);
         let mut collapsed_tree = tree.clone();
         collapsed_tree.collapse();
         // Can't optimize tcp anymore for ipv4, but still can for ipv6
         assert!(collapsed_tree.size == 6, "Actual value: {}", collapsed_tree.size);
     }
 
-    //// THIS IS WRONG ////
     #[test]
     fn test_ptree_parse() {
         let filter = Filter::new("ipv4 and tls and my_filter",
@@ -1009,7 +1029,7 @@ mod tests {
         let patterns = filter.get_patterns_flat();
 
         let mut tree = PTree::new_empty(DataLevel::L4InPayload(false));
-        tree.add_subscription(&patterns, &FIVETUPLE_SUB);
+        tree.add_subscription(&patterns, &FIVETUPLE_SUB, &FIVETUPLE_SUB[0].as_str);
         tree.collapse(); // Remove ipv4/tcp
         // eth -> my filter (matched) -> L7 Disc (Actions - parse)
         //                            -> L7 >= Headers -> tls (Deliver)
@@ -1020,7 +1040,7 @@ mod tests {
                                  &CUSTOM_FILTERS).unwrap();
         let patterns = filter.get_patterns_flat();
         let mut tree = PTree::new_empty(DataLevel::L4InPayload(false));
-        tree.add_subscription(&patterns, &FIVETUPLE_SUB);
+        tree.add_subscription(&patterns, &FIVETUPLE_SUB, &FIVETUPLE_SUB[0].as_str);
         tree.collapse();
         // Similar to above. Added:
         // Under "my_filter (matched)": +L7=Headers (A), +L7>=Payload, +tls.sni (D)
