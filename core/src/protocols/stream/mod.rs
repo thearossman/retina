@@ -207,6 +207,22 @@ pub enum SessionData {
     Null,
 }
 
+/// Supported session (encapsulated in L4 connection)
+/// Includes possibility for nested protocols
+#[derive(Debug, Clone)]
+pub enum SessionProto {
+    Tls,
+    Dns,
+    Http,
+    Quic,
+    Ssh,
+    Ipv4,
+    Ipv6,
+    Tcp,
+    Udp,
+    Null
+}
+
 /// An application-layer protocol session.
 ///
 /// ## Note
@@ -346,6 +362,17 @@ impl ConnParser {
             ConnParser::Quic(_parser) => Some("quic".into()),
             ConnParser::Ssh(_parser) => Some("ssh".into()),
             ConnParser::Unknown => None,
+        }
+    }
+
+    pub fn protocol(&self) -> SessionProto {
+        match self {
+            ConnParser::Tls(_) => SessionProto::Tls,
+            ConnParser::Dns(_) => SessionProto::Dns,
+            ConnParser::Http(_) => SessionProto::Http,
+            ConnParser::Quic(_) => SessionProto::Quic,
+            ConnParser::Ssh(_) => SessionProto::Ssh,
+            ConnParser::Unknown => SessionProto::Null,
         }
     }
 

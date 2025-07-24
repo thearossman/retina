@@ -2,6 +2,8 @@ use std::cmp::Ordering;
 use strum_macros::EnumIter;
 use strum::IntoEnumIterator;
 
+use crate::{conntrack::Layer, protocols::{stream::SessionProto, Session}};
+
 /// State that each Layer maintains, based on what it has
 /// seen so far in the connection.
 #[derive(PartialEq, Eq, Debug, Copy, Clone, Ord, PartialOrd, Hash, EnumIter)]
@@ -173,6 +175,45 @@ impl StateTxOrd {
 pub type StateTransition = DataLevel;
 /// Number of variants; used to size the `refresh_at` array
 pub(crate) const NUM_STATE_TRANSITIONS: usize = 9;
+
+/// State Transitions with associated data, used as wrappers for users to subscribe to
+/// TODO which mod should these live in...
+#[derive(Debug)]
+pub enum StateTxData {
+    L4EndHshk,
+    L7OnDisc(SessionProto),
+    L7EndHdrs(Session),
+    L4Terminated,
+}
+
+impl StateTxData {
+    pub fn from_tx(state: &StateTransition, layer: &mut Layer) -> Self {
+        match layer {
+            Layer::L7(layer) => {
+                return match state {
+                    DataLevel::L4EndHshk => Self::L4EndHshk,
+                    DataLevel::L7OnDisc => Self::L7OnDisc(layer.get_protocol()),
+                    DataLevel::L7EndHdrs => Self::L7EndHdrs(layer.pop_session()
+                                                                 .expect("L7EndHdrs without session")),
+                    DataLevel::L4Terminated => Self::L4Terminated,
+                    _ => panic!("Called from_tx on streaming state {:?}", state),
+                };
+            }
+        }
+    }
+
+    // Should be the same as the corresponding StateTransition
+    #[allow(dead_code)]
+    pub(crate) fn as_usize(&self) -> usize {
+        match self {
+            StateTxData::L4EndHshk => StateTransition::L4EndHshk.as_usize(),
+            StateTxData::L7OnDisc(_) => StateTransition::L7OnDisc.as_usize(),
+            StateTxData::L7EndHdrs(_) => StateTransition::L7EndHdrs.as_usize(),
+            StateTxData::L4Terminated => StateTransition::L4Terminated.as_usize(),
+        }
+    }
+}
+
 
 #[cfg(test)]
 mod tests {

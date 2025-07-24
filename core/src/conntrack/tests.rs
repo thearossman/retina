@@ -1,3 +1,5 @@
+use conn::conn_state::StateTxData;
+
 use crate::config::default_config;
 use crate::conntrack::conn::conn_state::NUM_STATE_TRANSITIONS;
 use crate::conntrack::*;
@@ -58,7 +60,11 @@ impl Trackable for TestTrackable {
         self.invoked[state.as_usize()] % 2 == 0
     }
 
-    fn state_tx(&mut self, state: DataLevel) {
+    fn state_tx(&mut self, state: StateTxData) {
+        self.state_tx[state.as_usize()] += 1;
+    }
+
+    fn stream_tx(&mut self, state: StateTransition) {
         self.state_tx[state.as_usize()] += 1;
     }
 }

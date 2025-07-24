@@ -4,7 +4,7 @@ use super::conn_actions::TrackedActions;
 use super::conn_state::{DataLevel, LayerState, StateTransition};
 use crate::conntrack::Actions;
 use crate::protocols::stream::{
-    ConnParser, ParseResult, ParserRegistry, ParsingState, ProbeRegistryResult,
+    ConnParser, ParseResult, ParserRegistry, ParsingState, ProbeRegistryResult, SessionProto,
 };
 use crate::protocols::Session;
 use crate::subscription::Trackable;
@@ -125,6 +125,8 @@ pub struct L7Session {
     pub linfo: LayerInfo,
     /// Stateful protocol parser (once identified, or None)
     pub parser: ConnParser,
+    /// Last session ID parsed, if applicable
+    pub last_parsed: Option<usize>,
     // Further encapsulated layers could go here.
 }
 
@@ -136,17 +138,29 @@ impl L7Session {
         Self {
             linfo: LayerInfo::new(),
             parser: ConnParser::Unknown,
+            last_parsed: None,
         }
     }
 
     /// Accessors for Sessions
-    pub fn pop_session(&mut self, id: usize) -> Option<Session> {
+    pub fn pop_session(&mut self) -> Option<Session> {
+        match self.last_parsed {
+            Some(id) => self.parser.remove_session(id),
+            None => None,
+        }
+    }
+
+    pub fn remove_session(&mut self, id: usize) -> Option<Session> {
         self.parser.remove_session(id)
     }
 
-    /// Accessors for Sessions
     pub fn drain_sessions(&mut self) -> Vec<Session> {
         self.parser.drain_sessions()
+    }
+
+    /// Accessor for Protocol
+    pub fn get_protocol(&self) -> SessionProto {
+        self.parser.protocol()
     }
 }
 
@@ -201,7 +215,8 @@ impl TrackableLayer for L7Session {
             LayerState::Headers => {
                 let mut new_state = self.linfo.state;
                 match self.parser.parse(pdu) {
-                    ParseResult::Done(_) => {
+                    ParseResult::Done(id) => {
+                        self.last_parsed = Some(id);
                         state_tx[1] = StateTransition::L7EndHdrs;
                         new_state = LayerState::Payload;
                     }

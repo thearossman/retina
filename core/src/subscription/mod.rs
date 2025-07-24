@@ -1,3 +1,4 @@
+use crate::conntrack::conn::conn_state::StateTxData;
 use crate::conntrack::pdu::{L4Context, L4Pdu};
 use crate::conntrack::{ConnInfo, ConnTracker, DataLevel, StateTransition};
 use crate::filter::*;
@@ -11,7 +12,7 @@ use crate::stats::{StatExt, TCP_BYTE, TCP_PKT, UDP_BYTE, UDP_PKT};
 pub mod filter;
 pub use filter::StreamingFilter;
 pub mod data;
-pub use data::{FromMbuf, FromSession, Tracked, TrackedEmpty};
+pub use data::{FromMbuf, FromSession, Tracked};
 pub mod callback;
 pub use callback::StreamingCallback;
 pub mod timer;
@@ -47,7 +48,10 @@ pub trait Trackable {
     fn update(&mut self, pdu: &L4Pdu, state: DataLevel) -> bool;
 
     /// Indicates a state transition occurred
-    fn state_tx(&mut self, state: StateTransition);
+    fn state_tx(&mut self, state: StateTxData);
+
+    /// Indicates that a callback or filter unsubscribed during a stream
+    fn stream_tx(&mut self, state: StateTransition);
 }
 
 #[allow(dead_code)]
@@ -116,25 +120,33 @@ where
 
     /// Invokes the L6/L7 protocol filter, i.e., filtering on the protocol (e.g., TLS, HTTP)
     pub fn filter_protocol<T: Trackable>(&self, conn: &mut ConnInfo<S::Tracked>) {
-        conn.tracked.state_tx(StateTransition::L7OnDisc);
+        conn.tracked.state_tx(
+            StateTxData::from_tx(&StateTransition::L7OnDisc, &mut conn.layers[0])
+        );
         (self.proto_filter)(conn);
     }
 
     /// Invokes the Session filter, i.e., filtering on fields in a parsed session.
     pub fn filter_session<T: Trackable>(&self, conn: &mut ConnInfo<S::Tracked>) {
-        conn.tracked.state_tx(StateTransition::L7EndHdrs);
+        conn.tracked.state_tx(
+            StateTxData::from_tx(&StateTransition::L7EndHdrs, &mut conn.layers[0])
+        );
         (self.session_filter)(conn)
     }
 
     /// Invokes any L4 Connection-level subscriptions
     pub fn connection_terminated<T: Trackable>(&self, conn: &mut ConnInfo<S::Tracked>) {
-        conn.tracked.state_tx(StateTransition::L4Terminated);
+        conn.tracked.state_tx(
+            StateTxData::from_tx(&StateTransition::L4Terminated, &mut conn.layers[0])
+        );
         (self.conn_deliver)(conn);
     }
 
     /// Indicates that the TCP handshake has completed
     pub fn handshake_done<T: Trackable>(&self, conn: &mut ConnInfo<S::Tracked>) {
-        conn.tracked.state_tx(StateTransition::L4EndHshk);
+        conn.tracked.state_tx(
+            StateTxData::from_tx(&StateTransition::L4EndHshk, &mut conn.layers[0])
+        );
         // TODO
     }
 
@@ -142,7 +154,7 @@ where
     /// to be refreshed. The `state` parameter helps the subscription determine which
     /// set of filter predicates to apply.
     pub fn in_update<T: Trackable>(&self, conn: &mut ConnInfo<S::Tracked>, state: StateTransition) {
-        conn.tracked.state_tx(state);
+        conn.tracked.stream_tx(state);
         // TODO
     }
 }

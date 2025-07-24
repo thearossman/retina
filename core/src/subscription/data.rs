@@ -28,18 +28,6 @@ pub trait Tracked {
     fn clear(&mut self);
 }
 
-/// Dummy struct to be used when a streaming filter does not require
-/// any tracked data (i.e., just wants raw packets).
-pub struct TrackedEmpty;
-impl Tracked for TrackedEmpty {
-    fn new(_first_pkt: &L4Pdu) -> Self {
-        TrackedEmpty
-    }
-    fn update(&mut self, _pdu: &L4Pdu) {}
-    fn phase_tx(&mut self, _tx: StateTransition) {}
-    fn clear(&mut self) {}
-}
-
 /// Convenience method to convert a `Session` into a datatype that
 /// can be subscribed to. Datatypes implementing this trait are
 /// automatically Level=Session.
