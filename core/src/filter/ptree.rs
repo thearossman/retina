@@ -35,6 +35,7 @@ pub struct PNode {
 
     // Datatypes that remain "in scope" at this node
     // Only tracked for "expensive" datatypes
+    // TODO - this is currently dead code - not implemented yet
     pub datatypes: HashSet<String>,
 
     // Identifier
