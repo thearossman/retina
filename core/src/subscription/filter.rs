@@ -1,17 +1,12 @@
-use super::Trackable;
-use crate::L4Pdu;
+use super::{FilterResult, Trackable};
+use crate::{conntrack::conn::conn_state::StateTxData, L4Pdu};
 
 // TODOs:
 // - Like callback, ultimately want the filter to be a wrapper
 //   s.t. it can take in multiple Trackable datatypes.
 // - Maybe add a timer wrapper
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
-pub enum FilterResult {
-    Continue,
-    Drop,
-    Accept,
-}
+/// NOTE unclear whether this will actually get used....
 
 /// Streaming filter. See notes for streaming callback.
 pub trait StreamingFilter<T>
@@ -23,7 +18,9 @@ where
     /// Invoked at specified intervals with Trackable data until either
     /// `Accept` or `Drop` is returned OR all filter predicates that are
     /// preconditions have failed to match. See notes for streaming callback.
-    fn filter(&mut self, tracked: &T, pdu: Option<&L4Pdu>) -> FilterResult;
+    fn update(&mut self, tracked: &T, pdu: Option<&L4Pdu>) -> FilterResult;
+    /// Invoked at specified state transition
+    fn state_tx(&mut self, tracked: &T, tx: &StateTxData) -> FilterResult;
 }
 
 #[doc(hidden)]
@@ -69,7 +66,7 @@ where
     /// Accessor methods for wrapped filter.
     pub fn filter(&mut self, tracked: &T, pdu: Option<&L4Pdu>) -> FilterResult {
         if let Some(filter) = &mut self.filter {
-            return filter.filter(tracked, pdu);
+            return filter.update(tracked, pdu);
         }
         FilterResult::Drop
     }

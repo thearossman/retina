@@ -30,7 +30,7 @@ pub trait Tracked {
 
 /// Convenience method to convert a `Session` into a datatype that
 /// can be subscribed to. Datatypes implementing this trait are
-/// automatically Level=Session.
+/// automatically Level=L7EndHdrs.
 pub trait FromSession {
     fn new(session: &Session) -> Self;
 }

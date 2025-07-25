@@ -9,16 +9,22 @@ use crate::protocols::packet::udp::UDP_PROTOCOL;
 use crate::protocols::stream::ParserRegistry;
 use crate::stats::{StatExt, TCP_BYTE, TCP_PKT, UDP_BYTE, UDP_PKT};
 
+#[doc(hidden)]
 pub mod filter;
-pub use filter::StreamingFilter;
 pub mod data;
 pub use data::{FromMbuf, FromSession, Tracked};
+#[doc(hidden)]
 pub mod callback;
-pub use callback::StreamingCallback;
-pub mod timer;
 
 #[cfg(feature = "timing")]
 use crate::timing::timer::Timers;
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub enum FilterResult {
+    Continue,
+    Drop,
+    Accept,
+}
 
 pub trait Subscribable {
     type Tracked: Trackable<Subscribed = Self>;
