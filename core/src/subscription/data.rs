@@ -1,6 +1,4 @@
-use crate::conntrack::StateTransition;
-use crate::memory::mbuf::Mbuf;
-use crate::protocols::Session;
+use crate::conntrack::conn::conn_state::StateTxData;
 use crate::L4Pdu;
 
 /// Interface for datatypes that must be "tracked" throughout
@@ -22,24 +20,33 @@ pub trait Tracked {
     fn update(&mut self, pdu: &L4Pdu);
     /// Invoked for phase transitions of interest, which must be specified
     /// as attributes.
-    fn phase_tx(&mut self, tx: StateTransition);
+    fn phase_tx(&mut self, tx: &StateTxData);
     /// Utility method to clear internal data.
     /// Recommended to implement for memory-intensive datatypes.
     fn clear(&mut self);
+    /// The stream protocols (lower-case) required for this datatype.
+    /// See `IMPLEMENTED_PROTOCOLS` in retina_core for list of supported protocols.
+    fn stream_protocols() -> Vec<&'static str>;
 }
 
-/// Convenience method to convert a `Session` into a datatype that
-/// can be subscribed to. Datatypes implementing this trait are
-/// automatically Level=L7EndHdrs.
-pub trait FromSession {
-    fn new(session: &Session) -> Self;
-}
+/// The string literal representing a matched filter.
+/// Used if multiple filters are available for the same callback
+/// (specified in input file).
+pub type FilterStr<'a> = &'a str;
 
-/// Convenience method to convert an `Mbuf` into a datatype that
-/// can be subscribed to. Datatypes implementing this trait
-/// are automatically Level=Packet.
-pub trait FromMbuf {
-    fn new(mbuf: &Mbuf) -> Self;
+/// Must be implemented as a trait; cannot define inherent `impl`
+/// for foreign type.
+#[doc(hidden)]
+pub trait StringToTokens {
+    fn from_string(filter: &String) -> proc_macro2::TokenStream;
+}
+impl StringToTokens for FilterStr<'_> {
+    /// Convert a filter string into a token representation at compile-time.
+    #[doc(hidden)]
+    fn from_string(filter: &String) -> proc_macro2::TokenStream {
+        let str = syn::LitStr::new(filter, proc_macro2::Span::call_site());
+        quote::quote! { &#str }
+    }
 }
 
 /// If a datatype is specified as "expensive", it is wrapped in this

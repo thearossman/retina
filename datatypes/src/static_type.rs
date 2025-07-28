@@ -7,8 +7,10 @@ use super::StaticData;
 use pnet::datalink::MacAddr;
 use retina_core::conntrack::conn_id::FiveTuple;
 use retina_core::conntrack::pdu::L4Pdu;
+use retina_filtergen::datatype;
 
 /// Subscribable alias for [`retina_core::FiveTuple`]
+#[datatype("FiveTuple,level=L4FirstPacket")]
 impl StaticData for FiveTuple {
     fn new(first_pkt: &L4Pdu) -> Self {
         FiveTuple::from_ctxt(first_pkt.ctxt)

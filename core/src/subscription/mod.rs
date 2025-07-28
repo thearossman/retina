@@ -12,7 +12,7 @@ use crate::stats::{StatExt, TCP_BYTE, TCP_PKT, UDP_BYTE, UDP_PKT};
 #[doc(hidden)]
 pub mod filter;
 pub mod data;
-pub use data::{FromMbuf, FromSession, Tracked};
+pub use data::Tracked;
 #[doc(hidden)]
 pub mod callback;
 

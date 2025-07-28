@@ -1,12 +1,13 @@
 //! A sample connection record that provides various TCP and/or UDP connection
 //! information, statistics, and state history. It does not deliver payload data.
 
+use retina_core::conntrack::conn::conn_state::StateTxData;
 use retina_core::conntrack::conn::tcp_conn::reassembly::wrapping_lt;
 use retina_core::conntrack::conn_id::FiveTuple;
 use retina_core::conntrack::pdu::L4Pdu;
 use retina_core::protocols::packet::tcp::{ACK, FIN, RST, SYN};
-
-use super::Tracked;
+use retina_filtergen::{datatype, datatype_group};
+use retina_core::subscription::Tracked;
 
 use serde::ser::{SerializeStruct, Serializer};
 use serde::Serialize;
@@ -120,6 +121,7 @@ impl fmt::Display for ConnRecord {
 /// Internal connection state is an associated type of a `pub` trait, and therefore must also be
 /// public. Documentation is hidden by default to avoid confusing users.
 #[derive(Debug)]
+#[datatype]
 pub struct ConnRecord {
     /// The connection 5-tuple.
     pub five_tuple: FiveTuple,
@@ -234,11 +236,12 @@ impl Tracked for ConnRecord {
         self.history = Vec::with_capacity(0);
     }
 
-    fn update(&mut self, pdu: &L4Pdu, reassembled: bool) {
-        if !reassembled {
-            self.update_data(pdu);
-        }
+    #[datatype_group("ConnRecord,level=L4InPayload")]
+    fn update(&mut self, pdu: &L4Pdu) {
+        self.update_data(pdu);
     }
+
+    fn phase_tx(&mut self, _: &StateTxData) {}
 
     fn stream_protocols() -> Vec<&'static str> {
         vec![]
