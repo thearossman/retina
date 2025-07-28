@@ -1,6 +1,7 @@
-use std::cmp::Ordering;
+use std::{cmp::Ordering, str::FromStr};
 use strum_macros::EnumIter;
 use strum::IntoEnumIterator;
+use serde::{Serialize, Deserialize};
 
 use crate::{conntrack::Layer, protocols::{stream::SessionProto, Session}};
 
@@ -26,7 +27,7 @@ pub enum LayerState {
 /// Streaming Levels must also identify the streaming frequency and unit
 /// (packets, bytes, or seconds).
 /// NOTE: for the same layer, enums must be listed in order.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, EnumIter)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, EnumIter, Serialize, Deserialize)]
 #[repr(u8)]
 pub enum DataLevel {
     /// On first packet in connection
@@ -214,6 +215,24 @@ impl StateTxData {
     }
 }
 
+impl FromStr for DataLevel {
+    type Err = String;
+    fn from_str(s: &str) -> Result<Self, String> {
+        match s {
+            "L4FirstPacket" => Ok(DataLevel::L4FirstPacket),
+            "L4EndHshk" => Ok(DataLevel::L4EndHshk),
+            "L4InPayload" => Ok(DataLevel::L4InPayload(false)),
+            "L4InPayload(reassemble)" => Ok(DataLevel::L4InPayload(true)),
+            "L4Terminated" => Ok(DataLevel::L4Terminated),
+            "L7OnDisc" => Ok(DataLevel::L7OnDisc),
+            "L7InHdrs" => Ok(DataLevel::L7InHdrs),
+            "L7EndHdrs" => Ok(DataLevel::L7EndHdrs),
+            "L7InPayload" => Ok(DataLevel::L7InPayload),
+            "L7EndPayload" => Ok(DataLevel::L7EndPayload),
+            _ => Err(format!("Invalid DataLevel: {}", s)),
+        }
+    }
+}
 
 #[cfg(test)]
 mod tests {

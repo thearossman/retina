@@ -53,7 +53,7 @@ pub trait FromSession {
     /// Build Self from a parsed session, or return None if impossible.
     /// Invoked when the session is fully matched, parsed, and ready to
     /// be delivered to a callback.
-    fn from_session(session: &Session) -> Option<&Self>;
+    fn new(session: &Session) -> Option<&Self>;
 }
 
 /// Convenience method to convert an `Mbuf` into a datatype that
