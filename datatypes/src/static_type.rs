@@ -11,7 +11,8 @@ use retina_filtergen::datatype;
 
 /// Subscribable alias for [`retina_core::FiveTuple`]
 impl StaticData for FiveTuple {
-    #[datatype("name=FiveTuple,level=L4FirstPacket")]
+    #[cfg_attr(not(feature = "skip_expand"),
+        datatype("name=FiveTuple,level=L4FirstPacket"))]
     fn new(first_pkt: &L4Pdu) -> Self {
         FiveTuple::from_ctxt(first_pkt.ctxt)
     }
@@ -24,7 +25,8 @@ use retina_core::protocols::packet::{ethernet::Ethernet, Packet};
 pub struct EtherTCI(Option<u16>);
 
 impl StaticData for EtherTCI {
-    #[datatype("name=EtherTCI,level=L4FirstPacket")]
+    #[cfg_attr(not(feature = "skip_expand"),
+        datatype("name=EtherTCI,level=L4FirstPacket"))]
     fn new(first_pkt: &L4Pdu) -> Self {
         if let Ok(ethernet) = &Packet::parse_to::<Ethernet>(first_pkt.mbuf_ref()) {
             if let Some(tci) = ethernet.tci() {
@@ -43,7 +45,8 @@ pub struct EthAddr {
 }
 
 impl StaticData for EthAddr {
-    #[datatype("name=EthAddr,level=L4FirstPacket")]
+    #[cfg_attr(not(feature = "skip_expand"),
+        datatype("name=EthAddr,level=L4FirstPacket"))]
     fn new(first_pkt: &L4Pdu) -> Self {
         if let Ok(ethernet) = &Packet::parse_to::<Ethernet>(first_pkt.mbuf_ref()) {
             Self {

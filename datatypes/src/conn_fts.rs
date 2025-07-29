@@ -9,7 +9,7 @@ use std::time::{Duration, Instant};
 
 /// Tracks the start (first packet seen) and end (last packet seen)
 /// times of a connection
-#[datatype("L4Terminated")]
+#[cfg_attr(not(feature = "skip_expand"), datatype("L4Terminated"))]
 #[derive(Debug, Clone)]
 pub struct ConnDuration {
     pub start_ts: Instant,
@@ -54,7 +54,9 @@ impl Tracked for ConnDuration {
     fn clear(&mut self) {}
 
     #[inline]
-    #[datatype_group("ConnDuration,level=L4InPayload")]
+
+    #[cfg_attr(not(feature = "skip_expand"),
+        datatype_group("ConnDuration,level=L4InPayload"))]
     fn update(&mut self, pdu: &L4Pdu) {
         self.last_ts = pdu.ts.clone();
     }
@@ -69,7 +71,7 @@ impl Tracked for ConnDuration {
 
 /// The number of packets observed in a connection
 #[derive(Debug, serde::Serialize, Clone)]
-#[datatype("L4Terminated")]
+#[cfg_attr(not(feature = "skip_expand"), datatype("L4Terminated"))]
 pub struct PktCount {
     pub pkt_count: usize,
 }
@@ -89,7 +91,8 @@ impl Tracked for PktCount {
     fn clear(&mut self) {}
 
     #[inline]
-    #[datatype_group("PktCount,level=L4InPayload")]
+    #[cfg_attr(not(feature = "skip_expand"),
+      datatype_group("PktCount,level=L4InPayload"))]
     fn update(&mut self, _: &L4Pdu) {
         self.pkt_count += 1;
     }
@@ -104,7 +107,7 @@ impl Tracked for PktCount {
 
 /// The number of bytes, including headers, observed in a connection
 #[derive(Debug, serde::Serialize, Clone)]
-#[datatype("L4Terminated")]
+#[cfg_attr(not(feature = "skip_expand"), datatype("L4Terminated"))]
 pub struct ByteCount {
     pub byte_count: usize,
 }
@@ -124,7 +127,8 @@ impl Tracked for ByteCount {
     fn clear(&mut self) {}
 
     #[inline]
-    #[datatype_group("ByteCount,level=L4InPayload")]
+    #[cfg_attr(not(feature = "skip_expand"),
+        datatype_group("ByteCount,level=L4InPayload"))]
     fn update(&mut self, pdu: &L4Pdu) {
         self.byte_count += pdu.mbuf_ref().data_len();
     }
@@ -139,7 +143,7 @@ impl Tracked for ByteCount {
 
 /// Tracked data for packet inter-arrival times
 #[derive(Debug, Clone)]
-#[datatype]
+#[cfg_attr(not(feature = "skip_expand"), datatype)]
 pub struct InterArrivals {
     pkt_count_ctos: usize,
     pkt_count_stoc: usize,
@@ -176,7 +180,8 @@ impl Tracked for InterArrivals {
     }
 
     #[inline]
-    #[datatype_group("InterArrivals,level=L4InPayload")]
+    #[cfg_attr(not(feature = "skip_expand"),
+        datatype_group("InterArrivals,level=L4InPayload"))]
     fn update(&mut self, pdu: &L4Pdu) {
         let now = Instant::now();
         if pdu.dir {
@@ -246,7 +251,7 @@ use crate::connection::update_history;
 ///
 /// Each letter is recorded a maximum of once in either direction.
 #[derive(Default, Debug, serde::Serialize, Clone)]
-#[datatype]
+#[cfg_attr(not(feature = "skip_expand"), datatype)]
 pub struct ConnHistory {
     pub history: Vec<u8>,
 }
@@ -262,7 +267,7 @@ impl Tracked for ConnHistory {
     fn clear(&mut self) {}
 
     #[inline]
-    #[datatype_group("ConnHistory,level=L4InPayload")]
+    #[cfg_attr(not(feature = "skip_expand"), datatype_group("ConnHistory,level=L4InPayload"))]
     fn update(&mut self, pdu: &L4Pdu) {
         if pdu.dir {
             update_history(&mut self.history, pdu, 0x0);

@@ -121,7 +121,7 @@ impl fmt::Display for ConnRecord {
 /// Internal connection state is an associated type of a `pub` trait, and therefore must also be
 /// public. Documentation is hidden by default to avoid confusing users.
 #[derive(Debug)]
-#[datatype]
+#[cfg_attr(not(feature = "skip_expand"), datatype)]
 pub struct ConnRecord {
     /// The connection 5-tuple.
     pub five_tuple: FiveTuple,
@@ -236,7 +236,8 @@ impl Tracked for ConnRecord {
         self.history = Vec::with_capacity(0);
     }
 
-    #[datatype_group("ConnRecord,level=L4InPayload")]
+    #[cfg_attr(not(feature = "skip_expand"),
+        datatype_group("ConnRecord,level=L4InPayload"))]
     fn update(&mut self, pdu: &L4Pdu) {
         self.update_data(pdu);
     }
