@@ -1,87 +1,110 @@
-use super::parse::{ConfigRaw, SubscriptionRaw};
-use quote::ToTokens;
-use retina_core::filter::datatypes::Streaming;
-use std::sync::{
-    atomic::{AtomicUsize, Ordering},
-    Mutex,
-};
+use std::fs::File;
+use std::{fs::OpenOptions, path::PathBuf};
+use std::io::{BufRead, BufReader, Write};
+
+use crate::parse::*;
+use lazy_static::lazy_static;
+use std::sync::Mutex;
 
 lazy_static! {
-    pub(crate) static ref NUM_SUBSCRIPTIONS: AtomicUsize = AtomicUsize::new(0);
-    pub(crate) static ref CACHED_SUBSCRIPTIONS: Mutex<ConfigRaw> = Mutex::new(ConfigRaw {
-        subscriptions: vec![]
-    });
-    pub(crate) static ref STREAMING_SUBSCRIPTIONS: Mutex<Option<Streaming>> = Mutex::new(None);
+    pub(crate) static ref OUTFILE: Mutex<Option<PathBuf>> = Mutex::new(None);
+    pub(crate) static ref CACHED_DATA: Mutex<Vec<ParsedInput>> = Mutex::new(Vec::new());
 }
 
-pub(crate) fn parse_input(input: &syn::ItemFn) -> (Vec<String>, String) {
-    let datatypes = input
-        .sig
-        .inputs
-        .iter()
-        .filter_map(|arg| {
-            if let syn::FnArg::Typed(syn::PatType { pat: _, ty, .. }) = arg {
-                let mut param_type: String = (*ty).to_token_stream().to_string();
-                if !param_type.contains("&") {
-                    panic!(
-                        "Parameters to callbacks must be passed by reference ({})",
-                        param_type
-                    );
-                }
-                param_type = param_type.replace("&", "").trim().to_string();
-                return Some(param_type);
-            }
-            None
-        })
-        .collect();
+/// If code generation is spread across multiple crates, an intermediate
+/// representation in a file is required. This sets the outfile for a crate.
+pub(crate) fn set_crate_outfile(fp: String) {
 
-    let callback = input.sig.ident.to_token_stream().to_string();
-
-    (datatypes, callback)
-}
-
-pub(crate) fn add_subscription(callback: String, datatypes: Vec<String>, filter: String) {
-    let streaming = {
-        let mut lock = STREAMING_SUBSCRIPTIONS.lock().unwrap();
-        lock.take() // Move, replacing with None
-    };
-    if streaming.is_some() {
-        println!("Streaming callback: {}={:?}", callback, streaming.unwrap());
+    if OUTFILE.lock().unwrap().is_some() {
+        panic!("Tried to set outfile twice");
     }
-    CACHED_SUBSCRIPTIONS
-        .lock()
-        .unwrap()
-        .subscriptions
-        .push(SubscriptionRaw {
-            filter,
-            datatypes,
-            callback,
-            streaming,
-        });
+
+    // Env variable (e.g., $RETINA_HOME), $HOME, or unmodified
+    let fp = parse_filepath(&fp);
+
+    // Create or clear file
+    let path = PathBuf::from(fp.clone());
+    if !path.exists() {
+        OpenOptions::new()
+            .create(true)
+            .write(true)
+            .open(&path)
+            .expect(&format!("Failed to create file {}", fp));
+    } else if std::fs::metadata(&path).unwrap().len() != 0 {
+        println!("Warning - clearing existing contents of file {}", fp);
+    }
+
+    println!("GOT OUTPUT FILE NAME: {}", fp);
+
+    let mut file = OpenOptions::new()
+        .write(true)
+        .truncate(true)
+        .open(&path)
+        .expect(&format!("Failed to open file {}", fp));
+
+    let v = CACHED_DATA.lock().unwrap();
+    for elem in v.iter() {
+        let json = serde_json::to_string(&elem)
+            .expect("Failed to serialize input");
+        writeln!(file, "{}", json).expect("Failed to write to file");
+    }
+
+    *OUTFILE.lock().unwrap() = Some(path);
 }
 
-pub(crate) fn add_streaming(callback: String, key: &str, value: f32) {
-    let mut lock = CACHED_SUBSCRIPTIONS.lock().unwrap();
-    if let Some(entry) = lock.subscriptions.last_mut() {
-        if entry.callback == callback {
-            entry.streaming = Some(Streaming::from((key, value)));
-            println!("Streaming callback: {}={:?}", callback, entry.streaming);
-            return;
+/// Push a new parsed input from a macro to memory and file (if available)
+pub(crate) fn push_input(input: ParsedInput) {
+    let outfile = OUTFILE.lock().unwrap();
+    match outfile.as_ref() {
+        Some(fp) => {
+            let mut file = OpenOptions::new()
+                .write(true)
+                .append(true)
+                .open(&fp)
+                .expect("Failed to open file to append");
+            let json = serde_json::to_string(&input).unwrap();
+            writeln!(file, "{}", json).expect("Failed to append to file");
+        },
+        None => {
+            println!("Caching datatype in memory - no file yet");
         }
     }
-
-    *STREAMING_SUBSCRIPTIONS.lock().unwrap() = Some(Streaming::from((key, value)));
+    CACHED_DATA.lock().unwrap().push(input);
 }
 
-pub(crate) fn is_done() -> bool {
-    let present = CACHED_SUBSCRIPTIONS.lock().unwrap().subscriptions.len();
-    let expected = NUM_SUBSCRIPTIONS.load(Ordering::SeqCst);
-    if present > expected && expected > 0 {
-        panic!("Too many subscriptions present; expected: {}", expected);
+/// Read parsed data from input files (intermediate representation generated
+/// by some other crate, e.g., datatypes).
+pub(crate) fn set_input_files(fps: Vec<&str>) {
+    let mut cached = CACHED_DATA.lock().unwrap();
+    for fp in fps {
+        let fp = parse_filepath(&String::from(fp));
+        let file = File::open(fp.clone())
+            .expect(&format!("Cannot find input file: {}", fp));
+        let reader = BufReader::new(file);
+        for line in reader.lines() {
+            let line = line.unwrap();
+            if line.trim().is_empty() {
+                continue;
+            }
+            let inp: ParsedInput = serde_json::from_str(&line).unwrap();
+            cached.push(inp);
+        }
+        println!("Got input from {}", fp);
     }
-    present == expected
 }
 
-pub(crate) fn set_count(count: usize) {
-    NUM_SUBSCRIPTIONS.store(count, Ordering::SeqCst);
+fn parse_filepath(fp: &String) -> String {
+    if fp.starts_with("$") {
+        let mut dirs = fp.split("/").collect::<Vec<_>>();
+        let home = std::env::var(&dirs[0].replace("$", ""))
+            .expect(&format!("Cannot find env variable {}", dirs[0]));
+        dirs[0] = &home;
+        dirs.join("/")
+    } else if fp.starts_with("~") {
+        let home = std::env::var("HOME")
+            .expect(&format!("Cannot find home directory"));
+        fp.replace("~", &home)
+    } else {
+        fp.clone()
+    }
 }

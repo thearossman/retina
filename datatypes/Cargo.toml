@@ -17,3 +17,4 @@ retina-filtergen = { path = "../filtergen" }
 
 [features]
 skip_expand = [] # skip applying the datatype code generation macros
+default = []

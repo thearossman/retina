@@ -6,6 +6,7 @@ use retina_core::conntrack::conn::tcp_conn::reassembly::wrapping_lt;
 use retina_core::conntrack::conn_id::FiveTuple;
 use retina_core::conntrack::pdu::L4Pdu;
 use retina_core::protocols::packet::tcp::{ACK, FIN, RST, SYN};
+#[allow(dead_code)]
 use retina_filtergen::{datatype, datatype_group};
 use retina_core::subscription::Tracked;
 

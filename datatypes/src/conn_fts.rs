@@ -3,6 +3,7 @@
 
 use retina_core::{conntrack::StateTxData, subscription::Tracked};
 use retina_core::L4Pdu;
+#[allow(dead_code)]
 use retina_filtergen::{datatype, datatype_group};
 use serde::ser::{Serialize, SerializeSeq, SerializeStruct, Serializer};
 use std::time::{Duration, Instant};

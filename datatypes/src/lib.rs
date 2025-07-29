@@ -16,6 +16,7 @@
 use retina_core::{L4Pdu, Mbuf, protocols::Session};
 pub mod conn_fts;
 pub mod tls_handshake;
+use retina_filtergen::cache_file;
 pub use tls_handshake::TlsHandshake;
 pub mod static_type;
 pub use static_type::*;
@@ -38,11 +39,16 @@ pub use connection::ConnRecord;
 // pub use typedefs::*;
 // pub mod streaming;
 
+/// No-op function to invoke macro
+/// TODO can we do this more cleanly?
+#[cfg_attr(not(feature = "skip_expand"),
+    cache_file("$RETINA_HOME/datatypes/data.jsonl"))]
+fn _cache_file() {}
+
 /// Need to define traits in this crate to avoid
 /// "cannot define inherent `impl` for foreign type" and
 /// "only traits defined in the current crate can be implemented
 /// for types defined outside of the crate" errors.
-
 /// Convenience method to convert a `Session` into a datatype that
 /// can be subscribed to. Datatypes implementing this trait are
 /// automatically Level=L7EndHdrs.

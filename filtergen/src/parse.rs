@@ -16,6 +16,7 @@ pub(crate) enum FnReturn {
     None,
 }
 
+/// Types of constructors (possible return values)
 #[derive(Debug, Serialize, Deserialize)]
 pub(crate) enum Constructor {
     Sel,
@@ -93,7 +94,8 @@ pub(crate) struct DatatypeFnSpec {
     pub(crate) level: Vec<DataLevel>,
 }
 
-#[derive(Debug)]
+/// Valid inputs
+#[derive(Debug, Serialize, Deserialize)]
 pub(crate) enum ParsedInput {
     Callback(CallbackFnSpec),
     CallbackGroup(CallbackGroupSpec),
@@ -329,24 +331,6 @@ impl ParsedInput {
     }
 }
 
-/// So that we can parse an input TokenStream as an Option<String>
-pub(crate) struct StringOpt {
-    pub(crate) value: Option<String>,
-}
-impl Parse for StringOpt {
-    fn parse(input: ParseStream) -> syn::parse::Result<Self> {
-        if input.is_empty() {
-            return Ok(StringOpt { value: None });
-        }
-        if input.peek(LitStr) {
-            let s: LitStr = input.parse()?;
-            Ok(StringOpt { value: Some(s.value()) } )
-        } else {
-            Err(syn::Error::new(input.span(), "Expected LitStr in input"))
-        }
-    }
-}
-
 #[derive(Default, Clone)]
 pub(crate) struct InputKeys {
     first: Option<String>,
@@ -472,6 +456,26 @@ impl InputKeys {
     }
 }
 
+/// UTIL: So that we can parse an input TokenStream as an Option<String>
+/// in lib.rs (see parse_macro_input!(args as StringOpt))
+pub(crate) struct StringOpt {
+    pub(crate) value: Option<String>,
+}
+impl Parse for StringOpt {
+    fn parse(input: ParseStream) -> syn::parse::Result<Self> {
+        if input.is_empty() {
+            return Ok(StringOpt { value: None });
+        }
+        if input.peek(LitStr) {
+            let s: LitStr = input.parse()?;
+            Ok(StringOpt { value: Some(s.value()) } )
+        } else {
+            Err(syn::Error::new(input.span(), "Expected LitStr in input"))
+        }
+    }
+}
+
+/// Valid errors when parsing
 #[derive(Error, Debug)]
 pub enum ParserError {
     #[error("Invalid return value for {0}")]
