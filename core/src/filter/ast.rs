@@ -89,12 +89,14 @@ pub enum Predicate {
     },
     /// Opaque filter function provided by user
     Custom {
-        /// Filter name (function or struct if present)
+        /// Filter name (function or struct (group) if present)
         name: FuncIdent,
         /// DataLevel(s) at which the filter must receive streaming updates
         /// (e.g., "packets in the L4 payload") and/or phase transition
         /// updates (e.g., "parsed session").
-        levels: Vec<DataLevel>,
+        /// For a grouped filter (i.e., methods on a struct), each function
+        /// needs its own level.
+        levels: Vec<Vec<DataLevel>>,
         /// Predicate for `partial match` (Continue) or `matched` (Accept)
         matched: bool,
     },
@@ -150,6 +152,9 @@ impl Predicate {
 
     // Returns `true` if predicate contains a streaming level
     pub fn is_streaming(&self) -> bool {
+        if let Predicate::Custom { levels, .. } = self {
+            if levels.len() > 1 { return true; }
+        }
         self.levels()
             .iter()
             .any(|l| l.is_streaming())
@@ -178,6 +183,7 @@ impl Predicate {
         false
     }
 
+    // TODO figure out how this works with grouped custom filters?
     pub fn unknown(&self, layer: &DataLevel) -> bool {
         self.levels()
             .iter()
@@ -195,7 +201,9 @@ impl Predicate {
     // Inapplicable to static predicates and LayerState.
     pub fn levels(&self) -> Vec<DataLevel> {
         match self {
-            Predicate::Custom { levels, .. } => levels.clone(),
+            Predicate::Custom { levels, .. } => {
+                levels.into_iter().flatten().cloned().collect()
+            },
             Predicate::Callback { .. } => vec![],
             // can be checked anytime
             Predicate::LayerState { .. } => vec![DataLevel::L4FirstPacket],
@@ -217,7 +225,9 @@ impl Predicate {
     // Returns `true` if predicate can be pushed to a packet filter.
     // i.e., the lowest filter level needed to apply the predicate is a packet filter.
     pub fn on_packet(&self) -> bool {
-        !self.needs_conntrack()
+        !self.needs_conntrack() &&
+            !self.is_custom() &&
+            !self.is_state()
     }
 
     // Returns `true` if predicate *requires* raw packets
@@ -259,6 +269,8 @@ impl Predicate {
     }
 
     // `self` depends on (layer, state)
+    // I.e., `self` cannot be applied unless (layer) is in (state)
+    // For grouped filters, we base the dependency on _all_ predicates.
     pub(super) fn depends_on(&self, layer: SupportedLayer, state: LayerState) -> bool {
         match layer {
             SupportedLayer::L4 => false,

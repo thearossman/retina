@@ -79,10 +79,10 @@ impl DataActions {
                                    filter_layer: StateTransition,
                                    curr_state_pred: &Option<Predicate>) -> DataActions
     {
-        if let Predicate::Custom { name, levels, matched, .. } = pred {
+        if let Predicate::Custom { name, levels, matched, } = pred {
             assert!(!*matched);
             let spec = DataLevelSpec {
-                updates: levels.clone(),
+                updates: levels.into_iter().cloned().flatten().collect(),
                 name: name.clone().0,
             };
             let actions = spec.to_actions(filter_layer);

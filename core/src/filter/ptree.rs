@@ -739,7 +739,8 @@ impl PTree {
                 // Look for unary predicate (e.g., `ipv4`) and child with
                 // binary predicate of same protocol (e.g., `ipv4.addr = ...`)
                 let child = &mut node.children[0];
-                if child.extracts_protocol(filter_layer) {
+                if child.extracts_protocol(filter_layer) ||
+                    child.pred.is_state() {
                     break;
                 }
                 node.actions.merge(&child.actions);
@@ -787,6 +788,7 @@ impl PTree {
                         || !child.deliver.is_empty()
                         || !child.pred.is_prev_layer(filter_layer)
                         || child.extracts_protocol(filter_layer)
+                        || child.pred.is_state()
                 });
             let mut new_children = vec![];
             for child in &could_drop {
@@ -930,7 +932,7 @@ mod tests {
     lazy_static! {
         static ref CUSTOM_FILTERS: Vec<Predicate> = vec![Predicate::Custom {
             name: filterfunc!("my_filter"),
-            levels: vec![DataLevel::L4InPayload(false)],
+            levels: vec![vec![DataLevel::L4InPayload(false)]],
             matched: true,
         }];
         static ref SESS_RECORD_DATATYPE: DataLevelSpec = DataLevelSpec {
@@ -1047,6 +1049,31 @@ mod tests {
         // Under "my_filter (matched)": +L7=Headers (A), +L7>=Payload, +tls.sni (D)
         // Under "my_filter (matching)": +L7>=Headers, +tls, +L7=Headers (A)
         assert!(tree.size == 13);
+    }
+
+    lazy_static! {
+        static ref CUSTOM_FILTERS_GROUPED: Vec<Predicate> = vec![Predicate::Custom {
+            name: filterfunc!("GroupedFil"),
+            levels: vec![vec![DataLevel::L4InPayload(false)], vec![DataLevel::L7EndHdrs]],
+            matched: true,
+        }];
+    }
+
+    #[test]
+    fn test_ptree_grouped() {
+        let filter = Filter::new("ipv4 and tls and GroupedFil",
+                                 &CUSTOM_FILTERS_GROUPED).unwrap();
+        let patterns = filter.get_patterns_flat();
+        let mut tree = PTree::new_empty(DataLevel::L4InPayload(false));
+        tree.add_subscription(&patterns, &FIVETUPLE_SUB, &FIVETUPLE_SUB[0].as_str);
+        println!("{}", tree);
+        tree.collapse();
+        println!("{}", tree);
+
+        // let mut tree = PTree::new_empty(DataLevel::L7EndHdrs);
+        // tree.add_subscription(&patterns, &FIVETUPLE_SUB, &FIVETUPLE_SUB[0].as_str);
+        // tree.collapse();
+        // println!("{}", tree);
     }
 
 }

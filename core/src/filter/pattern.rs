@@ -485,7 +485,7 @@ mod tests {
     lazy_static! {
         static ref CUSTOM_FILTERS: Vec<Predicate> = vec![Predicate::Custom {
             name: filterfunc!("my_filter"),
-            levels: vec![DataLevel::L4InPayload(false)],
+            levels: vec![vec![DataLevel::L4InPayload(false)]],
             matched: true,
         }];
     }
