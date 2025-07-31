@@ -1,8 +1,28 @@
-use retina_core::{config::default_config, Runtime};
+use retina_core::{config::default_config, subscription::FilterResult, L4Pdu, Runtime};
 use retina_datatypes::{ConnRecord, TlsHandshake};
-use retina_filtergen::{callback, retina_main, input_files};
+use retina_filtergen::{callback, filter, filter_group, input_files, retina_main};
 
-#[callback("tls")]
+#[filter]
+struct ConnLen {
+    len: usize,
+}
+impl ConnLen {
+    fn new() -> Self {
+        Self {
+            len: 0,
+        }
+    }
+    #[filter_group("ConnLen,level=L4InPayload")]
+    fn update(&mut self, _: &L4Pdu) -> FilterResult {
+        self.len += 1;
+        if self.len > 10 {
+            return FilterResult::Accept;
+        }
+        FilterResult::Continue
+    }
+}
+
+#[callback("tls and ConnLen")]
 fn tls_cb(tls: &TlsHandshake, conn_record: &ConnRecord) {
     println!("Tls SNI: {}, conn. metrics: {:?}", tls.sni(), conn_record);
 }

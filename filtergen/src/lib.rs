@@ -1,11 +1,13 @@
 #![allow(clippy::needless_doctest_main)]
 
 use proc_macro::TokenStream;
+use subscription::SubscriptionDecoder;
 use syn::{parse_macro_input, Item};
 
 mod parse;
 use parse::*;
 mod cache;
+mod subscription;
 
 #[proc_macro_attribute]
 pub fn datatype(args: TokenStream, input: TokenStream) -> TokenStream {
@@ -112,5 +114,10 @@ pub fn input_files(args: TokenStream, input: TokenStream) -> TokenStream {
 pub fn retina_main(_args: TokenStream, input: TokenStream) -> TokenStream {
     // TODO - backup option that lets you specify num expected invocations?
     println!("Done with macros - beginning code generation");
+    let decoder =
+    {
+        let mut inputs = cache::CACHED_DATA.lock().unwrap();
+        SubscriptionDecoder::new(inputs.as_mut())
+    };
     input
 }

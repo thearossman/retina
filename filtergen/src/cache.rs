@@ -66,7 +66,7 @@ pub(crate) fn push_input(input: ParsedInput) {
             writeln!(file, "{}", json).expect("Failed to append to file");
         },
         None => {
-            println!("Caching datatype in memory - no file yet");
+            println!("Caching input in memory");
         }
     }
     CACHED_DATA.lock().unwrap().push(input);
