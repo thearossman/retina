@@ -89,8 +89,8 @@ pub enum Predicate {
     },
     /// Opaque filter function provided by user
     Custom {
-        /// Function name
-        name: FuncName,
+        /// Filter name (function or struct if present)
+        name: FuncIdent,
         /// DataLevel(s) at which the filter must receive streaming updates
         /// (e.g., "packets in the L4 payload") and/or phase transition
         /// updates (e.g., "parsed session").
@@ -101,7 +101,8 @@ pub enum Predicate {
     /// Streaming callback, which may need to be checked for "unsubscribe"
     /// to determine Actions. This will only be used in filter sub-trees.
     Callback {
-        name: FuncName,
+        /// Callback name (function or struct if present)
+        name: FuncIdent,
     },
     /// A State that must be checked for, e.g., "if L7 is in payload".
     /// This may be needed for Layers that cannot be ordered to determine
@@ -124,7 +125,7 @@ impl Predicate {
     }
 
     // Returns the name of the custom filter function
-    pub fn get_name(&self) -> &FuncName {
+    pub fn get_name(&self) -> &FuncIdent {
         match self {
             Predicate::Custom { name, .. } => name,
             Predicate::Callback { name, .. } => name,
@@ -1039,15 +1040,15 @@ impl fmt::Display for FieldName {
 /// Name of a custom filter function defined by a user
 /// By convention, this should be snake case
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
-pub struct FuncName(pub String);
+pub struct FuncIdent(pub String);
 
-impl FuncName {
+impl FuncIdent {
     pub fn name(&self) -> &str {
         self.0.as_str()
     }
 }
 
-impl fmt::Display for FuncName {
+impl fmt::Display for FuncIdent {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> Result<(), fmt::Error> {
         write!(f, "{}", self.0)
     }

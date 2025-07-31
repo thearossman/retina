@@ -1,5 +1,5 @@
 use super::ast::*;
-use super::subscription::DatatypeSpec;
+use super::subscription::DataLevelSpec;
 
 use std::cmp::Ordering;
 use std::collections::HashSet;
@@ -253,11 +253,11 @@ impl FlatPattern {
 
     // Get datatypes from the pattern in order to build up `actions`
     // Note: this skips filter predicates that have already matched
-    pub(super) fn get_datatypes(&self) -> Vec<DatatypeSpec> {
+    pub(super) fn get_datatypes(&self) -> Vec<DataLevelSpec> {
         self
             .predicates
             .iter()
-            .filter_map(|p| DatatypeSpec::from_pred(p))
+            .filter_map(|p| DataLevelSpec::from_pred(p))
             .collect()
     }
 

@@ -852,14 +852,14 @@ mod tests {
     use crate::{
         conntrack::Actions,
         filter::Filter,
-        filter::subscription::DatatypeSpec
+        filter::subscription::DataLevelSpec
     };
 
     use super::*;
 
     lazy_static! {
 
-        static ref TLS_DATATYPE: DatatypeSpec = DatatypeSpec {
+        static ref TLS_DATATYPE: DataLevelSpec = DataLevelSpec {
             updates: vec![DataLevel::L7EndHdrs],
             name: "TlsHandshake".into(),
         };
@@ -933,7 +933,7 @@ mod tests {
             levels: vec![DataLevel::L4InPayload(false)],
             matched: true,
         }];
-        static ref SESS_RECORD_DATATYPE: DatatypeSpec = DatatypeSpec {
+        static ref SESS_RECORD_DATATYPE: DataLevelSpec = DataLevelSpec {
             updates: vec![DataLevel::L4InPayload(false), DataLevel::L7EndHdrs],
             name: "ConnAndSession".into(),
         };
@@ -981,7 +981,7 @@ mod tests {
     }
 
     lazy_static! {
-        static ref FIVETUPLE_DATATYPE: DatatypeSpec = DatatypeSpec {
+        static ref FIVETUPLE_DATATYPE: DataLevelSpec = DataLevelSpec {
             updates: vec![DataLevel::L4FirstPacket],
             name: "FiveTuple".into(),
         };

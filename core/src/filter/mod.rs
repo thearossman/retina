@@ -35,7 +35,7 @@ use crate::subscription::Trackable;
 use std::fmt;
 
 use anyhow::{bail, Result};
-use ast::FuncName;
+use ast::FuncIdent;
 use thiserror::Error;
 
 // Filter functions
@@ -231,7 +231,7 @@ pub enum FilterError {
     },
 
     #[error("Invalid Custom Filter: {0}")]
-    InvalidCustomFilter(FuncName),
+    InvalidCustomFilter(FuncIdent),
 }
 
 // Nice-to-have: tests for filter string parsing

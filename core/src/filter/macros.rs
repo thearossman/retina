@@ -27,7 +27,7 @@ macro_rules! field {
 #[macro_export]
 macro_rules! filterfunc {
     ( $x:expr ) => {
-        $crate::filter::ast::FuncName($x.to_owned())
+        $crate::filter::ast::FuncIdent($x.to_owned())
     };
 }
 
@@ -35,6 +35,6 @@ macro_rules! filterfunc {
 #[macro_export]
 macro_rules! callbackfunc {
     ( $x:expr ) => {
-        $crate::filter::ast::FuncName($x.to_owned())
+        $crate::filter::ast::FuncIdent($x.to_owned())
     };
 }

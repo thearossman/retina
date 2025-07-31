@@ -79,9 +79,9 @@ impl DataActions {
                                    filter_layer: StateTransition,
                                    curr_state_pred: &Option<Predicate>) -> DataActions
     {
-        if let Predicate::Custom { name, levels, matched } = pred {
+        if let Predicate::Custom { name, levels, matched, .. } = pred {
             assert!(!*matched);
-            let spec = DatatypeSpec {
+            let spec = DataLevelSpec {
                 updates: levels.clone(),
                 name: name.clone().0,
             };
@@ -206,7 +206,7 @@ impl NodeActions {
     }
 
     /// Update actions with an additional datatype.
-    pub(crate) fn add_datatype(&mut self, spec: &DatatypeSpec) {
+    pub(crate) fn add_datatype(&mut self, spec: &DataLevelSpec) {
         assert!(
             !self.end_datatypes,
             "Cannot add new datatypes after adding filter predicates."
@@ -269,7 +269,7 @@ impl NodeActions {
 /// or custom filter predicate.
 /// Might also be used to represent a stateful custom filter predicate.
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub struct DatatypeSpec {
+pub struct DataLevelSpec {
     /// Updates: streaming updates and state transitions requested.
     /// This should include the `level` above.
     pub updates: Vec<DataLevel>,
@@ -277,7 +277,7 @@ pub struct DatatypeSpec {
     pub name: String,
 }
 
-impl DatatypeSpec {
+impl DataLevelSpec {
     /// From a filter predicate
     pub(crate) fn from_pred(pred: &Predicate) -> Option<Self> {
         // Predicates that have already matched don't need add'l actions
@@ -472,7 +472,7 @@ pub struct CallbackSpec {
     /// If the callback explicitly specifies when to be invoked
     pub stream: Option<DataLevel>,
     /// Datatype inputs to the callback
-    pub datatypes: Vec<DatatypeSpec>,
+    pub datatypes: Vec<DataLevelSpec>,
     /// This callback cannot be optimized out.
     /// Typically true if ``FilterStr`` (i.e., information
     /// about the specific filter matched) is a parameter.
@@ -497,12 +497,12 @@ impl Hash for CallbackSpec {
 }
 
 impl CallbackSpec {
-    pub(super) fn get_datatypes(&self) -> Vec<DatatypeSpec> {
+    pub(super) fn get_datatypes(&self) -> Vec<DataLevelSpec> {
         let mut datatypes: Vec<_> = self.datatypes.iter().cloned().collect();
         if let Some(stream) = self.stream {
             // Requires streaming `updates` or the level cannot be
             // inferred from the datatype alone
-            datatypes.push(DatatypeSpec {
+            datatypes.push(DataLevelSpec {
                 updates: vec![stream],
                 name: self.as_str.clone(),
             });
@@ -529,7 +529,7 @@ pub(crate) struct SubscriptionLevel {
 
 impl SubscriptionLevel {
     pub(crate) fn new(
-        data: &Vec<DatatypeSpec>,
+        data: &Vec<DataLevelSpec>,
         preds: &FlatPattern,
         cb: Option<DataLevel>,
     ) -> Self {
@@ -587,7 +587,7 @@ impl SubscriptionLevel {
     }
 
     /// Add a datatype requested in a callback
-    pub(crate) fn add_datatype(&mut self, data: &DatatypeSpec) {
+    pub(crate) fn add_datatype(&mut self, data: &DataLevelSpec) {
         for d in &data.updates {
             self.datatypes.insert(*d);
         }
@@ -608,24 +608,24 @@ mod tests {
 
     lazy_static::lazy_static!(
         // L7 headers, e.g., TLS handshake, HTTP headers, DNS txn
-        static ref l7_header: DatatypeSpec = DatatypeSpec {
+        static ref l7_header: DataLevelSpec = DataLevelSpec {
             updates: vec![DataLevel::L7EndHdrs],
             name: "l7_header".into(),
         };
         // L7 headers with a customized fingerprint that requires
         // analyzing payload metadata.
-        static ref l7_fingerprint: DatatypeSpec = DatatypeSpec {
+        static ref l7_fingerprint: DataLevelSpec = DataLevelSpec {
             updates: vec![DataLevel::L4InPayload(false), DataLevel::L7EndHdrs],
             name: "l7_fingerprint".into(),
         };
         // Basic connection metadata, delivered at end of connection
-        static ref conn_data: DatatypeSpec = DatatypeSpec {
+        static ref conn_data: DataLevelSpec = DataLevelSpec {
             updates: vec![DataLevel::L4InPayload(false), DataLevel::L4Terminated],
             name: "conn_data".into(),
         };
         // Basic connection metadata, delivered in streaming fashion.
         // Also requests update when handshake completes.
-        static ref conn_streamdata: DatatypeSpec = DatatypeSpec {
+        static ref conn_streamdata: DataLevelSpec = DataLevelSpec {
             updates: vec![DataLevel::L4InPayload(false), DataLevel::L4EndHshk],
             name: "conn_streamdata".into(),
         };
