@@ -281,8 +281,7 @@ impl DataLevelSpec {
     /// From a filter predicate
     pub(crate) fn from_pred(pred: &Predicate) -> Option<Self> {
         // Predicates that have already matched don't need add'l actions
-        // Predicates that are matching are handled separately
-        if pred.is_custom() {
+        if pred.is_custom() && !pred.is_matching() {
             return None;
         }
         Some(Self {

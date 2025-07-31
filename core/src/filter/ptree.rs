@@ -971,7 +971,7 @@ mod tests {
         // Done with TLS filter and with parsing TLS handshake
         let mut tree = PTree::new_empty(DataLevel::L7EndHdrs);
         tree.add_subscription(&patterns, &STREAMING_SUB, &STREAMING_SUB[0].as_str);
-        println!("{}", tree);
+        // println!("{}", tree);
         // Note - splits out my_filter (matched) and (matching)
         // Adds node(s) to re-check the CB
         assert!(tree.size == 15);
@@ -1066,9 +1066,8 @@ mod tests {
         let patterns = filter.get_patterns_flat();
         let mut tree = PTree::new_empty(DataLevel::L4InPayload(false));
         tree.add_subscription(&patterns, &FIVETUPLE_SUB, &FIVETUPLE_SUB[0].as_str);
-        println!("{}", tree);
+        // println!("{}", tree);
         tree.collapse();
-        println!("{}", tree);
 
         // let mut tree = PTree::new_empty(DataLevel::L7EndHdrs);
         // tree.add_subscription(&patterns, &FIVETUPLE_SUB, &FIVETUPLE_SUB[0].as_str);
