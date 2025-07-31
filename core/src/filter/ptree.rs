@@ -532,6 +532,7 @@ impl PTree {
 
             // Maintain streaming filter if still `matching`
             // TODO avoid additional lookups
+            // TODO may not need this
             if node.pred.is_custom() && node.pred.is_matching() {
                 node.actions.merge(
                     &DataActions::from_stream_pred(
@@ -1066,8 +1067,8 @@ mod tests {
         let patterns = filter.get_patterns_flat();
         let mut tree = PTree::new_empty(DataLevel::L4InPayload(false));
         tree.add_subscription(&patterns, &FIVETUPLE_SUB, &FIVETUPLE_SUB[0].as_str);
-        // println!("{}", tree);
         tree.collapse();
+        println!("{}", tree);
 
         // let mut tree = PTree::new_empty(DataLevel::L7EndHdrs);
         // tree.add_subscription(&patterns, &FIVETUPLE_SUB, &FIVETUPLE_SUB[0].as_str);

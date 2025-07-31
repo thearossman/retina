@@ -560,14 +560,16 @@ impl SubscriptionLevel {
     /// That is, is this subscription guaranteed to have terminated at a level
     /// that is strictly less than (before) the current level?
     pub(crate) fn can_skip(&self, curr: &StateTransition) -> bool {
-        // Streaming callback, if applicable, is strictly less than `curr`
-        (self.callback.is_none() ||
-         curr.compare(&self.callback.unwrap()) == StateTxOrd::Greater) &&
+        let cb_done = match self.callback {
+            Some(cb) => curr.compare(&cb) == StateTxOrd::Greater,
+            None => false,
+        };
         // All datatype and filter predicate levels are strictly less than `curr`
-        self.datatypes
-            .iter()
-            .chain(self.filter_preds.iter())
-            .all(|l| curr.compare(l) == StateTxOrd::Greater)
+        cb_done &&
+            self.datatypes
+                .iter()
+                .chain(self.filter_preds.iter())
+                .all(|l| curr.compare(l) == StateTxOrd::Greater)
     }
 
     /// -- utilities for iteratively building up a spec --
