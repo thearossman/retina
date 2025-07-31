@@ -284,10 +284,28 @@ impl Predicate {
                         false
                     },
                     LayerState::Headers => {
+                        if let Predicate::Custom { levels, .. } = self {
+                            return levels
+                                .iter()
+                                .all(|fnlevel|
+                                    fnlevel
+                                        .iter()
+                                        .any(|l| l.layer_idx().is_some()));
+                        }
                         // Requires L7 protocol
                         levels.iter().any(|l| l.layer_idx().is_some())
                     },
                     LayerState::Payload => {
+                        if let Predicate::Custom { levels, .. } = self {
+                            return levels
+                                .iter()
+                                .all(|fnlevel|
+                                    fnlevel
+                                        .iter()
+                                        .any(|l|
+                                            *l == DataLevel::L7EndHdrs || *l == DataLevel::L7InPayload
+                                        ));
+                        }
                         // Requires payload or parsed session
                         levels.iter().any(|l|
                             *l == DataLevel::L7EndHdrs || *l == DataLevel::L7InPayload
@@ -314,10 +332,36 @@ impl Predicate {
             SupportedLayer::L7 => {
                 match state {
                     LayerState::Discovery => {
+                        if let Predicate::Custom { levels, .. } = self {
+                            // Grouped filters: "okay to apply" if any of its predicates can be applied
+                            if levels.len() > 1 {
+                                return levels
+                                    .iter()
+                                    // Any filter function
+                                    .any(|fnlevel| {
+                                        fnlevel
+                                            .iter()
+                                            // ...can be invoked
+                                            .all(|l| l.layer_idx().is_none())
+                                    });
+                            }
+                        }
                         // Does not require a session-layer state
                         levels.iter().all(|l| l.layer_idx().is_none())
                     },
                     LayerState::Headers => {
+                        if let Predicate::Custom { levels, .. } = self {
+                            // Grouped filters: "okay to apply" if any of its predicates can be applied
+                            if levels.len() > 1 {
+                                return levels
+                                    .iter()
+                                    .any(|fnlevel| {
+                                        fnlevel
+                                            .iter()
+                                            .all(|l| l.layer_idx().is_none() || *l == DataLevel::L7OnDisc)
+                                    });
+                            }
+                        }
                         // Does not require a session-layer state or only
                         // requires L7 protocol discovery
                         levels.iter().all(|l|
@@ -341,6 +385,18 @@ impl Predicate {
 
     // Returns true if the predicate `self` cannot be checked at `curr`
     pub(super) fn is_next_layer(&self, curr: StateTransition) -> bool {
+        if let Predicate::Custom { levels, .. } = self {
+            // Custom predicates may be grouped, and they should be checked at
+            // `curr` if ANY of their contained functions can be applied.
+            if levels.len() > 1 {
+                return levels.iter()
+                    .all(|fnlevel| {
+                        fnlevel.
+                            iter()
+                            .all(|l| matches!(l.compare(&curr), StateTxOrd::Greater))
+                    });
+            }
+        }
         !self.levels().is_empty() &&
             self.levels()
                 .iter()

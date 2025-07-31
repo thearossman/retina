@@ -17,6 +17,8 @@ use crate::{conntrack::StateTransition, filter::FilterError};
 
 use anyhow::{bail, Result};
 
+// TODO predicate ordering in patterns, in general, isn't optimal
+
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord)]
 pub struct FlatPattern {
     pub predicates: Vec<Predicate>,

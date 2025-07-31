@@ -530,9 +530,10 @@ impl PTree {
             node = node.get_child(predicate);
             node.children.extend(children);
 
-            // Maintain streaming filter if still `matching`
+            // Maintain streaming filter if still `matching` regardless of
+            // later predicate state
+            // TODO do we need this?
             // TODO avoid additional lookups
-            // TODO may not need this
             if node.pred.is_custom() && node.pred.is_matching() {
                 node.actions.merge(
                     &DataActions::from_stream_pred(
@@ -1068,7 +1069,19 @@ mod tests {
         let mut tree = PTree::new_empty(DataLevel::L4InPayload(false));
         tree.add_subscription(&patterns, &FIVETUPLE_SUB, &FIVETUPLE_SUB[0].as_str);
         tree.collapse();
-        println!("{}", tree);
+        assert!(tree.size == 10,
+                "Action size: {}", tree.size);
+        // GroupedFil(matched), GroupedFil(matching)
+        assert!(tree.root.children.len() == 2,
+                "Actual len: {}", tree.root.children.len());
+        let node = tree.get_subtree(5).unwrap(); // "Matching" GroupedFilter
+        assert!(node.pred.is_custom(),
+                "Actual pred: {}", node.pred);
+        assert!(node.actions.transport.needs_update());
+        assert!(node.children.len() == 2 &&
+            node.children[0].pred.is_state()); // L7=Disc, L7>=Headers
+        let node = tree.get_subtree(2).unwrap(); // L7=Disc
+        assert!(node.actions.layers[0].needs_parse());
 
         // let mut tree = PTree::new_empty(DataLevel::L7EndHdrs);
         // tree.add_subscription(&patterns, &FIVETUPLE_SUB, &FIVETUPLE_SUB[0].as_str);
