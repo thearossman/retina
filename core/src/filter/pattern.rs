@@ -205,7 +205,15 @@ impl FlatPattern {
         for pred in &self.predicates {
             // For each predicate, either add 1x to each partial or split
             // patterns by custom streaming/non-custom streaming
-            if pred.is_custom() && pred.is_streaming() {
+            // This applies to custom filters that either:
+            // - Have multiple separate functions
+            // - Or have any streaming functions
+            if pred.is_custom() && (pred.is_streaming() ||
+                if let Predicate::Custom { levels, .. } = pred {
+                    levels.len() > 1 // TODO could do pairwise inequality here?
+                } else {
+                    unreachable!()
+            }) {
                 let mut new_pats = vec![];
                 for partial in &all_patterns {
                     // Original pattern with matched=true

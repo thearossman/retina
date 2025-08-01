@@ -328,9 +328,9 @@ pub struct PTree {
     collapsed: bool,
 
     // All actions, callbacks, tracked datatypes across all nodes in the tree
-    actions: NodeActions,
-    deliver: HashSet<CallbackSpec>,
-    datatypes: HashSet<String>,
+    pub actions: NodeActions,
+    pub deliver: HashSet<CallbackSpec>,
+    pub datatypes: HashSet<String>,
 }
 
 impl PTree {
