@@ -1085,8 +1085,8 @@ mod tests {
         let node = tree.get_subtree(2).unwrap(); // L7=Disc
         assert!(node.actions.layers[0].needs_parse());
 
-        // let mut tree = PTree::new_empty(DataLevel::L7EndHdrs);
-        // tree.add_subscription(&patterns, &FIVETUPLE_SUB, &FIVETUPLE_SUB[0].as_str);
+        // let mut tree = PTree::new_empty(DataLevel::L7OnDisc);
+        // tree.add_subscription(&patterns, &STREAMING_SUB, &STREAMING_SUB[0].as_str);
         // tree.collapse();
         // println!("{}", tree);
     }

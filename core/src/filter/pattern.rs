@@ -156,6 +156,7 @@ impl FlatPattern {
     // To populate needed data, we need to correlate these names with the information parsed
     // at compile-time from the defined custom filters.
     pub(super) fn handle_custom_predicates(&mut self, valid_preds: &Vec<Predicate>) -> Result<()> {
+        // "Empty" custom predicate with just the name populated
         for p_empty in &mut self.predicates {
             if p_empty.is_custom() {
                 let p = valid_preds
@@ -163,6 +164,7 @@ impl FlatPattern {
                     .find(|p| p.get_name() == p_empty.get_name())
                     .ok_or(FilterError::InvalidCustomFilter(p_empty.get_name().clone()))?;
                 *p_empty = p.clone();
+                p_empty.set_matched(true); // Set default value
             }
         }
         // empty unary "none" predicates may have been added during parsing

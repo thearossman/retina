@@ -197,6 +197,12 @@ impl Predicate {
         panic!("Can't check for filter ``matching`` on {:?}", self);
     }
 
+    pub fn set_matched(&mut self, val: bool) {
+        if let Predicate::Custom { matched, .. } = self {
+            *matched = val;
+        }
+    }
+
     // Returns a reference to the `levels` vector for a custom filter.
     // Inapplicable to static predicates and LayerState.
     pub fn levels(&self) -> Vec<DataLevel> {

@@ -8,6 +8,7 @@ use std::collections::HashMap;
 pub(crate) struct SubscriptionSpec {
     pub(crate) callbacks: Vec<CallbackSpec>,
     pub(crate) filter: String,
+    pub(crate) as_str: String,
 }
 
 /// Responsible for transforming the raw data in `parse.rs` into the formats
@@ -146,7 +147,7 @@ impl SubscriptionDecoder {
                 Predicate::Custom {
                     name: FuncIdent(name.clone()),
                     levels,
-                    matched: false
+                    matched: true
                 }
             );
         }
@@ -199,6 +200,7 @@ impl SubscriptionDecoder {
                 SubscriptionSpec {
                     callbacks,
                     filter,
+                    as_str: cb_name.clone()
                 }
             );
         }
@@ -255,6 +257,7 @@ impl SubscriptionDecoder {
 #[cfg(test)]
 mod tests {
     use retina_core::conntrack::DataLevel;
+    use retina_core::filter::{ptree::*, Filter};
 
     use super::*;
 
@@ -361,5 +364,13 @@ mod tests {
                 datatypes.iter().any(|dt| dt.updates == vec![DataLevel::L4InPayload(false)]) &&
                 datatypes.iter().any(|dt| dt.updates == vec![DataLevel::L7EndHdrs])
         });
+
+        let mut ptree = PTree::new_empty(DataLevel::L7OnDisc);
+        for s in decoder.subscriptions {
+            let filter = Filter::new(&s.filter, &decoder.custom_preds).unwrap();
+            let patterns = filter.get_patterns_flat();
+            ptree.add_subscription(&patterns, &s.callbacks, &s.as_str);
+        }
+        println!("{}", ptree);
     }
 }
