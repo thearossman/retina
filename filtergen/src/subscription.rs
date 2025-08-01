@@ -338,7 +338,7 @@ mod tests {
             ),
             ParsedInput::Callback(
                 CallbackFnSpec {
-                    filter: "tls and MyGroup".into(),
+                    filter: "ipv4 and tls and MyGroup".into(),
                     level: vec![DataLevel::L4Terminated],
                     func: FnSpec {
                         name: "my_cb".into(),
@@ -365,12 +365,36 @@ mod tests {
                 datatypes.iter().any(|dt| dt.updates == vec![DataLevel::L7EndHdrs])
         });
 
+        // Build up some basic trees
         let mut ptree = PTree::new_empty(DataLevel::L7OnDisc);
-        for s in decoder.subscriptions {
+        for s in &decoder.subscriptions {
             let filter = Filter::new(&s.filter, &decoder.custom_preds).unwrap();
             let patterns = filter.get_patterns_flat();
             ptree.add_subscription(&patterns, &s.callbacks, &s.as_str);
         }
-        println!("{}", ptree);
+        ptree.collapse();
+        assert!(ptree.size == 4);  // eth -> tls -> [MyGroup matched, matching]
+        let node1 = ptree.get_subtree(2).unwrap();
+        let node2 = ptree.get_subtree(3).unwrap();
+        assert!(node1.pred.is_matching() || node2.pred.is_matching());
+        assert!(!node1.pred.is_matching() || !node2.pred.is_matching());
+
+        let mut ptree = PTree::new_empty(DataLevel::L7EndHdrs);
+        for s in &decoder.subscriptions {
+            let filter = Filter::new(&s.filter, &decoder.custom_preds).unwrap();
+            let patterns = filter.get_patterns_flat();
+            ptree.add_subscription(&patterns, &s.callbacks, &s.as_str);
+        }
+        ptree.collapse();
+        assert!(!ptree.deliver.is_empty());
+
+        let mut ptree = PTree::new_empty(DataLevel::L4InPayload(false));
+        for s in &decoder.subscriptions {
+            let filter = Filter::new(&s.filter, &decoder.custom_preds).unwrap();
+            let patterns = filter.get_patterns_flat();
+            ptree.add_subscription(&patterns, &s.callbacks, &s.as_str);
+        }
+        ptree.collapse();
+        assert!(!ptree.deliver.is_empty());
     }
 }
