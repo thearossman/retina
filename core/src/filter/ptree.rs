@@ -398,10 +398,13 @@ impl PTree {
         // If a subscription previously had the opportunity to unsubscribe,
         // we need to check if it did
         if callbacks.iter().any(|c| {
-            match c.stream {
-                Some(l) => matches!(l.compare(&self.filter_layer),
+            match c.expl_level {
+                Some(l) => {
+                    l.is_streaming() &&
+                    matches!(l.compare(&self.filter_layer),
                                                StateTxOrd::Unknown |
-                                               StateTxOrd::Less),
+                                               StateTxOrd::Less)
+                },
                 None => false,
             }
         })
@@ -431,8 +434,10 @@ impl PTree {
 
         // Allow callback to `unsubscribe`
         for callback in callbacks {
-            if let Some(cb_level) = &callback.stream {
-                node_actions.push_cb(*cb_level);
+            if let Some(cb_level) = &callback.expl_level {
+                if cb_level.is_streaming() {
+                    node_actions.push_cb(*cb_level);
+                }
             }
         }
 
@@ -466,7 +471,7 @@ impl PTree {
           (!full_pattern_added || node_actions.actions.is_empty())
         {
             for callback in callbacks {
-                let level = SubscriptionLevel::new(&callback.datatypes, pattern, callback.stream);
+                let level = SubscriptionLevel::new(&callback.datatypes, pattern, callback.expl_level);
                 if level.can_deliver(&self.filter_layer) {
                     self.add_pattern_int(pattern, &DataActions::new(), callback, contains_nonterminal);
                 }
@@ -482,7 +487,7 @@ impl PTree {
         // `full_pattern` was truncated
         truncated: bool,
     ) {
-        let level = SubscriptionLevel::new(&callback.datatypes, full_pattern, callback.stream);
+        let level = SubscriptionLevel::new(&callback.datatypes, full_pattern, callback.expl_level);
         if level.can_skip(&self.filter_layer) {
             return;
         }
@@ -870,12 +875,11 @@ mod tests {
 
         // fn basic_tls(tls: &TlsHandshake) { ... }
         static ref TLS_SUB: Vec<CallbackSpec> = vec![CallbackSpec {
-            stream: None,
+            expl_level: None,
             datatypes: vec![TLS_DATATYPE.clone()],
             must_deliver: false,
             as_str: "basic_tls".into(),
-            id: 0,
-            subscription_id: 0,
+            subscription_id: String::new(),
             tracked_data: vec![],
         }];
     }
@@ -942,12 +946,11 @@ mod tests {
             name: "ConnAndSession".into(),
         };
         static ref STREAMING_SUB: Vec<CallbackSpec> = vec![CallbackSpec {
-            stream: Some(DataLevel::L4InPayload(false)),
+            expl_level: Some(DataLevel::L4InPayload(false)),
             datatypes: vec![TLS_DATATYPE.clone(), SESS_RECORD_DATATYPE.clone()],
             must_deliver: false,
             as_str: "basic_streaming".into(),
-            id: 0,
-            subscription_id: 0,
+            subscription_id: String::new(),
             tracked_data: vec![],
         }];
     }
@@ -991,12 +994,11 @@ mod tests {
         };
 
         static ref FIVETUPLE_SUB: Vec<CallbackSpec> = vec![CallbackSpec {
-            stream: None,
+            expl_level: None,
             datatypes: vec![FIVETUPLE_DATATYPE.clone()],
             must_deliver: false,
             as_str: "basic_static".into(),
-            id: 0,
-            subscription_id: 0,
+            subscription_id: String::new(),
             tracked_data: vec![],
         }];
     }

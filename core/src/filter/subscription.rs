@@ -469,7 +469,7 @@ impl DataLevelSpec {
 #[derive(Debug, Clone, Eq, PartialEq)]
 pub struct CallbackSpec {
     /// If the callback explicitly specifies when to be invoked
-    pub stream: Option<DataLevel>,
+    pub expl_level: Option<DataLevel>,
     /// Datatype inputs to the callback
     pub datatypes: Vec<DataLevelSpec>,
     /// This callback cannot be optimized out.
@@ -478,10 +478,8 @@ pub struct CallbackSpec {
     pub must_deliver: bool,
     /// String representation
     pub as_str: String,
-    /// Callback ID
-    pub id: usize,
-    /// Subscription ID
-    pub subscription_id: usize,
+    /// Subscription string representation
+    pub subscription_id: String,
     /// "Expensive" tracked datatypes (by name)
     /// Used to indicate that a tree should track the match state of the
     /// datatype in order to `clear` it if it goes out of scope.
@@ -491,18 +489,19 @@ pub struct CallbackSpec {
 
 impl Hash for CallbackSpec {
     fn hash<H: Hasher>(&self, state: &mut H) {
-        self.as_str.hash(state); // Only hash the `name` field
+        self.as_str.hash(state);
+        self.subscription_id.hash(state);
     }
 }
 
 impl CallbackSpec {
     pub(super) fn get_datatypes(&self) -> Vec<DataLevelSpec> {
         let mut datatypes: Vec<_> = self.datatypes.iter().cloned().collect();
-        if let Some(stream) = self.stream {
+        if let Some(expl_level) = self.expl_level {
             // Requires streaming `updates` or the level cannot be
             // inferred from the datatype alone
             datatypes.push(DataLevelSpec {
-                updates: vec![stream],
+                updates: vec![expl_level],
                 name: self.as_str.clone(),
             });
         }
@@ -522,7 +521,7 @@ pub(crate) struct SubscriptionLevel {
     pub(crate) datatypes: HashSet<DataLevel>,
     /// Levels at which a new filter predicate needs to be applied
     pub(crate) filter_preds: HashSet<DataLevel>,
-    /// If the callback is streaming, the level at which it is requested.
+    /// If the callback explicitly requests to be delivered at a level
     pub(crate) callback: Option<DataLevel>,
 }
 
