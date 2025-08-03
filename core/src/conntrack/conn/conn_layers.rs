@@ -194,7 +194,7 @@ impl TrackableLayer for L7Session {
         tracked: &mut T,
         registry: &ParserRegistry,
     ) -> [StateTransition; 2] {
-        let mut state_tx = [StateTransition::None; 2];
+        let mut state_tx = [StateTransition::Packet; 2];
         match self.linfo.state {
             LayerState::Discovery => {
                 match registry.probe_all(pdu) {

@@ -55,10 +55,18 @@ pub enum DataLevel {
     /// L4 connection terminated by FIN/ACK sequence or timeout
     L4Terminated,
 
-    /// `None` is used as a no-op state transition and to give the
-    /// enum a defined length. It is not a valid Level for a datatype
-    /// or filter. This must be last in the enum variant list.
-    None,
+    /// Packet-level datatype. Any filter or datatype tagged with this
+    /// is built from a single, connectionless packet (Mbuf).
+    ///
+    /// Packet-level filters cannot be combined with datatypes or callbacks
+    /// that require connection/session tracking. Packet-level datatypes can only be
+    /// requested in higher-level filters/callbacks if a streaming level
+    /// (e.g., L4InPayload) is specified.
+    ///
+    /// Internal notes:
+    /// - This must be last in the enum variant list.
+    /// - In the connection tracker, this is used as a no-op state transition.
+    Packet,
 }
 
 impl std::fmt::Display for DataLevel {
@@ -82,7 +90,7 @@ impl DataLevel {
                 return level;
             }
         }
-        DataLevel::None
+        panic!("Cannot build DataLevel from {}", i);
     }
 
     pub fn raw(&self) -> u8 {
@@ -100,7 +108,7 @@ impl DataLevel {
             DataLevel::L7EndHdrs => "L7EndHdrs",
             DataLevel::L7InPayload => "L7InPayload",
             DataLevel::L7EndPayload => "L7EndPayload",
-            DataLevel::None => "None",
+            DataLevel::Packet => "L4Pdu",
         }
     }
 
@@ -122,8 +130,10 @@ impl DataLevel {
     /// Returns Greater if self > Other, Less if self < Other, Equal if self == Other,
     /// and Unknown if the two cannot be compared (different layers).
     pub fn compare(&self, other: &DataLevel) -> StateTxOrd {
-        // Invalid layer for subscriptions
-        assert!(!matches!(self, DataLevel::None) && !matches!(self, DataLevel::None));
+        // L4Pdu is any
+        if matches!(self, DataLevel::Packet) || matches!(other, DataLevel::Packet) {
+            if self != other { return StateTxOrd::Any } else { return StateTxOrd::Equal};
+        }
 
         // End of connection is always greatest
         if matches!(self, DataLevel::L4Terminated) || matches!(other, DataLevel::L4Terminated) {
@@ -154,6 +164,7 @@ impl DataLevel {
 #[derive(Debug, Eq, PartialEq)]
 pub enum StateTxOrd {
     Unknown,
+    Any,
     Greater,
     Less,
     Equal,
@@ -229,6 +240,7 @@ impl FromStr for DataLevel {
             "L7EndHdrs" => Ok(DataLevel::L7EndHdrs),
             "L7InPayload" => Ok(DataLevel::L7InPayload),
             "L7EndPayload" => Ok(DataLevel::L7EndPayload),
+            "Packet" => Ok(DataLevel::Packet),
             _ => Err(format!("Invalid DataLevel: {}", s)),
         }
     }
@@ -240,7 +252,7 @@ mod tests {
 
     #[test]
     fn test_data_level_raw() {
-        assert_eq!(DataLevel::None.as_usize(), NUM_STATE_TRANSITIONS);
+        assert_eq!(DataLevel::Packet.as_usize(), NUM_STATE_TRANSITIONS);
         assert_eq!(
             DataLevel::L4InPayload(true).as_usize(),
             DataLevel::L4InPayload(false).as_usize()

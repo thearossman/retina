@@ -107,7 +107,7 @@ where
         if !self.layers[0].drop() {
             let tx_ = self.layers[0].process_stream(pdu, &mut self.tracked, registry);
             for tx in tx_ {
-                if tx == StateTransition::None {
+                if tx == StateTransition::Packet {
                     continue;
                 }
                 self.exec_state_tx(tx, subscription);
@@ -137,7 +137,7 @@ where
     /// Update subscription data and current state, including actions,
     /// upon state transition.
     fn exec_state_tx(&mut self, tx: StateTransition, subscription: &Subscription<T::Subscribed>) {
-        debug_assert!(tx != StateTransition::None);
+        debug_assert!(tx != StateTransition::Packet);
         self.linfo.actions.start_state_tx(tx);
         for layer in self.layers.iter_mut() {
             layer.layer_info_mut().actions.start_state_tx(tx);
@@ -153,7 +153,7 @@ where
                 subscription.in_update::<T>(self, tx);
             }
             StateTransition::L7EndPayload => unimplemented!(),
-            StateTransition::L4FirstPacket | StateTransition::None => {}
+            StateTransition::L4FirstPacket | StateTransition::Packet => {}
         }
 
         for layer in &mut self.layers {

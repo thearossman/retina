@@ -343,7 +343,7 @@ impl DataLevelSpec {
                 }
                 DataLevel::L7OnDisc => {
                     match cmp {
-                        StateTxOrd::Equal | StateTxOrd::Greater => continue,
+                        StateTxOrd::Equal | StateTxOrd::Greater | StateTxOrd::Any => continue,
                         StateTxOrd::Less | StateTxOrd::Unknown => {
                             // Must pass to subsequent layer.
                             // Note this will implicitly reassemble.
@@ -362,7 +362,7 @@ impl DataLevelSpec {
                 }
                 DataLevel::L7InHdrs => {
                     match cmp {
-                        StateTxOrd::Greater => continue,
+                        StateTxOrd::Greater | StateTxOrd::Any => continue,
                         StateTxOrd::Equal | StateTxOrd::Less | StateTxOrd::Unknown => {
                             // Must pass to L7 and parse
                             // - If before protocol discovery: to get to start of L7 headers
@@ -393,7 +393,7 @@ impl DataLevelSpec {
                     }
                 }
                 DataLevel::L7EndHdrs => match cmp {
-                    StateTxOrd::Equal | StateTxOrd::Greater => continue,
+                    StateTxOrd::Equal | StateTxOrd::Greater | StateTxOrd::Any => continue,
                     StateTxOrd::Less | StateTxOrd::Unknown => {
                         a.transport.active |= Actions::PassThrough;
                         a.transport.refresh_at[level.as_usize()] |= Actions::PassThrough;
@@ -409,7 +409,7 @@ impl DataLevelSpec {
                     }
                 },
                 DataLevel::L7InPayload => {
-                    if cmp == StateTxOrd::Greater {
+                    if matches!(cmp, StateTxOrd::Greater | StateTxOrd::Any) {
                         continue;
                     }
 
@@ -455,7 +455,8 @@ impl DataLevelSpec {
                     a.transport.refresh_at[level.as_usize()];
                     actions.push_action(a);
                 }
-                DataLevel::None => panic!("Data level cannot be None"),
+                // No actions
+                DataLevel::Packet => continue,
             }
         }
         actions
@@ -647,7 +648,7 @@ mod tests {
                     tx,
                     actions[0].transport.refresh_at[tx.as_usize()]
                 );
-            } else if tx != StateTransition::None {
+            } else if tx != StateTransition::Packet {
                 assert!(
                     actions[0].transport.refresh_at[tx.as_usize()] == 0,
                     "{:?} has value: {:?}",
@@ -679,7 +680,7 @@ mod tests {
                     tx,
                     actions[0].transport.refresh_at[tx.as_usize()]
                 );
-            } else if tx != StateTransition::None {
+            } else if tx != StateTransition::Packet {
                 assert!(
                     actions[0].transport.refresh_at[tx.as_usize()] == 0,
                     "{:?} has value: {:?}",
