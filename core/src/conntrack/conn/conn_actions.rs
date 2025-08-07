@@ -94,7 +94,8 @@ impl TrackedActions {
         self.active.intersects(Actions::Update)
     }
 
-    /// Append TrackedActions. Primarily used at compile-time.
+    /// Append TrackedActions. Used at compile-time and
+    /// when building up actions in runtime filters.
     #[inline]
     pub(crate) fn extend(&mut self, other: &TrackedActions) {
         self.active |= other.active;

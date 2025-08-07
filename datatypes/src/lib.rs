@@ -32,8 +32,8 @@ pub use connection::ConnRecord;
 // pub use quic_stream::QuicStream;
 // pub mod ssh_handshake;
 // pub use ssh_handshake::SshHandshake;
-// pub mod packet;
-// pub use packet::{Payload, ZcFrame};
+pub mod packet;
+pub use packet::{Payload, ZcFrame};
 // pub mod packet_list;
 // pub use packet_list::*;
 // pub use typedefs::*;
@@ -66,7 +66,7 @@ pub trait FromSession {
 /// can be subscribed to. Datatypes implementing this trait
 /// are automatically Level=Packet.
 pub trait FromMbuf {
-    fn new(mbuf: &Mbuf) -> Self;
+    fn new(mbuf: &Mbuf) -> Option<&Self>;
 }
 
 /// Trait implemented by datatypes that are constant throughout

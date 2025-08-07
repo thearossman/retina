@@ -15,6 +15,7 @@ pub mod data;
 pub use data::Tracked;
 #[doc(hidden)]
 pub mod callback;
+pub use callback::StreamingCallback;
 
 #[cfg(feature = "timing")]
 use crate::timing::timer::Timers;

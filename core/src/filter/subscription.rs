@@ -477,7 +477,8 @@ pub struct CallbackSpec {
     /// Typically true if ``FilterStr`` (i.e., information
     /// about the specific filter matched) is a parameter.
     pub must_deliver: bool,
-    /// String representation
+    /// The name of the callback function (excluding parameters).
+    /// Also excludes the struct for stateful callbacks, if applicable.
     pub as_str: String,
     /// Subscription string representation
     pub subscription_id: String,

@@ -65,6 +65,15 @@ impl Layer {
             Layer::L7(session) => &mut session.linfo,
         }
     }
+
+    /// Push an action
+    pub fn push_action(&mut self, action: &TrackedActions) {
+        match self {
+            Layer::L7(session) => {
+                session.linfo.actions.extend(&action);
+            },
+        }
+    }
 }
 
 impl TrackableLayer for Layer {

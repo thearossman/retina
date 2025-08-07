@@ -51,6 +51,7 @@ impl StringToTokens for FilterStr<'_> {
 
 /// If a datatype is specified as "expensive", it is wrapped in this
 /// so that we can track when it's still needed by active subscriptions.
+/// TODO need to redo this; currently dead code.
 #[doc(hidden)]
 pub struct TrackedDataWrapper<T>
 where

@@ -3,6 +3,21 @@ use retina_core::conntrack::DataLevel;
 use retina_core::filter::ast::{FuncIdent, Predicate};
 use retina_core::filter::subscription::{CallbackSpec, DataLevelSpec};
 use std::collections::HashMap;
+use lazy_static::lazy_static;
+
+lazy_static! {
+    pub(crate) static ref BUILTIN_TYPES: Vec<ParsedInput> =
+        vec![
+            ParsedInput::Datatype(DatatypeSpec {
+                name: "L4Pdu".into(),
+                level: Some(DataLevel::Packet),
+            }),
+            ParsedInput::Datatype(DatatypeSpec {
+                name: "FilterStr".into(),
+                level: None,
+            })
+        ];
+}
 
 #[derive(Debug)]
 pub(crate) struct SubscriptionSpec {
@@ -28,6 +43,12 @@ pub(crate) struct SubscriptionDecoder {
     pub(crate) datatypes: HashMap<String, DataLevelSpec>,
     /// Full subscriptions
     pub(crate) subscriptions: Vec<SubscriptionSpec>,
+
+    /// Required `updates`: Level of required update -->
+    /// datatype update, filter method, or streaming callback.
+    pub(crate) updates: HashMap<DataLevel, Vec<ParsedInput>>,
+    /// Tracked datatypes (stored as fields in Tracked struct)
+    pub(crate) tracked: Vec<String>,
 }
 
 impl SubscriptionDecoder {
@@ -39,16 +60,23 @@ impl SubscriptionDecoder {
             custom_preds: Vec::new(),
             datatypes: HashMap::new(),
             subscriptions: Vec::new(),
+            updates: HashMap::new(),
+            tracked: Vec::new(),
         };
         ret.parse_raw(inputs);
         ret.decode_datatypes();
         ret.decode_filters();
         ret.decode_subscriptions();
+        ret.decode_updates();
         ret
     }
 
     /// Map inputs by name
     fn parse_raw(&mut self, inputs: &Vec<ParsedInput>) {
+        BUILTIN_TYPES.iter()
+            .for_each(|dt|
+                { self.datatypes_raw.insert(dt.name().clone(), vec![dt.clone()]); }
+            );
         for inp in inputs {
             let name = inp.name().clone();
             match inp {
@@ -252,6 +280,60 @@ impl SubscriptionDecoder {
         lvls.dedup();
         lvls
     }
+
+    fn decode_updates(&mut self) {
+        let mut updates = HashMap::new();
+        for (name, v) in &self.filters_raw {
+            Self::push_update(&mut updates, v);
+            if Self::is_tracked_type(v) {
+                self.tracked.push(name.clone());
+            }
+        }
+        for (name, v) in &self.datatypes_raw {
+            Self::push_update(&mut updates, v);
+            if Self::is_tracked_type(v) {
+                self.tracked.push(name.clone());
+            }
+        }
+        for (name, v) in &self.cbs_raw{
+            Self::push_update(&mut updates, v);
+            if Self::is_tracked_type(v) {
+                self.tracked.push(name.clone());
+            }
+        }
+        self.updates = updates;
+    }
+
+    fn push_update(
+        updates: &mut HashMap<DataLevel, Vec<ParsedInput>>,
+        inps: &Vec<ParsedInput>)
+    {
+        for inp in inps {
+            let lvls = inp.levels()
+                .into_iter()
+                .filter(|l| l.is_streaming())
+                .collect::<Vec<_>>();
+            for l in lvls {
+                updates.entry(l)
+                    .or_insert(vec![])
+                    .push(inp.clone());
+            }
+        }
+    }
+
+    // TODO CB also needs to be tracked (differently - just make sure it hasn't already been invoked)
+    // if it is a static CB with a streaming filter
+    fn is_tracked_type(inps: &Vec<ParsedInput>) -> bool {
+        // More than one update function, or
+        inps.iter()
+            .filter(|i| matches!(i, ParsedInput::DatatypeFn(_)))
+            .count() > 1 ||
+        // Streaming update requested
+        inps.iter()
+            .any(|inp|
+                inp.levels().iter().any(|l| l.is_streaming())
+            )
+    }
 }
 
 #[cfg(test)]
@@ -309,7 +391,7 @@ mod tests {
             ),
             ParsedInput::Datatype(
                 DatatypeSpec {
-                    level: Some(DataLevel::L4InPayload(false)),
+                    level: Some(DataLevel::Packet),
                     name: "L4Pdu".into(),
                 }
             ),
@@ -364,6 +446,11 @@ mod tests {
                 datatypes.iter().any(|dt| dt.updates == vec![DataLevel::L4InPayload(false)]) &&
                 datatypes.iter().any(|dt| dt.updates == vec![DataLevel::L7EndHdrs])
         });
+
+        assert!(decoder.updates.len() == 1);
+        let entr = decoder.updates.get(&DataLevel::L4InPayload(false)).unwrap();
+        assert!(entr.len() == 2,
+                "Actual len: {} (value: {:?}", entr.len(), entr);
 
         // Build up some basic trees
         let mut ptree = PTree::new_empty(DataLevel::L7OnDisc);
