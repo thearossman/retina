@@ -1,6 +1,6 @@
 use std::fs::File;
-use std::{fs::OpenOptions, path::PathBuf};
 use std::io::{BufRead, BufReader, Write};
+use std::{fs::OpenOptions, path::PathBuf};
 
 use crate::parse::*;
 use lazy_static::lazy_static;
@@ -14,7 +14,6 @@ lazy_static! {
 /// If code generation is spread across multiple crates, an intermediate
 /// representation in a file is required. This sets the outfile for a crate.
 pub(crate) fn set_crate_outfile(fp: String) {
-
     if OUTFILE.lock().unwrap().is_some() {
         panic!("Tried to set outfile twice");
     }
@@ -44,8 +43,7 @@ pub(crate) fn set_crate_outfile(fp: String) {
 
     let v = CACHED_DATA.lock().unwrap();
     for elem in v.iter() {
-        let json = serde_json::to_string(&elem)
-            .expect("Failed to serialize input");
+        let json = serde_json::to_string(&elem).expect("Failed to serialize input");
         writeln!(file, "{}", json).expect("Failed to write to file");
     }
 
@@ -64,7 +62,7 @@ pub(crate) fn push_input(input: ParsedInput) {
                 .expect("Failed to open file to append");
             let json = serde_json::to_string(&input).unwrap();
             writeln!(file, "{}", json).expect("Failed to append to file");
-        },
+        }
         None => {
             println!("Caching input in memory");
         }
@@ -78,8 +76,7 @@ pub(crate) fn set_input_files(fps: Vec<&str>) {
     let mut cached = CACHED_DATA.lock().unwrap();
     for fp in fps {
         let fp = parse_filepath(&String::from(fp));
-        let file = File::open(fp.clone())
-            .expect(&format!("Cannot find input file: {}", fp));
+        let file = File::open(fp.clone()).expect(&format!("Cannot find input file: {}", fp));
         let reader = BufReader::new(file);
         for line in reader.lines() {
             let line = line.unwrap();
@@ -101,8 +98,7 @@ fn parse_filepath(fp: &String) -> String {
         dirs[0] = &home;
         dirs.join("/")
     } else if fp.starts_with("~") {
-        let home = std::env::var("HOME")
-            .expect(&format!("Cannot find home directory"));
+        let home = std::env::var("HOME").expect(&format!("Cannot find home directory"));
         fp.replace("~", &home)
     } else {
         fp.clone()

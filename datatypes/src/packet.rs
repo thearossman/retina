@@ -8,8 +8,7 @@ use retina_core::{conntrack::pdu::L4Context, Mbuf};
 pub type ZcFrame = Mbuf;
 
 impl FromMbuf for ZcFrame {
-    #[cfg_attr(not(feature = "skip_expand"),
-        datatype_group("ZcFrame,level=Packet"))]
+    #[cfg_attr(not(feature = "skip_expand"), datatype_group("ZcFrame,level=Packet"))]
     fn new(mbuf: &Mbuf) -> Option<&Self> {
         Some(mbuf)
     }
@@ -20,8 +19,7 @@ impl FromMbuf for ZcFrame {
 pub type Payload = [u8];
 
 impl FromMbuf for Payload {
-    #[cfg_attr(not(feature = "skip_expand"),
-        datatype_group("ZcFrame,level=Packet"))]
+    #[cfg_attr(not(feature = "skip_expand"), datatype_group("ZcFrame,level=Packet"))]
     fn new(mbuf: &Mbuf) -> Option<&Self> {
         if let Ok(ctxt) = L4Context::new(mbuf) {
             let offset = ctxt.offset.unwrap();

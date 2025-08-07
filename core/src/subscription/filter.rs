@@ -4,8 +4,7 @@ use super::FilterResult;
 /// The user must also define the actual filter function(s), annotated with
 /// the appropriate #[filter_group(...)] macros. Each filter function must
 /// return a FilterResult.
-pub trait StreamingFilter
-{
+pub trait StreamingFilter {
     /// Initialize internal data, if applicable. Invoked on first packet.
     fn new() -> Self;
     /// Clears internal data, if applicable.
@@ -55,13 +54,11 @@ where
         match self.matched {
             FilterResult::Accept | FilterResult::Drop => {
                 self.filter.clear();
-            },
+            }
             _ => {}
         }
     }
-
 }
-
 
 #[doc(hidden)]
 /// Wrapper for a filter that is not stateful but may be invoked

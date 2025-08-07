@@ -175,21 +175,26 @@ impl FlatPattern {
 
     // Get the subset of patterns that can be applied if [layer] is in [state]
     pub(super) fn get_subpattern(&self, layer: SupportedLayer, state: LayerState) -> FlatPattern {
-        let mut predicates: Vec<_> = self.predicates
-                             .iter()
-                             .cloned()
-                             .filter(|x| x.is_compatible(layer, state))
-                             .collect();
-        predicates.push(Predicate::LayerState { layer, state, op: BinOp::Eq });
-        Self {
-            predicates,
-        }
+        let mut predicates: Vec<_> = self
+            .predicates
+            .iter()
+            .cloned()
+            .filter(|x| x.is_compatible(layer, state))
+            .collect();
+        predicates.push(Predicate::LayerState {
+            layer,
+            state,
+            op: BinOp::Eq,
+        });
+        Self { predicates }
     }
 
     // Inserts a Callback predicate
     pub(super) fn with_streaming_cb(&self, name: &String) -> Self {
         let mut pat = self.clone();
-        pat.predicates.push(Predicate::Callback { name: filterfunc!(name.clone()) });
+        pat.predicates.push(Predicate::Callback {
+            name: filterfunc!(name.clone()),
+        });
         pat
     }
 
@@ -208,12 +213,14 @@ impl FlatPattern {
             // This applies to custom filters that either:
             // - Have multiple separate functions
             // - Or have any streaming functions
-            if pred.is_custom() && (pred.is_streaming() ||
-                if let Predicate::Custom { levels, .. } = pred {
-                    levels.len() > 1 // TODO could do pairwise inequality here?
-                } else {
-                    unreachable!()
-            }) {
+            if pred.is_custom()
+                && (pred.is_streaming()
+                    || if let Predicate::Custom { levels, .. } = pred {
+                        levels.len() > 1 // TODO could do pairwise inequality here?
+                    } else {
+                        unreachable!()
+                    })
+            {
                 let mut new_pats = vec![];
                 for partial in &all_patterns {
                     // Original pattern with matched=true
@@ -221,7 +228,7 @@ impl FlatPattern {
                     term_pat.predicates.push(pred.clone());
 
                     // New pattern with matched=false
-                    let mut nonterm_pat  = partial.clone();
+                    let mut nonterm_pat = partial.clone();
                     let mut pred = pred.clone();
                     if let Predicate::Custom { matched, .. } = &mut pred {
                         *matched = false;
@@ -243,13 +250,10 @@ impl FlatPattern {
         // which is covered by the original pattern
         // That is, retain those for which ANY custom predicate has !matched
         all_patterns.retain(|pat| {
-                        pat
-                         .predicates
-                         .iter()
-                         .any( |pred | {
-                            pred.is_custom() && pred.is_matching()
-                         })
-                    });
+            pat.predicates
+                .iter()
+                .any(|pred| pred.is_custom() && pred.is_matching())
+        });
         all_patterns
     }
 
@@ -258,16 +262,13 @@ impl FlatPattern {
     pub(super) fn contains_nonterminal(&self) -> bool {
         self.predicates
             .iter()
-            .any(|p| {
-                p.is_custom() && p.is_matching()
-            })
+            .any(|p| p.is_custom() && p.is_matching())
     }
 
     // Get datatypes from the pattern in order to build up `actions`
     // Note: this skips filter predicates that have already matched
     pub(super) fn get_datatypes(&self) -> Vec<DataLevelSpec> {
-        self
-            .predicates
+        self.predicates
             .iter()
             .filter_map(|p| DataLevelSpec::from_pred(p))
             .collect()
@@ -278,17 +279,25 @@ impl FlatPattern {
         // LayerState::Discovery
         // LayerState::Headers
         // LayerState::Payload
-        if let Some(i) = predicates.iter().position(|x|
-            x.on_proto()) {
-            predicates.insert(i,
-                Predicate::LayerState { layer: SupportedLayer::L7,
-                    state: LayerState::Headers, op: BinOp::Ge });
+        if let Some(i) = predicates.iter().position(|x| x.on_proto()) {
+            predicates.insert(
+                i,
+                Predicate::LayerState {
+                    layer: SupportedLayer::L7,
+                    state: LayerState::Headers,
+                    op: BinOp::Ge,
+                },
+            );
         }
-        if let Some(i) = predicates.iter().position(|x|
-            x.on_session()) {
-                predicates.insert(i,
-                    Predicate::LayerState { layer: SupportedLayer::L7,
-                        state: LayerState::Payload, op: BinOp::Ge });
+        if let Some(i) = predicates.iter().position(|x| x.on_session()) {
+            predicates.insert(
+                i,
+                Predicate::LayerState {
+                    layer: SupportedLayer::L7,
+                    state: LayerState::Payload,
+                    op: BinOp::Ge,
+                },
+            );
         }
 
         // Move up anything that doesn't rely on the state predicate
@@ -297,17 +306,14 @@ impl FlatPattern {
             if first_state < predicates.len() - 1 {
                 if let Predicate::LayerState { layer, state, .. } = predicates[first_state] {
                     let back: Vec<_> = predicates.drain(first_state + 1..).collect();
-                    let (pre_state, post_state): (Vec<_>, Vec<_>) = back
-                        .into_iter()
-                        .partition(|p| !p.depends_on(layer, state));
+                    let (pre_state, post_state): (Vec<_>, Vec<_>) =
+                        back.into_iter().partition(|p| !p.depends_on(layer, state));
                     predicates.splice(first_state..first_state, pre_state);
                     predicates.extend(post_state);
                 }
             }
         }
-        Self {
-            predicates,
-        }
+        Self { predicates }
     }
 
     // Returns FlatPattern of only predicates that can be filtered in hardware
@@ -326,24 +332,22 @@ impl FlatPattern {
     // the given StateTransition. TODO make more effic.
     pub(super) fn next_pred(&self, curr: StateTransition) -> Vec<StateTransition> {
         // All levels that may come after `curr`
-        let mut pat: Vec<_> = self.predicates
+        let mut pat: Vec<_> = self
+            .predicates
             .iter()
             .flat_map(|p| p.levels())
-            .filter(|l|
-                matches!(l.compare(&curr), StateTxOrd::Unknown | StateTxOrd::Greater)
-            )
+            .filter(|l| matches!(l.compare(&curr), StateTxOrd::Unknown | StateTxOrd::Greater))
             .collect::<HashSet<_>>() // dedup
             .into_iter()
             .collect();
         // For `matching` streaming filters that are applied at this state,
         // need to update at future iterations of this filter.
         if curr.is_streaming() {
-            if self.predicates
-                   .iter()
-                   .any(|p| {
-                        p.is_custom() && p.is_matching() &&
-                        p.levels().iter().any(|l| l == &curr)
-            }) {
+            if self
+                .predicates
+                .iter()
+                .any(|p| p.is_custom() && p.is_matching() && p.levels().iter().any(|l| l == &curr))
+            {
                 pat.push(curr);
             }
         }
@@ -592,10 +596,16 @@ mod tests {
         let pattern = pattern.get(0).unwrap();
         let subpattern = pattern.get_subpattern(SupportedLayer::L7, LayerState::Discovery);
         // "tls" and SNI field checks removed
-        assert!(subpattern.predicates.iter().all(|x| x.get_protocol() != &protocol!("tls")));
+        assert!(subpattern
+            .predicates
+            .iter()
+            .all(|x| x.get_protocol() != &protocol!("tls")));
         let subpattern = pattern.get_subpattern(SupportedLayer::L7, LayerState::Headers);
         // SNI field check removed
-        assert!(subpattern.predicates.iter().all(|x| x.get_protocol() != &protocol!("tls") || x.is_unary()));
+        assert!(subpattern
+            .predicates
+            .iter()
+            .all(|x| x.get_protocol() != &protocol!("tls") || x.is_unary()));
     }
 
     #[test]

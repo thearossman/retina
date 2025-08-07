@@ -1,22 +1,21 @@
 use crate::parse::*;
+use lazy_static::lazy_static;
 use retina_core::conntrack::DataLevel;
 use retina_core::filter::ast::{FuncIdent, Predicate};
 use retina_core::filter::subscription::{CallbackSpec, DataLevelSpec};
 use std::collections::HashMap;
-use lazy_static::lazy_static;
 
 lazy_static! {
-    pub(crate) static ref BUILTIN_TYPES: Vec<ParsedInput> =
-        vec![
-            ParsedInput::Datatype(DatatypeSpec {
-                name: "L4Pdu".into(),
-                level: Some(DataLevel::Packet),
-            }),
-            ParsedInput::Datatype(DatatypeSpec {
-                name: "FilterStr".into(),
-                level: None,
-            })
-        ];
+    pub(crate) static ref BUILTIN_TYPES: Vec<ParsedInput> = vec![
+        ParsedInput::Datatype(DatatypeSpec {
+            name: "L4Pdu".into(),
+            level: Some(DataLevel::Packet),
+        }),
+        ParsedInput::Datatype(DatatypeSpec {
+            name: "FilterStr".into(),
+            level: None,
+        })
+    ];
 }
 
 #[derive(Debug)]
@@ -73,48 +72,50 @@ impl SubscriptionDecoder {
 
     /// Map inputs by name
     fn parse_raw(&mut self, inputs: &Vec<ParsedInput>) {
-        BUILTIN_TYPES.iter()
-            .for_each(|dt|
-                { self.datatypes_raw.insert(dt.name().clone(), vec![dt.clone()]); }
-            );
+        BUILTIN_TYPES.iter().for_each(|dt| {
+            self.datatypes_raw
+                .insert(dt.name().clone(), vec![dt.clone()]);
+        });
         for inp in inputs {
             let name = inp.name().clone();
             match inp {
                 ParsedInput::Datatype(_) => {
                     let v = self.datatypes_raw.entry(name).or_insert(vec![]);
                     v.push(inp.clone());
-                },
+                }
                 ParsedInput::DatatypeFn(dt) => {
                     let group_name = dt.group_name.clone();
                     let v = self.datatypes_raw.entry(group_name).or_insert(vec![]);
                     v.push(inp.clone());
-                },
+                }
                 ParsedInput::Filter(_) => {
                     self.filters_raw.insert(name.clone(), vec![inp.clone()]);
-                },
+                }
                 ParsedInput::FilterGroup(_) => {
                     let v = self.filters_raw.entry(name).or_insert(vec![]);
                     v.push(inp.clone());
-                },
+                }
                 ParsedInput::FilterGroupFn(f) => {
                     let group_name = f.group_name.clone();
                     let v = self.filters_raw.entry(group_name).or_insert(vec![]);
                     v.push(inp.clone());
-                },
+                }
                 ParsedInput::Callback(_) => {
-                    assert!(!self.cbs_raw.contains_key(&name),
-                            "Callback {} defined twice", name);
+                    assert!(
+                        !self.cbs_raw.contains_key(&name),
+                        "Callback {} defined twice",
+                        name
+                    );
                     self.cbs_raw.insert(name.clone(), vec![inp.clone()]);
-                },
+                }
                 ParsedInput::CallbackGroup(_) => {
                     let v = self.cbs_raw.entry(name).or_insert(vec![]);
                     v.push(inp.clone());
-                },
+                }
                 ParsedInput::CallbackGroupFn(cb) => {
                     let group_name = cb.group_name.clone();
                     let v = self.cbs_raw.entry(group_name).or_insert(vec![]);
                     v.push(inp.clone());
-
                 }
             }
         }
@@ -124,10 +125,7 @@ impl SubscriptionDecoder {
         for (dt, inp) in &self.datatypes_raw {
             let spec = DataLevelSpec {
                 name: dt.clone(),
-                updates: inp.iter()
-                    .cloned()
-                    .flat_map(|l| l.levels())
-                    .collect(),
+                updates: inp.iter().cloned().flat_map(|l| l.levels()).collect(),
             };
             self.datatypes.insert(dt.clone(), spec);
         }
@@ -137,17 +135,14 @@ impl SubscriptionDecoder {
         for (name, v) in self.filters_raw.iter() {
             // Validate grouped input
             if v.iter().any(|inp| inp.is_group()) {
-                assert!(v.len() > 1,
-                        "Missing group for {:?}", v);
+                assert!(v.len() > 1, "Missing group for {:?}", v);
                 assert!(
-                    v.iter()
-                        .map(|s| s.group())
-                        .all(|x| x == v[0].group()),
-                    "Mismatched groups in: {:?}", v
+                    v.iter().map(|s| s.group()).all(|x| x == v[0].group()),
+                    "Mismatched groups in: {:?}",
+                    v
                 );
             } else {
-                assert!(v.len() == 1,
-                    "Missing filter group for: {:?}", v);
+                assert!(v.len() == 1, "Missing filter group for: {:?}", v);
             }
 
             // TODO this breaks if filter is trying to
@@ -159,7 +154,7 @@ impl SubscriptionDecoder {
                 match inp {
                     ParsedInput::Filter(f) => {
                         lvls.extend(self.datatypes_to_levels(&f.func));
-                    },
+                    }
                     ParsedInput::FilterGroupFn(f) => {
                         lvls.extend(self.datatypes_to_levels(&f.func));
                     }
@@ -169,24 +164,24 @@ impl SubscriptionDecoder {
                 lvls.extend(inp.levels());
                 lvls.sort();
                 lvls.dedup();
-                if !lvls.is_empty() { levels.push(lvls); }
-            }
-            self.custom_preds.push(
-                Predicate::Custom {
-                    name: FuncIdent(name.clone()),
-                    levels,
-                    matched: true
+                if !lvls.is_empty() {
+                    levels.push(lvls);
                 }
-            );
+            }
+            self.custom_preds.push(Predicate::Custom {
+                name: FuncIdent(name.clone()),
+                levels,
+                matched: true,
+            });
         }
     }
 
     fn decode_subscriptions(&mut self) {
         for (cb_name, v) in &self.cbs_raw {
-            let inp_group = v.iter()
-                .find(|i|
-                    matches!(i, ParsedInput::Callback(_) | ParsedInput::CallbackGroup(_))
-                ).expect(&format!("{} missing callback definition", cb_name));
+            let inp_group = v
+                .iter()
+                .find(|i| matches!(i, ParsedInput::Callback(_) | ParsedInput::CallbackGroup(_)))
+                .expect(&format!("{} missing callback definition", cb_name));
             let filter = match inp_group {
                 ParsedInput::Callback(cb) => cb.filter.clone(),
                 ParsedInput::CallbackGroup(cb) => cb.filter.clone(),
@@ -198,49 +193,49 @@ impl SubscriptionDecoder {
                 match inp {
                     ParsedInput::Callback(cb) => {
                         assert!(v.len() == 1);
-                        assert!(cb.level.len() <= 1, // TODO fix this??
-                            "Cannot specify >1 explicit level per callback");
+                        assert!(
+                            cb.level.len() <= 1, // TODO fix this??
+                            "Cannot specify >1 explicit level per callback"
+                        );
                         let expl_level = cb.level.last().cloned();
                         let cb_spec = self.spec_to_cbs(
-                                    &cb.func,
-                                    cb.func.name.clone(),
-                                    cb.func.name.clone(),
-                                    expl_level);
+                            &cb.func,
+                            cb.func.name.clone(),
+                            cb.func.name.clone(),
+                            expl_level,
+                        );
                         callbacks.push(cb_spec);
-                    },
+                    }
                     ParsedInput::CallbackGroupFn(cb) => {
                         // TODO fix this to allow multiple levels
                         let expl_level = cb.level.last().cloned();
                         let sub_id = cb.group_name.clone();
                         let as_str = format!("{}::{}", sub_id, cb.func.name);
-                        let cb_spec = self.spec_to_cbs(
-                            &cb.func,
-                            as_str,
-                            sub_id,
-                            expl_level);
+                        let cb_spec = self.spec_to_cbs(&cb.func, as_str, sub_id, expl_level);
                         callbacks.push(cb_spec);
-                    },
+                    }
                     ParsedInput::CallbackGroup(_) => continue,
                     _ => panic!("Unknown ParsedInput in callback list"),
                 }
             }
-            self.subscriptions.push(
-                SubscriptionSpec {
-                    callbacks,
-                    filter,
-                    as_str: cb_name.clone()
-                }
-            );
+            self.subscriptions.push(SubscriptionSpec {
+                callbacks,
+                filter,
+                as_str: cb_name.clone(),
+            });
         }
     }
 
-    fn spec_to_cbs(&self, spec: &FnSpec,
-            as_str: String,
-            subscription_id: String,
-            expl_level: Option<DataLevel>,
+    fn spec_to_cbs(
+        &self,
+        spec: &FnSpec,
+        as_str: String,
+        subscription_id: String,
+        expl_level: Option<DataLevel>,
     ) -> CallbackSpec {
         let must_deliver = spec.datatypes.iter().any(|dt| dt == "FilterStr");
-        let datatypes = spec.datatypes
+        let datatypes = spec
+            .datatypes
             .iter()
             .map(|dt_name| {
                 self.datatypes
@@ -264,7 +259,8 @@ impl SubscriptionDecoder {
     fn datatypes_to_levels(&self, spec: &FnSpec) -> Vec<DataLevel> {
         let mut lvls = vec![];
         for dt_name in &spec.datatypes {
-            let dt_info = self.datatypes_raw
+            let dt_info = self
+                .datatypes_raw
                 .get(dt_name)
                 .expect(&format!("Cannot find datatype {}", dt_name));
             let mut level = dt_info
@@ -272,8 +268,12 @@ impl SubscriptionDecoder {
                 .find(|grp| matches!(grp, ParsedInput::Datatype(_)))
                 .expect(&format!("Cannot find datatype declaration {}", dt_name))
                 .levels();
-            assert!(level.len() == 1,
-                "{} declaration has {} levels (requires 1)", dt_name, level.len());
+            assert!(
+                level.len() == 1,
+                "{} declaration has {} levels (requires 1)",
+                dt_name,
+                level.len()
+            );
             lvls.push(level.pop().unwrap());
         }
         lvls.sort();
@@ -295,7 +295,7 @@ impl SubscriptionDecoder {
                 self.tracked.push(name.clone());
             }
         }
-        for (name, v) in &self.cbs_raw{
+        for (name, v) in &self.cbs_raw {
             Self::push_update(&mut updates, v);
             if Self::is_tracked_type(v) {
                 self.tracked.push(name.clone());
@@ -304,19 +304,15 @@ impl SubscriptionDecoder {
         self.updates = updates;
     }
 
-    fn push_update(
-        updates: &mut HashMap<DataLevel, Vec<ParsedInput>>,
-        inps: &Vec<ParsedInput>)
-    {
+    fn push_update(updates: &mut HashMap<DataLevel, Vec<ParsedInput>>, inps: &Vec<ParsedInput>) {
         for inp in inps {
-            let lvls = inp.levels()
+            let lvls = inp
+                .levels()
                 .into_iter()
                 .filter(|l| l.is_streaming())
                 .collect::<Vec<_>>();
             for l in lvls {
-                updates.entry(l)
-                    .or_insert(vec![])
-                    .push(inp.clone());
+                updates.entry(l).or_insert(vec![]).push(inp.clone());
             }
         }
     }
@@ -361,96 +357,88 @@ mod tests {
          * }
          */
         let inputs = vec![
-            ParsedInput::FilterGroup(
-                FilterGroupSpec {
-                    level: None,
-                    name: "MyGroup".into(),
-                }
-            ),
-            ParsedInput::FilterGroupFn(
-                FilterGroupFnSpec {
-                    level: vec![DataLevel::L4InPayload(false)],
-                    group_name: "MyGroup".into(),
-                    func: FnSpec {
-                        name: "update".into(),
-                        returns: FnReturn::FilterResult,
-                        datatypes: vec!["L4Pdu".into()],
-                    }
-                }
-            ),
-            ParsedInput::FilterGroupFn(
-                FilterGroupFnSpec {
-                    level: vec![],
-                    group_name: "MyGroup".into(),
-                    func: FnSpec {
-                        name: "on_tls".into(),
-                        returns: FnReturn::FilterResult,
-                        datatypes: vec!["TlsHandshake".into()],
-                    }
-                }
-            ),
-            ParsedInput::Datatype(
-                DatatypeSpec {
-                    level: Some(DataLevel::Packet),
-                    name: "L4Pdu".into(),
-                }
-            ),
-            ParsedInput::Datatype(
-                DatatypeSpec {
-                    level: Some(DataLevel::L7EndHdrs),
-                    name: "TlsHandshake".into(),
-                }
-            ),
-            ParsedInput::Datatype(
-                DatatypeSpec {
-                    level: None,
-                    name: "ConnRecord".into(),
-                }
-            ),
-            ParsedInput::DatatypeFn(
-                DatatypeFnSpec {
-                    group_name: "ConnRecord".into(),
-                    func: FnSpec {
-                        name: "update".into(),
-                        datatypes: vec!["L4Pdu".into()],
-                        returns: FnReturn::None,
-                    },
-                    level: vec![DataLevel::L4InPayload(false)],
-                }
-            ),
-            ParsedInput::Callback(
-                CallbackFnSpec {
-                    filter: "ipv4 and tls and MyGroup".into(),
-                    level: vec![DataLevel::L4Terminated],
-                    func: FnSpec {
-                        name: "my_cb".into(),
-                        datatypes: vec!["ConnRecord".into(), "TlsHandshake".into()],
-                        returns: FnReturn::None,
-                    }
-                }
-            )
+            ParsedInput::FilterGroup(FilterGroupSpec {
+                level: None,
+                name: "MyGroup".into(),
+            }),
+            ParsedInput::FilterGroupFn(FilterGroupFnSpec {
+                level: vec![DataLevel::L4InPayload(false)],
+                group_name: "MyGroup".into(),
+                func: FnSpec {
+                    name: "update".into(),
+                    returns: FnReturn::FilterResult,
+                    datatypes: vec!["L4Pdu".into()],
+                },
+            }),
+            ParsedInput::FilterGroupFn(FilterGroupFnSpec {
+                level: vec![],
+                group_name: "MyGroup".into(),
+                func: FnSpec {
+                    name: "on_tls".into(),
+                    returns: FnReturn::FilterResult,
+                    datatypes: vec!["TlsHandshake".into()],
+                },
+            }),
+            ParsedInput::Datatype(DatatypeSpec {
+                level: Some(DataLevel::Packet),
+                name: "L4Pdu".into(),
+            }),
+            ParsedInput::Datatype(DatatypeSpec {
+                level: Some(DataLevel::L7EndHdrs),
+                name: "TlsHandshake".into(),
+            }),
+            ParsedInput::Datatype(DatatypeSpec {
+                level: None,
+                name: "ConnRecord".into(),
+            }),
+            ParsedInput::DatatypeFn(DatatypeFnSpec {
+                group_name: "ConnRecord".into(),
+                func: FnSpec {
+                    name: "update".into(),
+                    datatypes: vec!["L4Pdu".into()],
+                    returns: FnReturn::None,
+                },
+                level: vec![DataLevel::L4InPayload(false)],
+            }),
+            ParsedInput::Callback(CallbackFnSpec {
+                filter: "ipv4 and tls and MyGroup".into(),
+                level: vec![DataLevel::L4Terminated],
+                func: FnSpec {
+                    name: "my_cb".into(),
+                    datatypes: vec!["ConnRecord".into(), "TlsHandshake".into()],
+                    returns: FnReturn::None,
+                },
+            }),
         ];
         let decoder = SubscriptionDecoder::new(&inputs);
         assert!(decoder.custom_preds.len() == 1);
         assert!({
             let pred = decoder.custom_preds.first().unwrap();
             let levels = pred.levels();
-            levels.len() == 2 &&
-                levels.contains(&DataLevel::L4InPayload(false)) &&
-                levels.contains(&DataLevel::L7EndHdrs)
+            levels.len() == 2
+                && levels.contains(&DataLevel::L4InPayload(false))
+                && levels.contains(&DataLevel::L7EndHdrs)
         });
         assert!({
             let sub = decoder.subscriptions.first().unwrap();
             let datatypes = &sub.callbacks.first().unwrap().datatypes;
-            datatypes.len() == 2 &&
-                datatypes.iter().any(|dt| dt.updates == vec![DataLevel::L4InPayload(false)]) &&
-                datatypes.iter().any(|dt| dt.updates == vec![DataLevel::L7EndHdrs])
+            datatypes.len() == 2
+                && datatypes
+                    .iter()
+                    .any(|dt| dt.updates == vec![DataLevel::L4InPayload(false)])
+                && datatypes
+                    .iter()
+                    .any(|dt| dt.updates == vec![DataLevel::L7EndHdrs])
         });
 
         assert!(decoder.updates.len() == 1);
         let entr = decoder.updates.get(&DataLevel::L4InPayload(false)).unwrap();
-        assert!(entr.len() == 2,
-                "Actual len: {} (value: {:?}", entr.len(), entr);
+        assert!(
+            entr.len() == 2,
+            "Actual len: {} (value: {:?}",
+            entr.len(),
+            entr
+        );
 
         // Build up some basic trees
         let mut ptree = PTree::new_empty(DataLevel::L7OnDisc);
@@ -460,7 +448,7 @@ mod tests {
             ptree.add_subscription(&patterns, &s.callbacks, &s.as_str);
         }
         ptree.collapse();
-        assert!(ptree.size == 4);  // eth -> tls -> [MyGroup matched, matching]
+        assert!(ptree.size == 4); // eth -> tls -> [MyGroup matched, matching]
         let node1 = ptree.get_subtree(2).unwrap();
         let node2 = ptree.get_subtree(3).unwrap();
         assert!(node1.pred.is_matching() || node2.pred.is_matching());

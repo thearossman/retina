@@ -13,7 +13,7 @@
 //!
 //!
 
-use retina_core::{L4Pdu, Mbuf, protocols::Session};
+use retina_core::{protocols::Session, L4Pdu, Mbuf};
 pub mod conn_fts;
 pub mod tls_handshake;
 use retina_filtergen::cache_file;
@@ -41,8 +41,10 @@ pub use packet::{Payload, ZcFrame};
 
 /// No-op function to invoke macro
 /// TODO can we do this more cleanly?
-#[cfg_attr(not(feature = "skip_expand"),
-    cache_file("$RETINA_HOME/datatypes/data.jsonl"))]
+#[cfg_attr(
+    not(feature = "skip_expand"),
+    cache_file("$RETINA_HOME/datatypes/data.jsonl")
+)]
 fn _cache_file() {}
 
 /// Need to define traits in this crate to avoid

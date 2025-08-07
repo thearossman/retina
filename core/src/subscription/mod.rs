@@ -9,9 +9,9 @@ use crate::protocols::packet::udp::UDP_PROTOCOL;
 use crate::protocols::stream::ParserRegistry;
 use crate::stats::{StatExt, TCP_BYTE, TCP_PKT, UDP_BYTE, UDP_PKT};
 
+pub mod data;
 #[doc(hidden)]
 pub mod filter;
-pub mod data;
 pub use data::Tracked;
 #[doc(hidden)]
 pub mod callback;
@@ -127,33 +127,37 @@ where
 
     /// Invokes the L6/L7 protocol filter, i.e., filtering on the protocol (e.g., TLS, HTTP)
     pub fn filter_protocol<T: Trackable>(&self, conn: &mut ConnInfo<S::Tracked>) {
-        conn.tracked.state_tx(
-            StateTxData::from_tx(&StateTransition::L7OnDisc, &mut conn.layers[0])
-        );
+        conn.tracked.state_tx(StateTxData::from_tx(
+            &StateTransition::L7OnDisc,
+            &mut conn.layers[0],
+        ));
         (self.proto_filter)(conn);
     }
 
     /// Invokes the Session filter, i.e., filtering on fields in a parsed session.
     pub fn filter_session<T: Trackable>(&self, conn: &mut ConnInfo<S::Tracked>) {
-        conn.tracked.state_tx(
-            StateTxData::from_tx(&StateTransition::L7EndHdrs, &mut conn.layers[0])
-        );
+        conn.tracked.state_tx(StateTxData::from_tx(
+            &StateTransition::L7EndHdrs,
+            &mut conn.layers[0],
+        ));
         (self.session_filter)(conn)
     }
 
     /// Invokes any L4 Connection-level subscriptions
     pub fn connection_terminated<T: Trackable>(&self, conn: &mut ConnInfo<S::Tracked>) {
-        conn.tracked.state_tx(
-            StateTxData::from_tx(&StateTransition::L4Terminated, &mut conn.layers[0])
-        );
+        conn.tracked.state_tx(StateTxData::from_tx(
+            &StateTransition::L4Terminated,
+            &mut conn.layers[0],
+        ));
         (self.conn_deliver)(conn);
     }
 
     /// Indicates that the TCP handshake has completed
     pub fn handshake_done<T: Trackable>(&self, conn: &mut ConnInfo<S::Tracked>) {
-        conn.tracked.state_tx(
-            StateTxData::from_tx(&StateTransition::L4EndHshk, &mut conn.layers[0])
-        );
+        conn.tracked.state_tx(StateTxData::from_tx(
+            &StateTransition::L4EndHshk,
+            &mut conn.layers[0],
+        ));
         // TODO
     }
 

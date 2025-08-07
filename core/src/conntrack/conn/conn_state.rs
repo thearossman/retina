@@ -1,9 +1,12 @@
+use serde::{Deserialize, Serialize};
 use std::{cmp::Ordering, str::FromStr};
-use strum_macros::EnumIter;
 use strum::IntoEnumIterator;
-use serde::{Serialize, Deserialize};
+use strum_macros::EnumIter;
 
-use crate::{conntrack::Layer, protocols::{stream::SessionProto, Session}};
+use crate::{
+    conntrack::Layer,
+    protocols::{stream::SessionProto, Session},
+};
 
 /// State that each Layer maintains, based on what it has
 /// seen so far in the connection.
@@ -27,7 +30,9 @@ pub enum LayerState {
 /// Streaming Levels must also identify the streaming frequency and unit
 /// (packets, bytes, or seconds).
 /// NOTE: for the same layer, enums must be listed in order.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, EnumIter, Serialize, Deserialize)]
+#[derive(
+    Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, EnumIter, Serialize, Deserialize,
+)]
 #[repr(u8)]
 pub enum DataLevel {
     /// On first packet in connection
@@ -132,7 +137,11 @@ impl DataLevel {
     pub fn compare(&self, other: &DataLevel) -> StateTxOrd {
         // L4Pdu is any
         if matches!(self, DataLevel::Packet) || matches!(other, DataLevel::Packet) {
-            if self != other { return StateTxOrd::Any } else { return StateTxOrd::Equal};
+            if self != other {
+                return StateTxOrd::Any;
+            } else {
+                return StateTxOrd::Equal;
+            };
         }
 
         // End of connection is always greatest
@@ -205,8 +214,9 @@ impl StateTxData {
                 return match state {
                     DataLevel::L4EndHshk => Self::L4EndHshk,
                     DataLevel::L7OnDisc => Self::L7OnDisc(layer.get_protocol()),
-                    DataLevel::L7EndHdrs => Self::L7EndHdrs(layer.pop_session()
-                                                                 .expect("L7EndHdrs without session")),
+                    DataLevel::L7EndHdrs => {
+                        Self::L7EndHdrs(layer.pop_session().expect("L7EndHdrs without session"))
+                    }
                     DataLevel::L4Terminated => Self::L4Terminated,
                     _ => panic!("Called from_tx on streaming state {:?}", state),
                 };

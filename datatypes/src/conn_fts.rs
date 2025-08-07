@@ -1,8 +1,8 @@
 //! Various individual connection-level subscribable types for TCP and/or UDP
 //! connection information, statistics, and state history.
 
-use retina_core::{conntrack::StateTxData, subscription::Tracked};
 use retina_core::L4Pdu;
+use retina_core::{conntrack::StateTxData, subscription::Tracked};
 #[allow(dead_code)]
 use retina_filtergen::{datatype, datatype_group};
 use serde::ser::{Serialize, SerializeSeq, SerializeStruct, Serializer};
@@ -55,9 +55,10 @@ impl Tracked for ConnDuration {
     fn clear(&mut self) {}
 
     #[inline]
-
-    #[cfg_attr(not(feature = "skip_expand"),
-        datatype_group("ConnDuration,level=L4InPayload"))]
+    #[cfg_attr(
+        not(feature = "skip_expand"),
+        datatype_group("ConnDuration,level=L4InPayload")
+    )]
     fn update(&mut self, pdu: &L4Pdu) {
         self.last_ts = pdu.ts.clone();
     }
@@ -92,8 +93,10 @@ impl Tracked for PktCount {
     fn clear(&mut self) {}
 
     #[inline]
-    #[cfg_attr(not(feature = "skip_expand"),
-      datatype_group("PktCount,level=L4InPayload"))]
+    #[cfg_attr(
+        not(feature = "skip_expand"),
+        datatype_group("PktCount,level=L4InPayload")
+    )]
     fn update(&mut self, _: &L4Pdu) {
         self.pkt_count += 1;
     }
@@ -128,8 +131,10 @@ impl Tracked for ByteCount {
     fn clear(&mut self) {}
 
     #[inline]
-    #[cfg_attr(not(feature = "skip_expand"),
-        datatype_group("ByteCount,level=L4InPayload"))]
+    #[cfg_attr(
+        not(feature = "skip_expand"),
+        datatype_group("ByteCount,level=L4InPayload")
+    )]
     fn update(&mut self, pdu: &L4Pdu) {
         self.byte_count += pdu.mbuf_ref().data_len();
     }
@@ -181,8 +186,10 @@ impl Tracked for InterArrivals {
     }
 
     #[inline]
-    #[cfg_attr(not(feature = "skip_expand"),
-        datatype_group("InterArrivals,level=L4InPayload"))]
+    #[cfg_attr(
+        not(feature = "skip_expand"),
+        datatype_group("InterArrivals,level=L4InPayload")
+    )]
     fn update(&mut self, pdu: &L4Pdu) {
         let now = Instant::now();
         if pdu.dir {
@@ -268,7 +275,10 @@ impl Tracked for ConnHistory {
     fn clear(&mut self) {}
 
     #[inline]
-    #[cfg_attr(not(feature = "skip_expand"), datatype_group("ConnHistory,level=L4InPayload"))]
+    #[cfg_attr(
+        not(feature = "skip_expand"),
+        datatype_group("ConnHistory,level=L4InPayload")
+    )]
     fn update(&mut self, pdu: &L4Pdu) {
         if pdu.dir {
             update_history(&mut self.history, pdu, 0x0);

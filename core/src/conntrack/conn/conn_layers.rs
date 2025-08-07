@@ -71,7 +71,7 @@ impl Layer {
         match self {
             Layer::L7(session) => {
                 session.linfo.actions.extend(&action);
-            },
+            }
         }
     }
 }

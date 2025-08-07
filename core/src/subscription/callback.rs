@@ -21,14 +21,16 @@ pub enum CallbackState {
 /// (e.g., L4InPayload) or has multiple functions.
 #[derive(Debug)]
 pub struct StreamCallbackWrapper<C>
-    where C: StreamingCallback + std::fmt::Debug,
+where
+    C: StreamingCallback + std::fmt::Debug,
 {
     state: CallbackState,
     pub callback: C,
 }
 
 impl<C> StreamCallbackWrapper<C>
-where C: StreamingCallback + std::fmt::Debug
+where
+    C: StreamingCallback + std::fmt::Debug,
 {
     pub fn new() -> Self {
         Self {
@@ -90,8 +92,12 @@ mod tests {
         invoked: usize,
     }
     impl StreamingCallback for MyCallback {
-        fn new() -> Self { Self { invoked: 0 } }
-        fn clear(&mut self) { self.invoked = 0; }
+        fn new() -> Self {
+            Self { invoked: 0 }
+        }
+        fn clear(&mut self) {
+            self.invoked = 0;
+        }
     }
     impl MyCallback {
         // #[callback_group] macros would go here

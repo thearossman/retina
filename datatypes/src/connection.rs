@@ -6,9 +6,9 @@ use retina_core::conntrack::conn::tcp_conn::reassembly::wrapping_lt;
 use retina_core::conntrack::conn_id::FiveTuple;
 use retina_core::conntrack::pdu::L4Pdu;
 use retina_core::protocols::packet::tcp::{ACK, FIN, RST, SYN};
+use retina_core::subscription::Tracked;
 #[allow(dead_code)]
 use retina_filtergen::{datatype, datatype_group};
-use retina_core::subscription::Tracked;
 
 use serde::ser::{SerializeStruct, Serializer};
 use serde::Serialize;
@@ -237,8 +237,10 @@ impl Tracked for ConnRecord {
         self.history = Vec::with_capacity(0);
     }
 
-    #[cfg_attr(not(feature = "skip_expand"),
-        datatype_group("ConnRecord,level=L4InPayload"))]
+    #[cfg_attr(
+        not(feature = "skip_expand"),
+        datatype_group("ConnRecord,level=L4InPayload")
+    )]
     fn update(&mut self, pdu: &L4Pdu) {
         self.update_data(pdu);
     }

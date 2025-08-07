@@ -60,11 +60,9 @@ impl PNode {
     // Utility to check whether a descendant exists
     // Helper for `get_descendant`, which must be invoked in an `if` block
     // due to borrow checker
-    fn has_descendant(&self, pred: &Predicate,
-                      state: &Option<Predicate>) -> bool {
+    fn has_descendant(&self, pred: &Predicate, state: &Option<Predicate>) -> bool {
         for n in &self.children {
-            if n.pred.is_state() &&
-               (state.is_none() || Some(&n.pred) != state.as_ref()) {
+            if n.pred.is_state() && (state.is_none() || Some(&n.pred) != state.as_ref()) {
                 return false;
             }
             if &n.pred == pred {
@@ -151,15 +149,18 @@ impl PNode {
 
     // Returns a node that can act as a parent to `pred`, or None.
     // The most "narrow" parent condition will be returned if multiple exist.
-    fn get_parent(&mut self, pred: &Predicate, tree_size: usize,
-                  state: &Option<Predicate>) -> Option<&mut PNode> {
+    fn get_parent(
+        &mut self,
+        pred: &Predicate,
+        tree_size: usize,
+        state: &Option<Predicate>,
+    ) -> Option<&mut PNode> {
         // This is messy, but directly iterating through children or
         // recursing will raise flags with the borrow checker.
         let mut node = self;
         for _ in 0..tree_size {
             // Stop traversing if hit a state dependency
-            if node.pred.is_state() &&
-               (state.is_none() || Some(&node.pred) != state.as_ref()) {
+            if node.pred.is_state() && (state.is_none() || Some(&node.pred) != state.as_ref()) {
                 return None;
             }
             // Checked for `Some` on last iteration
@@ -261,10 +262,10 @@ impl fmt::Display for PNode {
 // To consider children, use outcome_eq
 impl PartialEq for PNode {
     fn eq(&self, other: &PNode) -> bool {
-        self.pred == other.pred &&
-            self.actions == other.actions &&
-            self.deliver == other.deliver &&
-            self.datatypes == other.datatypes
+        self.pred == other.pred
+            && self.actions == other.actions
+            && self.deliver == other.deliver
+            && self.datatypes == other.datatypes
     }
 }
 
@@ -389,26 +390,23 @@ impl PTree {
         // Pattern may have predicates that need to be annotated with
         // L7 State checks (e.g., only check TLS if L7 >= Headers)
         let mut pattern_tmp;
-        if self.filter_layer.is_streaming() &&
-           self.filter_layer.in_transport() {
+        if self.filter_layer.is_streaming() && self.filter_layer.in_transport() {
             pattern_tmp = pattern.with_l7_state();
             pattern = &pattern_tmp;
         }
         // Extend with callback predicates if streaming
         // If a subscription previously had the opportunity to unsubscribe,
         // we need to check if it did
-        if callbacks.iter().any(|c| {
-            match c.expl_level {
-                Some(l) => {
-                    l.is_streaming() &&
-                    matches!(l.compare(&self.filter_layer),
-                                               StateTxOrd::Unknown |
-                                               StateTxOrd::Less)
-                },
-                None => false,
+        if callbacks.iter().any(|c| match c.expl_level {
+            Some(l) => {
+                l.is_streaming()
+                    && matches!(
+                        l.compare(&self.filter_layer),
+                        StateTxOrd::Unknown | StateTxOrd::Less
+                    )
             }
-        })
-        {
+            None => false,
+        }) {
             pattern_tmp = pattern.with_streaming_cb(cb_id);
             pattern = &pattern_tmp;
         }
@@ -453,8 +451,7 @@ impl PTree {
             // Need to insert this as a unique pattern with the relevant L7 state checks
             if let Some(if_matches) = action.if_matches {
                 subpattern = pattern.get_subpattern(if_matches.0, if_matches.1);
-                truncated = truncated || subpattern.predicates.len() <=
-                            pattern.predicates.len();
+                truncated = truncated || subpattern.predicates.len() <= pattern.predicates.len();
                 pattern_ref = &subpattern;
             }
 
@@ -467,13 +464,17 @@ impl PTree {
                 self.add_pattern_int(pattern_ref, action, callback, truncated);
             }
         }
-        if !contains_nonterminal &&
-          (!full_pattern_added || node_actions.actions.is_empty())
-        {
+        if !contains_nonterminal && (!full_pattern_added || node_actions.actions.is_empty()) {
             for callback in callbacks {
-                let level = SubscriptionLevel::new(&callback.datatypes, pattern, callback.expl_level);
+                let level =
+                    SubscriptionLevel::new(&callback.datatypes, pattern, callback.expl_level);
                 if level.can_deliver(&self.filter_layer) {
-                    self.add_pattern_int(pattern, &DataActions::new(), callback, contains_nonterminal);
+                    self.add_pattern_int(
+                        pattern,
+                        &DataActions::new(),
+                        callback,
+                        contains_nonterminal,
+                    );
                 }
             }
         }
@@ -494,13 +495,12 @@ impl PTree {
         let mut state_pred = None;
 
         let pattern = FlatPattern {
-            predicates:
-                full_pattern
-                    .predicates
-                    .iter()
-                    .filter(|p| !p.is_next_layer(self.filter_layer))
-                    .cloned()
-                    .collect()
+            predicates: full_pattern
+                .predicates
+                .iter()
+                .filter(|p| !p.is_next_layer(self.filter_layer))
+                .cloned()
+                .collect(),
         };
         assert!(pattern.predicates.len() <= full_pattern.predicates.len());
         if pattern.predicates.len() < full_pattern.predicates.len() {
@@ -527,8 +527,7 @@ impl PTree {
             };
             // Create new node
             if !node.has_child(predicate) {
-                node.children
-                    .push(PNode::new(predicate.clone(), self.size));
+                node.children.push(PNode::new(predicate.clone(), self.size));
                 self.size += 1;
             }
             // Move on, pushing any new children if applicable
@@ -540,13 +539,12 @@ impl PTree {
             // TODO do we need this?
             // TODO avoid additional lookups
             if node.pred.is_custom() && node.pred.is_matching() {
-                node.actions.merge(
-                    &DataActions::from_stream_pred(
-                        &node.pred,
-                        full_pattern.next_pred(self.filter_layer),
-                        self.filter_layer,
-                        &state_pred
-                    ));
+                node.actions.merge(&DataActions::from_stream_pred(
+                    &node.pred,
+                    full_pattern.next_pred(self.filter_layer),
+                    self.filter_layer,
+                    &state_pred,
+                ));
             }
 
             if node.pred.is_state() {
@@ -746,8 +744,7 @@ impl PTree {
                 // Look for unary predicate (e.g., `ipv4`) and child with
                 // binary predicate of same protocol (e.g., `ipv4.addr = ...`)
                 let child = &mut node.children[0];
-                if child.extracts_protocol(filter_layer) ||
-                    child.pred.is_state() {
+                if child.extracts_protocol(filter_layer) || child.pred.is_state() {
                     break;
                 }
                 node.actions.merge(&child.actions);
@@ -858,11 +855,7 @@ impl fmt::Display for PTree {
 
 #[cfg(test)]
 mod tests {
-    use crate::{
-        conntrack::Actions,
-        filter::Filter,
-        filter::subscription::DataLevelSpec
-    };
+    use crate::{conntrack::Actions, filter::subscription::DataLevelSpec, filter::Filter};
 
     use super::*;
 
@@ -896,16 +889,24 @@ mod tests {
         let node = tree.get_subtree(2).unwrap();
         assert!(!node.actions.drop());
         assert!(node.actions.transport.has_next_layer());
-        assert!(node.actions.transport.refresh_at[DataLevel::L7OnDisc.as_usize()] == Actions::PassThrough);
+        assert!(
+            node.actions.transport.refresh_at[DataLevel::L7OnDisc.as_usize()]
+                == Actions::PassThrough
+        );
         assert!(node.actions.layers[0].needs_parse());
-        assert!(node.actions.layers[0].refresh_at[DataLevel::L7OnDisc.as_usize()] == Actions::Parse);
+        assert!(
+            node.actions.layers[0].refresh_at[DataLevel::L7OnDisc.as_usize()] == Actions::Parse
+        );
 
         // On protocol discovery: continue parsing until end of headers
         let mut tree = PTree::new_empty(DataLevel::L7OnDisc);
         tree.add_subscription(&patterns, &TLS_SUB, &TLS_SUB[0].as_str);
         assert!(tree.size == 7); // + 2 TLS nodes
         let node = tree.get_subtree(3).unwrap(); // TLS node
-        assert!(node.actions.transport.refresh_at[DataLevel::L7EndHdrs.as_usize()] == Actions::PassThrough);
+        assert!(
+            node.actions.transport.refresh_at[DataLevel::L7EndHdrs.as_usize()]
+                == Actions::PassThrough
+        );
 
         // Inlined delivery
         let mut tree = PTree::new_empty(DataLevel::L7EndHdrs);
@@ -981,10 +982,7 @@ mod tests {
         // Adds node(s) to re-check the CB
         assert!(tree.size == 15);
         let node = tree.get_subtree(5).unwrap(); // callback node
-        assert!(
-            node.actions.transport.needs_update()
-                && !node.actions.transport.has_next_layer()
-        );
+        assert!(node.actions.transport.needs_update() && !node.actions.transport.has_next_layer());
     }
 
     lazy_static! {
@@ -992,7 +990,6 @@ mod tests {
             updates: vec![DataLevel::L4FirstPacket],
             name: "FiveTuple".into(),
         };
-
         static ref FIVETUPLE_SUB: Vec<CallbackSpec> = vec![CallbackSpec {
             expl_level: None,
             datatypes: vec![FIVETUPLE_DATATYPE.clone()],
@@ -1026,25 +1023,28 @@ mod tests {
         let mut collapsed_tree = tree.clone();
         collapsed_tree.collapse();
         // Can't optimize tcp anymore for ipv4, but still can for ipv6
-        assert!(collapsed_tree.size == 6, "Actual value: {}", collapsed_tree.size);
+        assert!(
+            collapsed_tree.size == 6,
+            "Actual value: {}",
+            collapsed_tree.size
+        );
     }
 
     #[test]
     fn test_ptree_parse() {
-        let filter = Filter::new("ipv4 and tls and my_filter",
-                                 &CUSTOM_FILTERS).unwrap();
+        let filter = Filter::new("ipv4 and tls and my_filter", &CUSTOM_FILTERS).unwrap();
         let patterns = filter.get_patterns_flat();
 
         let mut tree = PTree::new_empty(DataLevel::L4InPayload(false));
         tree.add_subscription(&patterns, &FIVETUPLE_SUB, &FIVETUPLE_SUB[0].as_str);
         tree.collapse(); // Remove ipv4/tcp
-        // eth -> my filter (matched) -> L7 Disc (Actions - parse)
-        //                            -> L7 >= Headers -> tls (Deliver)
-        //     -> my filter (matching) (Actions - update) -> L7 Disc (Actions - parse)
+                         // eth -> my filter (matched) -> L7 Disc (Actions - parse)
+                         //                            -> L7 >= Headers -> tls (Deliver)
+                         //     -> my filter (matching) (Actions - update) -> L7 Disc (Actions - parse)
         assert!(tree.size == 7);
 
-        let filter = Filter::new("ipv4 and tls.sni = \'abc\' and my_filter",
-                                 &CUSTOM_FILTERS).unwrap();
+        let filter =
+            Filter::new("ipv4 and tls.sni = \'abc\' and my_filter", &CUSTOM_FILTERS).unwrap();
         let patterns = filter.get_patterns_flat();
         let mut tree = PTree::new_empty(DataLevel::L4InPayload(false));
         tree.add_subscription(&patterns, &FIVETUPLE_SUB, &FIVETUPLE_SUB[0].as_str);
@@ -1058,30 +1058,32 @@ mod tests {
     lazy_static! {
         static ref CUSTOM_FILTERS_GROUPED: Vec<Predicate> = vec![Predicate::Custom {
             name: filterfunc!("GroupedFil"),
-            levels: vec![vec![DataLevel::L4InPayload(false)], vec![DataLevel::L7EndHdrs]],
+            levels: vec![
+                vec![DataLevel::L4InPayload(false)],
+                vec![DataLevel::L7EndHdrs]
+            ],
             matched: true,
         }];
     }
 
     #[test]
     fn test_ptree_grouped() {
-        let filter = Filter::new("ipv4 and tls and GroupedFil",
-                                 &CUSTOM_FILTERS_GROUPED).unwrap();
+        let filter = Filter::new("ipv4 and tls and GroupedFil", &CUSTOM_FILTERS_GROUPED).unwrap();
         let patterns = filter.get_patterns_flat();
         let mut tree = PTree::new_empty(DataLevel::L4InPayload(false));
         tree.add_subscription(&patterns, &FIVETUPLE_SUB, &FIVETUPLE_SUB[0].as_str);
         tree.collapse();
-        assert!(tree.size == 10,
-                "Action size: {}", tree.size);
+        assert!(tree.size == 10, "Action size: {}", tree.size);
         // GroupedFil(matched), GroupedFil(matching)
-        assert!(tree.root.children.len() == 2,
-                "Actual len: {}", tree.root.children.len());
+        assert!(
+            tree.root.children.len() == 2,
+            "Actual len: {}",
+            tree.root.children.len()
+        );
         let node = tree.get_subtree(5).unwrap(); // "Matching" GroupedFilter
-        assert!(node.pred.is_custom(),
-                "Actual pred: {}", node.pred);
+        assert!(node.pred.is_custom(), "Actual pred: {}", node.pred);
         assert!(node.actions.transport.needs_update());
-        assert!(node.children.len() == 2 &&
-            node.children[0].pred.is_state()); // L7=Disc, L7>=Headers
+        assert!(node.children.len() == 2 && node.children[0].pred.is_state()); // L7=Disc, L7>=Headers
         let node = tree.get_subtree(2).unwrap(); // L7=Disc
         assert!(node.actions.layers[0].needs_parse());
 
@@ -1090,5 +1092,4 @@ mod tests {
         // tree.collapse();
         // println!("{}", tree);
     }
-
 }

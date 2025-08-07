@@ -8,9 +8,7 @@ struct ConnLen {
 }
 impl ConnLen {
     fn new() -> Self {
-        Self {
-            len: 0,
-        }
+        Self { len: 0 }
     }
     #[filter_group("ConnLen,level=L4InPayload")]
     fn update(&mut self, _: &L4Pdu) -> FilterResult {

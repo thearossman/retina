@@ -74,12 +74,18 @@ impl DataActions {
     }
 
     // Get the actions associated with a matching `pred`.
-    pub(crate) fn from_stream_pred(pred: &Predicate,
-                                   next_preds: Vec<StateTransition>,
-                                   filter_layer: StateTransition,
-                                   curr_state_pred: &Option<Predicate>) -> DataActions
-    {
-        if let Predicate::Custom { name, levels, matched, } = pred {
+    pub(crate) fn from_stream_pred(
+        pred: &Predicate,
+        next_preds: Vec<StateTransition>,
+        filter_layer: StateTransition,
+        curr_state_pred: &Option<Predicate>,
+    ) -> DataActions {
+        if let Predicate::Custom {
+            name,
+            levels,
+            matched,
+        } = pred
+        {
             assert!(!*matched);
             let spec = DataLevelSpec {
                 updates: levels.into_iter().cloned().flatten().collect(),
@@ -87,11 +93,9 @@ impl DataActions {
             };
             let actions = spec.to_actions(filter_layer);
             let curr_state = match curr_state_pred {
-                Some(p) => {
-                    match p {
-                        Predicate::LayerState {layer, state, .. } => Some((*layer, *state)),
-                        _ => panic!("State predicate is {}", p),
-                    }
+                Some(p) => match p {
+                    Predicate::LayerState { layer, state, .. } => Some((*layer, *state)),
+                    _ => panic!("State predicate is {}", p),
                 },
                 None => None,
             };
@@ -248,8 +252,12 @@ impl NodeActions {
     /// at the node.
     #[allow(dead_code)]
     pub(crate) fn merge(&mut self, peer: &NodeActions) {
-        assert!(self.end_datatypes && peer.end_datatypes || self.actions.len() == 0,
-                "SELF: {}\nPEER: {}", self, peer);
+        assert!(
+            self.end_datatypes && peer.end_datatypes || self.actions.len() == 0,
+            "SELF: {}\nPEER: {}",
+            self,
+            peer
+        );
         assert!(self.filter_layer == peer.filter_layer);
         for a in &peer.actions {
             self.push_action(a.clone());
@@ -262,7 +270,6 @@ impl NodeActions {
     pub(crate) fn drop(&self) -> bool {
         self.actions.len() == 0 || self.actions.iter().all(|a| a.transport.drop())
     }
-
 }
 
 /// Compile-time struct for representing a datatype required for a callback
@@ -566,8 +573,9 @@ impl SubscriptionLevel {
             None => false,
         };
         // All datatype and filter predicate levels are strictly less than `curr`
-        cb_done &&
-            self.datatypes
+        cb_done
+            && self
+                .datatypes
                 .iter()
                 .chain(self.filter_preds.iter())
                 .all(|l| curr.compare(l) == StateTxOrd::Greater)

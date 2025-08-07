@@ -153,11 +153,11 @@ impl Predicate {
     // Returns `true` if predicate contains a streaming level
     pub fn is_streaming(&self) -> bool {
         if let Predicate::Custom { levels, .. } = self {
-            if levels.len() > 1 { return true; }
+            if levels.len() > 1 {
+                return true;
+            }
         }
-        self.levels()
-            .iter()
-            .any(|l| l.is_streaming())
+        self.levels().iter().any(|l| l.is_streaming())
     }
 
     // Returns `true` if predicate is a black-box callback defined by a user.
@@ -207,9 +207,7 @@ impl Predicate {
     // Inapplicable to static predicates and LayerState.
     pub fn levels(&self) -> Vec<DataLevel> {
         match self {
-            Predicate::Custom { levels, .. } => {
-                levels.into_iter().flatten().cloned().collect()
-            },
+            Predicate::Custom { levels, .. } => levels.into_iter().flatten().cloned().collect(),
             Predicate::Callback { .. } => vec![],
             // can be checked anytime
             Predicate::LayerState { .. } => vec![DataLevel::L4FirstPacket],
@@ -231,9 +229,7 @@ impl Predicate {
     // Returns `true` if predicate can be pushed to a packet filter.
     // i.e., the lowest filter level needed to apply the predicate is a packet filter.
     pub fn on_packet(&self) -> bool {
-        !self.needs_conntrack() &&
-            !self.is_custom() &&
-            !self.is_state()
+        !self.needs_conntrack() && !self.is_custom() && !self.is_state()
     }
 
     // Returns `true` if predicate *requires* raw packets
@@ -281,42 +277,37 @@ impl Predicate {
         match layer {
             SupportedLayer::L4 => false,
             SupportedLayer::L7 => {
-                if let Predicate::LayerState { layer: l, state: s, .. } = self {
+                if let Predicate::LayerState {
+                    layer: l, state: s, ..
+                } = self
+                {
                     return &layer == l && &state <= s;
                 }
                 let levels = self.levels();
                 match state {
-                    LayerState::Discovery => {
-                        false
-                    },
+                    LayerState::Discovery => false,
                     LayerState::Headers => {
                         if let Predicate::Custom { levels, .. } = self {
                             return levels
                                 .iter()
-                                .all(|fnlevel|
-                                    fnlevel
-                                        .iter()
-                                        .any(|l| l.layer_idx().is_some()));
+                                .all(|fnlevel| fnlevel.iter().any(|l| l.layer_idx().is_some()));
                         }
                         // Requires L7 protocol
                         levels.iter().any(|l| l.layer_idx().is_some())
-                    },
+                    }
                     LayerState::Payload => {
                         if let Predicate::Custom { levels, .. } = self {
-                            return levels
-                                .iter()
-                                .all(|fnlevel|
-                                    fnlevel
-                                        .iter()
-                                        .any(|l|
-                                            *l == DataLevel::L7EndHdrs || *l == DataLevel::L7InPayload
-                                        ));
+                            return levels.iter().all(|fnlevel| {
+                                fnlevel.iter().any(|l| {
+                                    *l == DataLevel::L7EndHdrs || *l == DataLevel::L7InPayload
+                                })
+                            });
                         }
                         // Requires payload or parsed session
-                        levels.iter().any(|l|
-                            *l == DataLevel::L7EndHdrs || *l == DataLevel::L7InPayload
-                        )
-                    },
+                        levels
+                            .iter()
+                            .any(|l| *l == DataLevel::L7EndHdrs || *l == DataLevel::L7InPayload)
+                    }
                     LayerState::None => panic!("Should not have LayerState::None predicate"),
                 }
             }
@@ -326,7 +317,9 @@ impl Predicate {
     // `self` can (or potentially can) be applied if `layer` is in `state`
     pub(super) fn is_compatible(&self, layer: SupportedLayer, state: LayerState) -> bool {
         let levels = self.levels();
-        if levels.contains(&DataLevel::L4Terminated) { return false; }
+        if levels.contains(&DataLevel::L4Terminated) {
+            return false;
+        }
         if let Predicate::LayerState { state: s, .. } = self {
             // Can apply `self` if different layer (e.g., can check L4-payload after L7-headers)
             // For simplicity, only apply `self` if equivalent
@@ -354,26 +347,24 @@ impl Predicate {
                         }
                         // Does not require a session-layer state
                         levels.iter().all(|l| l.layer_idx().is_none())
-                    },
+                    }
                     LayerState::Headers => {
                         if let Predicate::Custom { levels, .. } = self {
                             // Grouped filters: "okay to apply" if any of its predicates can be applied
                             if levels.len() > 1 {
-                                return levels
-                                    .iter()
-                                    .any(|fnlevel| {
-                                        fnlevel
-                                            .iter()
-                                            .all(|l| l.layer_idx().is_none() || *l == DataLevel::L7OnDisc)
-                                    });
+                                return levels.iter().any(|fnlevel| {
+                                    fnlevel.iter().all(|l| {
+                                        l.layer_idx().is_none() || *l == DataLevel::L7OnDisc
+                                    })
+                                });
                             }
                         }
                         // Does not require a session-layer state or only
                         // requires L7 protocol discovery
-                        levels.iter().all(|l|
-                            l.layer_idx().is_none() || *l == DataLevel::L7OnDisc
-                        )
-                    },
+                        levels
+                            .iter()
+                            .all(|l| l.layer_idx().is_none() || *l == DataLevel::L7OnDisc)
+                    }
                     LayerState::Payload => true,
                     LayerState::None => panic!("Should not have LayerState::None predicate"),
                 }
@@ -395,16 +386,16 @@ impl Predicate {
             // Custom predicates may be grouped, and they should be checked at
             // `curr` if ANY of their contained functions can be applied.
             if levels.len() > 1 {
-                return levels.iter()
-                    .all(|fnlevel| {
-                        fnlevel.
-                            iter()
-                            .all(|l| matches!(l.compare(&curr), StateTxOrd::Greater))
-                    });
+                return levels.iter().all(|fnlevel| {
+                    fnlevel
+                        .iter()
+                        .all(|l| matches!(l.compare(&curr), StateTxOrd::Greater))
+                });
             }
         }
-        !self.levels().is_empty() &&
-            self.levels()
+        !self.levels().is_empty()
+            && self
+                .levels()
                 .iter()
                 .all(|l| matches!(l.compare(&curr), StateTxOrd::Greater))
     }

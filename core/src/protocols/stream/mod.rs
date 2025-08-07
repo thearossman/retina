@@ -220,7 +220,7 @@ pub enum SessionProto {
     Ipv6,
     Tcp,
     Udp,
-    Null
+    Null,
 }
 
 /// An application-layer protocol session.
