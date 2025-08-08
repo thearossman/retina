@@ -13,11 +13,11 @@ pub mod ast;
 mod hardware;
 #[allow(clippy::upper_case_acronyms)]
 mod parser;
-mod pattern;
-#[doc(hidden)]
-pub mod ptree;
+pub mod pattern;
 #[doc(hidden)]
 pub mod pkt_ptree;
+#[doc(hidden)]
+pub mod ptree;
 #[doc(hidden)]
 pub mod subscription;
 

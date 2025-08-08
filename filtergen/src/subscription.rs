@@ -3,6 +3,7 @@ use lazy_static::lazy_static;
 use retina_core::conntrack::DataLevel;
 use retina_core::filter::ast::{FuncIdent, Predicate};
 use retina_core::filter::subscription::{CallbackSpec, DataLevelSpec};
+use retina_core::filter::{Filter, pattern::FlatPattern};
 use std::collections::{HashMap, HashSet};
 
 lazy_static! {
@@ -23,6 +24,17 @@ pub(crate) struct SubscriptionSpec {
     pub(crate) callbacks: Vec<CallbackSpec>,
     pub(crate) filter: String,
     pub(crate) as_str: String,
+    pub(crate) patterns: Option<Vec<FlatPattern>>,
+}
+
+impl SubscriptionSpec {
+    fn add_patterns(&mut self, custom_preds: &Vec<Predicate>) {
+        if self.patterns.is_none() {
+            let filter = Filter::new(&self.filter, &custom_preds)
+                .expect(&format!("Invalid filter: {}", self.filter));
+            self.patterns = Some(filter.get_patterns_flat());
+        }
+    }
 }
 
 /// Responsible for transforming the raw data in `parse.rs` into the formats
@@ -67,6 +79,9 @@ impl SubscriptionDecoder {
         ret.decode_filters();
         ret.decode_subscriptions();
         ret.decode_updates();
+        for spec in &mut ret.subscriptions {
+            spec.add_patterns(&ret.custom_preds);
+        }
         ret
     }
 
@@ -222,6 +237,7 @@ impl SubscriptionDecoder {
                 callbacks,
                 filter,
                 as_str: cb_name.clone(),
+                patterns: None,
             });
         }
     }
