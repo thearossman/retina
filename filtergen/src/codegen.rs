@@ -3,16 +3,23 @@ use super::subscription::*;
 use proc_macro2::Span;
 use quote::quote;
 use retina_core::conntrack::Actions;
+use retina_core::conntrack::StateTransition;
 use retina_core::conntrack::TrackedActions;
-use retina_core::filter::subscription::{CallbackSpec, DataActions, DataLevelSpec};
+use retina_core::filter::subscription::DataActions;
+use std::collections::HashSet;
 
-fn cb_to_tokens(sub: &SubscriptionDecoder, cb: &CallbackSpec) -> proc_macro2::TokenStream {
+pub(crate) fn cb_to_tokens(
+    sub: &SubscriptionDecoder,
+    datatypes: &Vec<String>,
+    cb_name: &String,
+    cb_group: Option<&String>,
+) -> proc_macro2::TokenStream {
     let mut conditions = vec![];
     let mut cond_match = vec![];
     let mut params = vec![];
     params_to_tokens(
         sub,
-        &cb.datatypes,
+        datatypes,
         &mut conditions,
         &mut cond_match,
         &mut params,
@@ -21,18 +28,25 @@ fn cb_to_tokens(sub: &SubscriptionDecoder, cb: &CallbackSpec) -> proc_macro2::To
     // Invoking this CB requires invoking a method on a struct
     // TODO also handle the static CBs that are tracked to avoid being
     // invoked 2x!!
-    let is_stateful = cb.as_str != cb.subscription_id && cb.subscription_id != "";
-    let cb_name = syn::Ident::new(&cb.as_str, Span::call_site());
-    let cb_id = syn::Ident::new(&cb.subscription_id.to_lowercase(), Span::call_site());
-    let mut cb_wrapper = cb.subscription_id.to_lowercase();
-    cb_wrapper.push_str("_wrap");
-    let cb_wrapper = syn::Ident::new(&cb_wrapper, Span::call_site());
+    let cb_name = syn::Ident::new(&cb_name, Span::call_site());
+    let (cb_id, cb_wrapper) = match &cb_group {
+        Some(grp) => {
+            let mut grp = grp.to_lowercase();
+            let id = syn::Ident::new(&grp, Span::call_site());
+            grp.push_str("_wrap");
+            (id, syn::Ident::new(&grp.to_lowercase(), Span::call_site()))
+        }
+        None => (
+            syn::Ident::new("", Span::call_site()),
+            syn::Ident::new("", Span::call_site()),
+        ),
+    };
 
-    let invoke = match is_stateful {
+    let invoke = match cb_group.is_some() {
         true => {
             quote! {
-                if !tracked.#cb_id.#cb_name(#( #params ), *) {
-                    tracked.#cb_wrapper.set_inactive();
+                if !conn.tracked.#cb_id.#cb_name(#( #params ), *) {
+                    conn.tracked.#cb_wrapper.set_inactive();
                 }
             }
         }
@@ -57,7 +71,7 @@ fn cb_to_tokens(sub: &SubscriptionDecoder, cb: &CallbackSpec) -> proc_macro2::To
         }
     };
 
-    match is_stateful {
+    match cb_group.is_some() {
         true => {
             quote! {
                 // Only invoke if active; unsubscribe if needed
@@ -72,8 +86,105 @@ fn cb_to_tokens(sub: &SubscriptionDecoder, cb: &CallbackSpec) -> proc_macro2::To
     }
 }
 
+/// Invoking a custom streaming filter function
+pub(crate) fn filter_func_to_tokens(
+    sub: &SubscriptionDecoder,
+    filter: &ParsedInput,
+    streaming: bool,
+) -> proc_macro2::TokenStream {
+    let func = match filter {
+        ParsedInput::FilterGroupFn(fil) => &fil.func,
+        ParsedInput::Filter(fil) => &fil.func,
+        _ => unreachable!(),
+    };
+    let mut conditions = vec![];
+    let mut cond_match = vec![];
+    let mut params = vec![];
+    params_to_tokens(
+        sub,
+        &func.datatypes,
+        &mut conditions,
+        &mut cond_match,
+        &mut params,
+    );
+    let func_ident = syn::Ident::new(&func.name, Span::call_site());
+    let fil_ident = syn::Ident::new(&filter.name(), Span::call_site());
+    let mut fil_wrapper = filter.name().to_lowercase();
+    fil_wrapper.push_str("_wrap");
+    let fil_wrapper = syn::Ident::new(&fil_wrapper, Span::call_site());
+
+    // Either invoke via `tracked` parent struct or just invoke directly
+    let invoke = match filter {
+        ParsedInput::FilterGroupFn(_) => {
+            quote! { conn.tracked.#fil_ident.#func_ident(#( #params ), *) }
+        }
+        ParsedInput::Filter(_) => {
+            quote! { #func_ident(#( #params ), *) }
+        }
+        _ => unreachable!(),
+    };
+    // Record FilterResult
+    let mut invoke = quote! {
+        let res = #invoke;
+        conn.tracked.#fil_wrapper.record_result(res);
+    };
+    // Get return value for `update` function
+    if streaming {
+        invoke = quote! {
+            #invoke
+            state_tx = state_tx || matches!(res, FilterResult::Accept | FilterResult::Drop);
+        };
+    }
+
+    // Extract parameters for filter if needed
+    if cond_match.is_empty() {
+        invoke = quote! {
+            match ( #( #conditions ), * ) {
+                (#( #cond_match ), *) => {
+                    #invoke
+                }
+                _ => {},
+            }
+        };
+    }
+
+    quote! {
+        if conn.tracked.#fil_wrapper.is_active() {
+            #invoke
+        }
+    }
+}
+
+pub(crate) fn datatype_func_to_tokens(dt: &DatatypeFnSpec) -> proc_macro2::TokenStream {
+    assert!(
+        dt.func.datatypes.first().unwrap().contains("self") && dt.func.datatypes.len() == 2,
+        "Check function definition of {:?}",
+        dt
+    );
+    let param = dt
+        .func
+        .datatypes
+        .last()
+        .expect(&format!("Check function definition of {:?}", dt));
+    let dt_name = syn::Ident::new(&dt.group_name.to_lowercase(), Span::call_site());
+    let fname = syn::Ident::new(&dt.func.name, Span::call_site());
+    if param == "L4Pdu" {
+        return quote! {
+            tracked.#dt_name.#fname(pdu);
+        };
+    } else if param == "StateTxOrd" {
+        return quote! {
+            tracked.#dt_name.#fname(tx);
+        };
+    }
+    panic!("Unknown param for {}: {}", dt.func.name, param);
+}
+
 /// Checking whether a custom filter matched
-fn cust_filter_to_tokens(sub: &SubscriptionDecoder, fil_id: &String) -> proc_macro2::TokenStream {
+pub(crate) fn filter_check_to_tokens(
+    sub: &SubscriptionDecoder,
+    fil_id: &String,
+) -> proc_macro2::TokenStream {
     let _fil = sub
         .filters_raw
         .get(fil_id)
@@ -94,9 +205,9 @@ fn cust_filter_to_tokens(sub: &SubscriptionDecoder, fil_id: &String) -> proc_mac
 /// @condition: e.g.: `match (val1, val2)`
 /// @cond_match: e.g.: `Some(val1), Some(val2) => ... `
 /// @params: actual variable names
-fn params_to_tokens(
+pub(crate) fn params_to_tokens(
     sub: &SubscriptionDecoder,
-    datatypes: &Vec<DataLevelSpec>,
+    datatypes: &Vec<String>,
     conditions: &mut Vec<proc_macro2::TokenStream>,
     cond_match: &mut Vec<proc_macro2::TokenStream>,
     params: &mut Vec<proc_macro2::TokenStream>,
@@ -104,12 +215,12 @@ fn params_to_tokens(
     for dt in datatypes {
         let dt_metadata = sub
             .datatypes_raw
-            .get(&dt.name)
-            .expect(&format!("Cannot find {} in known datatypes", dt.name));
-        let dt_name_ident = syn::Ident::new(&dt.name.to_lowercase(), Span::call_site());
+            .get(dt)
+            .expect(&format!("Cannot find {} in known datatypes", dt));
+        let dt_name_ident = syn::Ident::new(&dt.to_lowercase(), Span::call_site());
 
         // Case 1: extract directly from tracked data
-        if sub.tracked.contains(&dt.name) {
+        if sub.tracked.contains(dt) {
             // TODO need to standardize how `tracked` is stored
             // (`self` vs. in `conn`).
             params.push(quote! { &conn.tracked.#dt_name_ident, });
@@ -117,8 +228,8 @@ fn params_to_tokens(
         }
 
         // Case 2: Built-in datatype
-        if BUILTIN_TYPES.iter().any(|inp| inp.name() == &dt.name) {
-            let builtin = builtin_to_tokens(&dt.name);
+        if BUILTIN_TYPES.iter().any(|inp| inp.name() == dt) {
+            let builtin = builtin_to_tokens(&dt);
             params.push(quote! { #builtin });
             continue;
         }
@@ -133,14 +244,13 @@ fn params_to_tokens(
         if let Some(inp) = constructor {
             if let ParsedInput::DatatypeFn(spec) = inp {
                 // TODO validate / what other restrictions needed here?
-                assert!(dt.updates.iter().any(|l| !l.is_streaming()));
                 constr_to_tokens(spec, conditions, cond_match, params, &dt_name_ident);
             }
         }
     }
 }
 
-fn constr_to_tokens(
+pub(crate) fn constr_to_tokens(
     spec: &DatatypeFnSpec,
     conditions: &mut Vec<proc_macro2::TokenStream>,
     cond_match: &mut Vec<proc_macro2::TokenStream>,
@@ -189,7 +299,7 @@ fn constr_to_tokens(
     }
 }
 
-fn builtin_to_tokens(name: &String) -> proc_macro2::TokenStream {
+pub(crate) fn builtin_to_tokens(name: &String) -> proc_macro2::TokenStream {
     if name == "L4Pdu" {
         return quote! { pdu };
     } else if name == "FilterStr" {
@@ -198,7 +308,7 @@ fn builtin_to_tokens(name: &String) -> proc_macro2::TokenStream {
     panic!("Unknown builtin datatype: {}", name);
 }
 
-fn data_actions_to_tokens(actions: &DataActions) -> proc_macro2::TokenStream {
+pub(crate) fn data_actions_to_tokens(actions: &DataActions) -> proc_macro2::TokenStream {
     let mut ret = vec![quote! {}];
     if !actions.transport.drop() {
         let tracked = tracked_actions_to_tokens(&actions.transport);
@@ -211,7 +321,7 @@ fn data_actions_to_tokens(actions: &DataActions) -> proc_macro2::TokenStream {
     quote! { #( #ret )* }
 }
 
-fn tracked_actions_to_tokens(actions: &TrackedActions) -> proc_macro2::TokenStream {
+pub(crate) fn tracked_actions_to_tokens(actions: &TrackedActions) -> proc_macro2::TokenStream {
     let active = actions_to_tokens(&actions.active);
     let refr_at: Vec<proc_macro2::TokenStream> = actions
         .refresh_at
@@ -226,7 +336,104 @@ fn tracked_actions_to_tokens(actions: &TrackedActions) -> proc_macro2::TokenStre
     }
 }
 
-fn actions_to_tokens(actions: &Actions) -> proc_macro2::TokenStream {
+pub(crate) fn actions_to_tokens(actions: &Actions) -> proc_macro2::TokenStream {
     let bits = syn::LitInt::new(&actions.bits().to_string(), Span::call_site());
     quote! { Actions::from(#bits) }
+}
+
+pub(crate) fn update_to_tokens(
+    sub: &SubscriptionDecoder,
+    curr: &StateTransition,
+) -> proc_macro2::TokenStream {
+    let updates = match sub.updates.get(&curr) {
+        Some(updates) => updates,
+        None => return quote! {},
+    };
+    let mut ret = vec![];
+    for upd in updates {
+        match upd {
+            ParsedInput::Callback(cb) => {
+                ret.push(cb_to_tokens(sub, &cb.func.datatypes, &cb.func.name, None));
+            }
+            ParsedInput::CallbackGroupFn(cb) => {
+                ret.push(cb_to_tokens(
+                    sub,
+                    &cb.func.datatypes,
+                    &cb.func.name,
+                    Some(&cb.group_name),
+                ));
+            }
+            ParsedInput::Filter(_) | ParsedInput::FilterGroupFn(_) => {
+                ret.push(filter_func_to_tokens(sub, upd, curr.is_streaming()));
+            }
+            ParsedInput::DatatypeFn(dt) => {
+                ret.push(datatype_func_to_tokens(dt));
+            }
+            _ => panic!("Invalid input in update list"),
+        }
+    }
+    quote! {
+        #( #ret )*
+    }
+}
+
+pub(crate) fn tracked_to_tokens(tracked_datatypes: &HashSet<String>) -> proc_macro2::TokenStream {
+    let mut def = vec![];
+    for name in tracked_datatypes {
+        let field_name = syn::Ident::new(&name.to_lowercase(), Span::call_site());
+        let type_name = syn::Ident::new(name, Span::call_site());
+        def.push(quote! {
+            #field_name: #type_name,
+        });
+    }
+    quote! {
+        pub struct TrackedWrapper {
+            core_id: retina_core::CoreId,
+            #( #def )*
+        }
+    }
+}
+
+pub(crate) fn tracked_new_to_tokens(
+    tracked_datatypes: &HashSet<String>,
+) -> proc_macro2::TokenStream {
+    let mut new = vec![];
+    for name in tracked_datatypes {
+        let field_name = syn::Ident::new(&name.to_lowercase(), Span::call_site());
+        let type_name = syn::Ident::new(name, Span::call_site());
+        new.push(quote! {
+            #field_name: #type_name::new(),
+        });
+    }
+    quote! {
+        pub(crate) fn new(pdu: &retina_core::L4Pdu,
+               core_id: retina_core::CoreId) -> Self {
+            Self {
+                core_id,
+                #( #new )*
+            }
+        }
+    }
+}
+
+pub(crate) fn tracked_update_to_tokens(sub: &SubscriptionDecoder) -> proc_macro2::TokenStream {
+    let mut all_updates = vec![];
+    for (level, inps) in &sub.updates {
+        if inps.is_empty() {
+            continue;
+        }
+        let updates = update_to_tokens(sub, level);
+        let level_ident = syn::Ident::new(&level.to_string(), Span::call_site());
+        all_updates.push(quote! {
+            #level_ident => {
+                #updates
+            }
+        });
+    }
+    quote! {
+        match tx {
+            #( #all_updates )*
+            _ => {},
+        }
+    }
 }

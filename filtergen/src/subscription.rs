@@ -3,7 +3,7 @@ use lazy_static::lazy_static;
 use retina_core::conntrack::DataLevel;
 use retina_core::filter::ast::{FuncIdent, Predicate};
 use retina_core::filter::subscription::{CallbackSpec, DataLevelSpec};
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 
 lazy_static! {
     pub(crate) static ref BUILTIN_TYPES: Vec<ParsedInput> = vec![
@@ -47,7 +47,7 @@ pub(crate) struct SubscriptionDecoder {
     /// datatype update, filter method, or streaming callback.
     pub(crate) updates: HashMap<DataLevel, Vec<ParsedInput>>,
     /// Tracked datatypes (stored as fields in Tracked struct)
-    pub(crate) tracked: Vec<String>,
+    pub(crate) tracked: HashSet<String>,
 }
 
 impl SubscriptionDecoder {
@@ -60,7 +60,7 @@ impl SubscriptionDecoder {
             datatypes: HashMap::new(),
             subscriptions: Vec::new(),
             updates: HashMap::new(),
-            tracked: Vec::new(),
+            tracked: HashSet::new(),
         };
         ret.parse_raw(inputs);
         ret.decode_datatypes();
@@ -286,19 +286,19 @@ impl SubscriptionDecoder {
         for (name, v) in &self.filters_raw {
             Self::push_update(&mut updates, v);
             if Self::is_tracked_type(v) {
-                self.tracked.push(name.clone());
+                self.tracked.insert(name.clone());
             }
         }
         for (name, v) in &self.datatypes_raw {
             Self::push_update(&mut updates, v);
             if Self::is_tracked_type(v) {
-                self.tracked.push(name.clone());
+                self.tracked.insert(name.clone());
             }
         }
         for (name, v) in &self.cbs_raw {
             Self::push_update(&mut updates, v);
             if Self::is_tracked_type(v) {
-                self.tracked.push(name.clone());
+                self.tracked.insert(name.clone());
             }
         }
         self.updates = updates;
