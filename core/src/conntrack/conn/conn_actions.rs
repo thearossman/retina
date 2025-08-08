@@ -112,6 +112,12 @@ impl TrackedActions {
             self.refresh_at[i] &= action.not();
         }
     }
+
+    /// Returns `true` if this state TX can be safely skipped
+    /// (i.e., nothing needs to be delivered and no actions need refresh here)
+    pub fn skip_tx(&self, tx: &StateTransition) -> bool {
+        self.refresh_at[tx.as_usize()].is_none()
+    }
 }
 
 impl std::fmt::Display for TrackedActions {

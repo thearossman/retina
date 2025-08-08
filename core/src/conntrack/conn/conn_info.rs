@@ -138,6 +138,17 @@ where
     /// upon state transition.
     fn exec_state_tx(&mut self, tx: StateTransition, subscription: &Subscription<T::Subscribed>) {
         debug_assert!(tx != StateTransition::Packet);
+
+        // Nothing to do at all layers
+        if self.linfo.actions.skip_tx(&tx)
+            && self
+                .layers
+                .iter()
+                .all(|l| l.layer_info().actions.skip_tx(&tx))
+        {
+            return;
+        }
+
         self.linfo.actions.start_state_tx(tx);
         for layer in self.layers.iter_mut() {
             layer.layer_info_mut().actions.start_state_tx(tx);

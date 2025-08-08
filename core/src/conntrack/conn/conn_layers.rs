@@ -66,13 +66,15 @@ impl Layer {
         }
     }
 
+    pub fn layer_info(&self) -> &LayerInfo {
+        match self {
+            Layer::L7(session) => &session.linfo,
+        }
+    }
+
     /// Push an action
     pub fn push_action(&mut self, action: &TrackedActions) {
-        match self {
-            Layer::L7(session) => {
-                session.linfo.actions.extend(&action);
-            }
-        }
+        self.layer_info_mut().actions.extend(&action)
     }
 }
 
