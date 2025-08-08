@@ -17,7 +17,7 @@ mod pattern;
 #[doc(hidden)]
 pub mod ptree;
 #[doc(hidden)]
-pub mod ptree_flat;
+pub mod pkt_ptree;
 #[doc(hidden)]
 pub mod subscription;
 
@@ -26,7 +26,7 @@ use crate::filter::ast::Predicate;
 use crate::filter::hardware::{flush_rules, HardwareFilter};
 use crate::filter::parser::FilterParser;
 use crate::filter::pattern::{FlatPattern, LayeredPattern};
-use crate::filter::ptree_flat::FlatPTree;
+use crate::filter::pkt_ptree::PacketPTree;
 use crate::lcore::CoreId;
 use crate::memory::mbuf::Mbuf;
 use crate::port::Port;
@@ -126,7 +126,7 @@ impl Filter {
         // prune redundant branches
         let flat_patterns: Vec<_> = fq_patterns.iter().map(|p| p.to_flat_pattern()).collect();
 
-        let mut ptree = FlatPTree::new(&flat_patterns);
+        let mut ptree = PacketPTree::new(&flat_patterns);
         ptree.prune_branches();
 
         Ok(Filter {
@@ -148,8 +148,8 @@ impl Filter {
     }
 
     // Returns predicate tree
-    pub fn to_ptree(&self) -> FlatPTree {
-        FlatPTree::new(&self.get_patterns_flat())
+    pub fn to_ptree(&self) -> PacketPTree {
+        PacketPTree::new(&self.get_patterns_flat())
     }
 
     // Returns `true` if filter can be completely realized in hardware

@@ -495,7 +495,7 @@ mod tests {
     use super::*;
     use crate::{
         conntrack::DataLevel,
-        filter::{ast::Predicate, parser::FilterParser, ptree_flat::FlatPTree, Filter},
+        filter::{ast::Predicate, parser::FilterParser, pkt_ptree::PacketPTree, Filter},
     };
 
     lazy_static! {
@@ -567,7 +567,7 @@ mod tests {
         );
 
         let flat_patterns: Vec<_> = fq_patterns.iter().map(|p| p.to_flat_pattern()).collect();
-        let mut ptree = FlatPTree::new(&flat_patterns);
+        let mut ptree = PacketPTree::new(&flat_patterns);
         ptree.prune_branches();
         // ipv4 -> tcp -> port -> tls -> my_filter
         // + same for ipv6

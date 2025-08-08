@@ -8,7 +8,7 @@ use self::flow_item::*;
 
 use super::ast::*;
 use super::pattern::*;
-use super::ptree_flat::FlatPTree;
+use super::pkt_ptree::PacketPTree;
 use super::Filter;
 
 use crate::dpdk;
@@ -46,7 +46,7 @@ impl<'a> HardwareFilter<'a> {
         // \note This does not do the parent-child sorting of the SW filter;
         // this seems to be ok for Retina's current scale
         // (applying NIC rules is fast and we're not hitting NIC limits)
-        let mut hw_ptree = FlatPTree::new(&hw_patterns);
+        let mut hw_ptree = PacketPTree::new(&hw_patterns);
         hw_ptree.prune_branches();
         let mut hw_patterns = hw_ptree.to_flat_patterns();
 
