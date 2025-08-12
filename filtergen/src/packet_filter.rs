@@ -1,3 +1,7 @@
+/// Generate code for the filter applied to every packet that hits an RX core.
+/// This returns `true` if a packet should continue to the connection tracker
+/// and `false` otherwise.
+
 use crate::codegen::binary_to_tokens;
 use heck::CamelCase;
 use proc_macro2::{Ident, Span};
@@ -8,7 +12,8 @@ use retina_core::filter::pkt_ptree::{PacketPNode, PacketPTree};
 pub(crate) fn gen_packet_filter(ptree: &PacketPTree) -> proc_macro2::TokenStream {
     let mut body: Vec<proc_macro2::TokenStream> = vec![];
 
-    // Store result in variable (vs. early return)
+    // Store result in variable if there may be a callback invoked.
+    // Otherwise, return on first match.
     if !ptree.deliver.is_empty() {
         body.push(quote! { let mut matched = false; });
     }
@@ -22,8 +27,8 @@ pub(crate) fn gen_packet_filter(ptree: &PacketPTree) -> proc_macro2::TokenStream
 
     // Return value
     body.push(match ptree.deliver.is_empty() {
-        true => quote! { false },
-        false => quote! { matched },
+        true => quote! { return false; },
+        false => quote! { return matched; },
     });
 
     // Extract outer protocol (ethernet)
@@ -34,6 +39,7 @@ pub(crate) fn gen_packet_filter(ptree: &PacketPTree) -> proc_macro2::TokenStream
         if let Ok(#outer) = &retina_core::protocols::packet::Packet::parse_to::<retina_core::protocols::packet::#outer::#outer_type>(mbuf) {
             #( #body )*
         }
+        false
     }
 }
 

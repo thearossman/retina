@@ -160,16 +160,11 @@ pub(crate) fn filter_func_to_tokens(
 }
 
 pub(crate) fn datatype_func_to_tokens(dt: &DatatypeFnSpec) -> proc_macro2::TokenStream {
-    assert!(
-        dt.func.datatypes.first().unwrap().contains("self") && dt.func.datatypes.len() == 2,
-        "Check function definition of {:?}",
-        dt
-    );
     let param = dt
         .func
         .datatypes
         .last()
-        .expect(&format!("Check function definition of {:?}", dt));
+        .expect(&format!("No parameters provided in function {:?}", dt));
     let dt_name = Ident::new(&dt.group_name.to_lowercase(), Span::call_site());
     let fname = Ident::new(&dt.func.name, Span::call_site());
     if param == "L4Pdu" {

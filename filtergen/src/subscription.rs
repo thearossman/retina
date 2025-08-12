@@ -353,25 +353,24 @@ impl SubscriptionDecoder {
     }
 
     pub(crate) fn get_packet_filter_tree(
-        filter_layer: &StateTransition,
-        sub: &SubscriptionDecoder,
+        &self,
     ) -> PacketPTree {
-        assert!(matches!(filter_layer, StateTransition::Packet));
         let mut ptree: PacketPTree = PacketPTree::new_empty();
-        for spec in &sub.subscriptions {
+        for spec in &self.subscriptions {
             let patterns = spec.patterns.as_ref().unwrap();
             ptree.build_tree(patterns, &spec.callbacks);
         }
+        ptree.prune_branches();
         ptree
     }
 
     pub(crate) fn get_filter_tree(
+        &self,
         filter_layer: StateTransition,
-        sub: &SubscriptionDecoder,
     ) -> PTree {
         assert!(!matches!(filter_layer, StateTransition::Packet));
         let mut ptree = PTree::new_empty(filter_layer);
-        for spec in &sub.subscriptions {
+        for spec in &self.subscriptions {
             let patterns = spec.patterns.as_ref().unwrap();
             ptree.add_subscription(patterns, &spec.callbacks, &spec.as_str);
         }

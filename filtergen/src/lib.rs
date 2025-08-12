@@ -2,6 +2,7 @@
 
 use proc_macro::TokenStream;
 use syn::{parse_macro_input, Item};
+use quote::quote;
 
 mod parse;
 use parse::*;
@@ -124,6 +125,10 @@ pub fn input_files(args: TokenStream, input: TokenStream) -> TokenStream {
 pub fn retina_main(_args: TokenStream, input: TokenStream) -> TokenStream {
     // TODO - backup option that lets you specify num expected invocations?
     println!("Done with macros - beginning code generation");
+
+    // TODO - allow this to be any input
+    let input = parse_macro_input!(input as syn::ItemFn);
+
     let decoder = {
         let mut inputs = cache::CACHED_DATA.lock().unwrap();
         SubscriptionDecoder::new(inputs.as_mut())
@@ -132,5 +137,18 @@ pub fn retina_main(_args: TokenStream, input: TokenStream) -> TokenStream {
     let _tracked_new = codegen::tracked_new_to_tokens(&decoder.tracked);
     let _tracked_update = codegen::tracked_update_to_tokens(&decoder);
 
-    input
+    let packet_tree = decoder.get_packet_filter_tree();
+    let packet_filter = packet_filter::gen_packet_filter(&packet_tree);
+
+    quote! {
+        fn packet_filter(
+            mbuf: &retina_core::Mbuf,
+            core_id: &retina_core::CoreId
+        ) -> bool
+        {
+            #packet_filter
+        }
+
+        #input
+    }.into()
 }
