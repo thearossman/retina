@@ -54,7 +54,7 @@ where
     /// let mut runtime = Runtime::new(config, filter, callback)?;
     pub fn new(config: RuntimeConfig, factory: fn() -> FilterFactory<S::Tracked>) -> Result<Self> {
         let factory = factory();
-        let filter_str = factory.filter_str.clone();
+        let filter_str = factory.hw_filter_str.clone();
         let subscription = Arc::new(Subscription::new(factory));
 
         println!("Initializing Retina runtime...");

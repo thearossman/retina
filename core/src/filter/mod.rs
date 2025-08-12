@@ -65,7 +65,7 @@ pub struct FilterFactory<T>
 where
     T: Trackable,
 {
-    pub filter_str: String,
+    pub hw_filter_str: String,
     pub packet_continue: PacketContFn,
     pub packet_filter: PacketFilterFn<T>,
     pub proto_filter: ProtoFilterFn<T>,
@@ -78,7 +78,7 @@ where
     T: Trackable,
 {
     pub fn new(
-        filter_str: &str,
+        hw_filter_str: &str,
         packet_continue: PacketContFn,
         packet_filter: PacketFilterFn<T>,
         proto_filter: ProtoFilterFn<T>,
@@ -86,7 +86,7 @@ where
         conn_deliver: ConnDeliverFn<T>,
     ) -> Self {
         FilterFactory {
-            filter_str: filter_str.to_string(),
+            hw_filter_str: hw_filter_str.to_string(),
             packet_continue,
             packet_filter,
             proto_filter,

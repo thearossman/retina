@@ -109,7 +109,7 @@ mod tests {
     #[test]
     fn test_cb_basic() {
         let mut wrapper: StreamCallbackWrapper<MyCallback> = StreamCallbackWrapper::new();
-        wrapper.set_active();
+        wrapper.try_set_active();
         assert!(wrapper.is_active());
         wrapper.callback.invoke();
         wrapper.set_inactive();
