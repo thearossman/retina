@@ -1,12 +1,16 @@
 use super::parse::*;
 use super::subscription::*;
-use proc_macro2::Span;
+use proc_macro2::{Ident, Span};
 use quote::quote;
 use retina_core::conntrack::Actions;
 use retina_core::conntrack::StateTransition;
 use retina_core::conntrack::TrackedActions;
 use retina_core::filter::subscription::DataActions;
+use retina_core::filter::ast::{BinOp, FieldName, ProtocolName, Value};
+
 use std::collections::HashSet;
+use regex::{bytes::Regex as BytesRegex, Regex};
+use heck::CamelCase;
 
 pub(crate) fn cb_to_tokens(
     sub: &SubscriptionDecoder,
@@ -28,17 +32,17 @@ pub(crate) fn cb_to_tokens(
     // Invoking this CB requires invoking a method on a struct
     // TODO also handle the static CBs that are tracked to avoid being
     // invoked 2x!!
-    let cb_name = syn::Ident::new(&cb_name, Span::call_site());
+    let cb_name = Ident::new(&cb_name, Span::call_site());
     let (cb_id, cb_wrapper) = match &cb_group {
         Some(grp) => {
             let mut grp = grp.to_lowercase();
-            let id = syn::Ident::new(&grp, Span::call_site());
+            let id = Ident::new(&grp, Span::call_site());
             grp.push_str("_wrap");
-            (id, syn::Ident::new(&grp.to_lowercase(), Span::call_site()))
+            (id, Ident::new(&grp.to_lowercase(), Span::call_site()))
         }
         None => (
-            syn::Ident::new("", Span::call_site()),
-            syn::Ident::new("", Span::call_site()),
+            Ident::new("", Span::call_site()),
+            Ident::new("", Span::call_site()),
         ),
     };
 
@@ -107,11 +111,11 @@ pub(crate) fn filter_func_to_tokens(
         &mut cond_match,
         &mut params,
     );
-    let func_ident = syn::Ident::new(&func.name, Span::call_site());
-    let fil_ident = syn::Ident::new(&filter.name(), Span::call_site());
+    let func_ident = Ident::new(&func.name, Span::call_site());
+    let fil_ident = Ident::new(&filter.name(), Span::call_site());
     let mut fil_wrapper = filter.name().to_lowercase();
     fil_wrapper.push_str("_wrap");
-    let fil_wrapper = syn::Ident::new(&fil_wrapper, Span::call_site());
+    let fil_wrapper = Ident::new(&fil_wrapper, Span::call_site());
 
     // Either invoke via `tracked` parent struct or just invoke directly
     let invoke = match filter {
@@ -166,8 +170,8 @@ pub(crate) fn datatype_func_to_tokens(dt: &DatatypeFnSpec) -> proc_macro2::Token
         .datatypes
         .last()
         .expect(&format!("Check function definition of {:?}", dt));
-    let dt_name = syn::Ident::new(&dt.group_name.to_lowercase(), Span::call_site());
-    let fname = syn::Ident::new(&dt.func.name, Span::call_site());
+    let dt_name = Ident::new(&dt.group_name.to_lowercase(), Span::call_site());
+    let fname = Ident::new(&dt.func.name, Span::call_site());
     if param == "L4Pdu" {
         return quote! {
             tracked.#dt_name.#fname(pdu);
@@ -192,7 +196,7 @@ pub(crate) fn filter_check_to_tokens(
 
     // TODO support custom filters that don't need to be tracked
 
-    let ident = syn::Ident::new(&fil_id, Span::call_site());
+    let ident = Ident::new(&fil_id, Span::call_site());
     quote! { tracked.#ident.matched() }
 }
 
@@ -217,7 +221,7 @@ pub(crate) fn params_to_tokens(
             .datatypes_raw
             .get(dt)
             .expect(&format!("Cannot find {} in known datatypes", dt));
-        let dt_name_ident = syn::Ident::new(&dt.to_lowercase(), Span::call_site());
+        let dt_name_ident = Ident::new(&dt.to_lowercase(), Span::call_site());
 
         // Case 1: extract directly from tracked data
         if sub.tracked.contains(dt) {
@@ -255,7 +259,7 @@ pub(crate) fn constr_to_tokens(
     conditions: &mut Vec<proc_macro2::TokenStream>,
     cond_match: &mut Vec<proc_macro2::TokenStream>,
     params: &mut Vec<proc_macro2::TokenStream>,
-    name_ident: &syn::Ident,
+    name_ident: &Ident,
 ) {
     let returns = match spec.func.returns {
         FnReturn::Constructor(Constructor::Opt) => Constructor::Opt,
@@ -280,7 +284,7 @@ pub(crate) fn constr_to_tokens(
                 spec.func.datatypes.first().unwrap()
             );
         };
-        let name = syn::Ident::new(&spec.func.name, Span::call_site());
+        let name = Ident::new(&spec.func.name, Span::call_site());
         quote! { #name(#param) }
     };
 
@@ -380,8 +384,8 @@ pub(crate) fn update_to_tokens(
 pub(crate) fn tracked_to_tokens(tracked_datatypes: &HashSet<String>) -> proc_macro2::TokenStream {
     let mut def = vec![];
     for name in tracked_datatypes {
-        let field_name = syn::Ident::new(&name.to_lowercase(), Span::call_site());
-        let type_name = syn::Ident::new(name, Span::call_site());
+        let field_name = Ident::new(&name.to_lowercase(), Span::call_site());
+        let type_name = Ident::new(name, Span::call_site());
         def.push(quote! {
             #field_name: #type_name,
         });
@@ -399,8 +403,8 @@ pub(crate) fn tracked_new_to_tokens(
 ) -> proc_macro2::TokenStream {
     let mut new = vec![];
     for name in tracked_datatypes {
-        let field_name = syn::Ident::new(&name.to_lowercase(), Span::call_site());
-        let type_name = syn::Ident::new(name, Span::call_site());
+        let field_name = Ident::new(&name.to_lowercase(), Span::call_site());
+        let type_name = Ident::new(name, Span::call_site());
         new.push(quote! {
             #field_name: #type_name::new(),
         });
@@ -423,7 +427,7 @@ pub(crate) fn tracked_update_to_tokens(sub: &SubscriptionDecoder) -> proc_macro2
             continue;
         }
         let updates = update_to_tokens(sub, level);
-        let level_ident = syn::Ident::new(&level.to_string(), Span::call_site());
+        let level_ident = Ident::new(&level.to_string(), Span::call_site());
         all_updates.push(quote! {
             #level_ident => {
                 #updates
@@ -435,5 +439,239 @@ pub(crate) fn tracked_update_to_tokens(sub: &SubscriptionDecoder) -> proc_macro2
             #( #all_updates )*
             _ => {},
         }
+    }
+}
+
+// Binary filter predicates
+pub(crate) fn binary_to_tokens(
+    protocol: &ProtocolName,
+    field: &FieldName,
+    op: &BinOp,
+    value: &Value,
+    statics: &mut Vec<proc_macro2::TokenStream>,
+) -> proc_macro2::TokenStream {
+    assert!(!field.is_combined()); // should have been split when building tree
+    let proto = Ident::new(protocol.name(), Span::call_site());
+    let field = Ident::new(field.name(), Span::call_site());
+
+    match value {
+        Value::Int(val) => {
+            let val_lit = syn::LitInt::new(&val.to_string(), Span::call_site());
+            match *op {
+                BinOp::Eq => quote! { #proto.#field() == #val_lit },
+                BinOp::Ne => quote! { #proto.#field() != #val_lit },
+                BinOp::Ge => quote! { #proto.#field() >= #val_lit },
+                BinOp::Le => quote! { #proto.#field() <= #val_lit },
+                BinOp::Gt => quote! { #proto.#field() > #val_lit },
+                BinOp::Lt => quote! { #proto.#field() < #val_lit },
+                _ => panic!("Invalid binary operation `{}` for value: `{}`.", op, value),
+            }
+        }
+        Value::IntRange { from, to } => {
+            let from_lit = syn::LitInt::new(&from.to_string(), Span::call_site());
+            let to_lit = syn::LitInt::new(&to.to_string(), Span::call_site());
+            match *op {
+                BinOp::In => quote! {
+                    #proto.#field() >= #from_lit && #proto.#field() <= #to_lit
+                },
+                _ => panic!("Invalid binary operation `{}` for value: `{}`.", op, value),
+            }
+        }
+        Value::Ipv4(ipv4net) => {
+            let addr_u32 = u32::from(ipv4net.addr());
+            let addr_lit = syn::LitInt::new(&addr_u32.to_string(), Span::call_site());
+
+            let netmask_u32 = u32::from(ipv4net.netmask());
+            let netmask_lit = syn::LitInt::new(&netmask_u32.to_string(), Span::call_site());
+
+            let net_u32 = addr_u32 & netmask_u32;
+            let net_lit = syn::LitInt::new(&net_u32.to_string(), Span::call_site());
+
+            match *op {
+                BinOp::Eq => {
+                    if ipv4net.prefix_len() == 32 {
+                        quote! { u32::from(#proto.#field()) == #addr_lit }
+                    } else {
+                        quote! { u32::from(#proto.#field()) & #netmask_lit == #net_lit }
+                    }
+                }
+                BinOp::Ne => {
+                    if ipv4net.prefix_len() == 32 {
+                        quote! { u32::from(#proto.#field()) != #addr_lit }
+                    } else {
+                        quote! { u32::from(#proto.#field()) & #netmask_lit != #net_lit }
+                    }
+                }
+                BinOp::In => {
+                    if ipv4net.prefix_len() == 32 {
+                        quote! { u32::from(#proto.#field()) == #addr_lit }
+                    } else {
+                        quote! { u32::from(#proto.#field()) & #netmask_lit == #net_lit }
+                    }
+                }
+                _ => panic!("Invalid binary operation `{}` for value: `{}`.", op, value),
+            }
+        }
+        Value::Ipv6(ipv6net) => {
+            let addr_u128 = u128::from(ipv6net.addr());
+            let addr_lit = syn::LitInt::new(&addr_u128.to_string(), Span::call_site());
+
+            let netmask_u128 = u128::from(ipv6net.netmask());
+            let netmask_lit = syn::LitInt::new(&netmask_u128.to_string(), Span::call_site());
+
+            let net_u128 = addr_u128 & netmask_u128;
+            let net_lit = syn::LitInt::new(&net_u128.to_string(), Span::call_site());
+
+            match *op {
+                BinOp::Eq => {
+                    if ipv6net.prefix_len() == 128 {
+                        quote! { u128::from(#proto.#field()) == #addr_lit }
+                    } else {
+                        quote! { u128::from(#proto.#field()) & #netmask_lit == #net_lit }
+                    }
+                }
+                BinOp::Ne => {
+                    if ipv6net.prefix_len() == 128 {
+                        quote! { u128::from(#proto.#field()) != #addr_lit }
+                    } else {
+                        quote! { u128::from(#proto.#field()) & #netmask_lit != #net_lit }
+                    }
+                }
+                BinOp::In => {
+                    if ipv6net.prefix_len() == 128 {
+                        quote! { u128::from(#proto.#field()) == #addr_lit }
+                    } else {
+                        quote! { u128::from(#proto.#field()) & #netmask_lit == #net_lit }
+                    }
+                }
+                _ => panic!("Invalid binary operation `{}` for value: `{}`.", op, value),
+            }
+        }
+        Value::Text(text) => {
+            match *op {
+                BinOp::Eq => {
+                    let val_lit = syn::LitStr::new(text, Span::call_site());
+                    quote! { #proto.#field() == #val_lit }
+                }
+                BinOp::Ne => {
+                    let val_lit = syn::LitStr::new(text, Span::call_site());
+                    quote! { #proto.#field() != #val_lit }
+                }
+                BinOp::En => {
+                    let field_ident =
+                        Ident::new(&field.to_string().to_camel_case(), Span::call_site());
+                    let variant_ident =
+                        Ident::new(&text.as_str().to_camel_case(), Span::call_site());
+                    quote! { #proto.#field() == retina_core::protocols::stream::#proto::#field_ident::#variant_ident }
+                }
+                BinOp::Re => {
+                    let val_lit = syn::LitStr::new(text, Span::call_site());
+                    if Regex::new(text).is_err() {
+                        panic!("Invalid Regex string")
+                    }
+
+                    let re_name = format!("RE{}", statics.len());
+                    let re_ident = Ident::new(&re_name, Span::call_site());
+                    let lazy_re = quote! {
+                        static ref #re_ident: regex::Regex = regex::Regex::new(#val_lit).unwrap();
+                    };
+                    // avoids compiling the Regex every time
+                    statics.push(lazy_re);
+                    quote! {
+                        #re_ident.is_match(&#proto.#field()[..])
+                    }
+                    // quote! {
+                    //     Regex::new(#val_lit).unwrap().is_match(#proto.#field())
+                    // }
+                }
+                BinOp::ByteRe => {
+                    let val_lit = syn::LitStr::new(text, Span::call_site());
+                    if BytesRegex::new(text).is_err() {
+                        panic!("Invalid Regex string")
+                    }
+
+                    let re_name = format!("RE{}", statics.len());
+                    let re_ident = Ident::new(&re_name, Span::call_site());
+
+                    let lazy_re = quote! {
+                        static ref #re_ident: regex::bytes::Regex = regex::bytes::Regex::new(#val_lit).unwrap();
+                    };
+                    // avoids compiling the Regex every time
+                    statics.push(lazy_re);
+
+                    quote! {
+                        #re_ident.is_match((&#proto.#field()).as_ref())
+                    }
+                }
+                BinOp::Contains => {
+                    let val_lit = syn::LitStr::new(text, Span::call_site());
+
+                    let finder_name = format!("FINDER{}", statics.len());
+                    let finder_ident = Ident::new(&finder_name, Span::call_site());
+                    let lazy_finder = quote! {
+                        static ref #finder_ident: memchr::memmem::Finder<'static> = memchr::memmem::Finder::new(#val_lit.as_bytes());
+                    };
+                    statics.push(lazy_finder);
+                    quote! {
+                        #finder_ident.find(#proto.#field().as_bytes()).is_some()
+                    }
+                }
+                BinOp::NotContains => {
+                    let val_lit = syn::LitStr::new(text, Span::call_site());
+
+                    let finder_name = format!("FINDER{}", statics.len());
+                    let finder_ident = Ident::new(&finder_name, Span::call_site());
+                    let lazy_finder = quote! {
+                        static ref #finder_ident: memchr::memmem::Finder<'static> = memchr::memmem::Finder::new(#val_lit.as_bytes());
+                    };
+                    statics.push(lazy_finder);
+                    quote! {
+                        #finder_ident.find(#proto.#field().as_bytes()).is_none()
+                    }
+                }
+                _ => panic!("Invalid binary operation `{}` for value: `{}`.", op, value),
+            }
+        }
+        Value::Byte(b) => match *op {
+            BinOp::Eq => {
+                let bytes_lit = syn::LitByteStr::new(b, Span::call_site());
+                quote! {
+                    #proto.#field().as_ref() as &[u8] == #bytes_lit
+                }
+            }
+            BinOp::Ne => {
+                let bytes_lit = syn::LitByteStr::new(b, Span::call_site());
+                quote! {
+                    #proto.#field().as_ref() as &[u8] != #bytes_lit
+                }
+            }
+            BinOp::Contains => {
+                let bytes_lit = syn::LitByteStr::new(b, Span::call_site());
+
+                let finder_name = format!("FINDER{}", statics.len());
+                let finder_ident = Ident::new(&finder_name, Span::call_site());
+                let lazy_finder = quote! {
+                    static ref #finder_ident: memchr::memmem::Finder<'static> = memchr::memmem::Finder::new(#bytes_lit);
+                };
+                statics.push(lazy_finder);
+                quote! {
+                    #finder_ident.find(#proto.#field().as_ref()).is_some()
+                }
+            }
+            BinOp::NotContains => {
+                let bytes_lit = syn::LitByteStr::new(b, Span::call_site());
+
+                let finder_name = format!("FINDER{}", statics.len());
+                let finder_ident = Ident::new(&finder_name, Span::call_site());
+                let lazy_finder = quote! {
+                    static ref #finder_ident: memchr::memmem::Finder<'static> = memchr::memmem::Finder::new(#bytes_lit);
+                };
+                statics.push(lazy_finder);
+                quote! {
+                    #finder_ident.find(#proto.#field().as_ref()).is_none()
+                }
+            }
+            _ => panic!("Invalid binary operation `{}` for value: `{}`.", op, value),
+        },
     }
 }

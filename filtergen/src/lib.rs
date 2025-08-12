@@ -10,6 +10,8 @@ mod codegen;
 mod ptree;
 mod subscription;
 
+mod packet_filter;
+
 use subscription::SubscriptionDecoder;
 
 #[proc_macro_attribute]
