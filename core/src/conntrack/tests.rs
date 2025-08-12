@@ -80,11 +80,7 @@ fn filter() -> FilterFactory<TestTrackable> {
             conn.layers[0].layer_info_mut().actions.active |= Actions::Update;
         }
     }
-    FilterFactory::new(
-        "",
-        packet_filter,
-        state_tx,
-    )
+    FilterFactory::new("", packet_filter, state_tx)
 }
 
 const MBUF: [u8; 1500] = [0; 1500];

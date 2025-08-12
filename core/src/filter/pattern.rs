@@ -495,7 +495,7 @@ mod tests {
     use super::*;
     use crate::{
         conntrack::DataLevel,
-        filter::{ast::Predicate, parser::FilterParser, pkt_ptree::PacketPTree, Filter},
+        filter::{ast::Predicate, parser::FilterParser, pred_ptree::PredPTree, Filter},
     };
 
     lazy_static! {
@@ -567,11 +567,11 @@ mod tests {
         );
 
         let flat_patterns: Vec<_> = fq_patterns.iter().map(|p| p.to_flat_pattern()).collect();
-        let mut ptree = PacketPTree::new(&flat_patterns);
+        let mut ptree = PredPTree::new(&flat_patterns, false);
         ptree.prune_branches();
         // ipv4 -> tcp -> port -> tls -> my_filter
         // + same for ipv6
-        assert!(ptree.size == 11);
+        assert!(ptree.size == 11, "Actual size: {}", ptree.size);
     }
 
     #[test]
@@ -615,6 +615,11 @@ mod tests {
         let pattern = filter.get_patterns_flat();
         let pattern = pattern.get(0).unwrap();
         let with_state = pattern.with_l7_state();
+        assert!(
+            with_state.predicates.len() > 3,
+            "Predicates too small: {:?}",
+            with_state
+        );
         assert!(with_state.predicates[3].is_custom());
         assert!(with_state.predicates[4].is_state());
     }

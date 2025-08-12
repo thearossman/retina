@@ -1,3 +1,8 @@
+// PTree that only tracks predicates (no actions).
+// We assume that this is used for the packet tree (filter
+// applied to every packet that hits software) and to parse
+// flat patterns from filters.
+
 use super::ast::*;
 use super::pattern::{FlatPattern, LayeredPattern};
 use super::subscription::CallbackSpec;
@@ -8,26 +13,26 @@ use std::fmt;
 
 // A node representing a predicate in the tree
 #[derive(Debug, Clone)]
-pub struct PacketPNode {
+pub struct PredPNode {
     // ID of node
     pub id: usize,
 
-    // Predicate represented by this PacketPNode
+    // Predicate represented by this PredPNode
     pub pred: Predicate,
 
     // This node terminates an end-to-end pattern
     pub is_terminal: bool,
 
-    // Child PacketPNodes
-    pub children: Vec<PacketPNode>,
+    // Child PredPNodes
+    pub children: Vec<PredPNode>,
 
     // Packet-level subscriptions that may need to be invoked
     pub deliver: HashSet<CallbackSpec>,
 }
 
-impl PacketPNode {
+impl PredPNode {
     fn new(pred: Predicate, id: usize) -> Self {
-        PacketPNode {
+        PredPNode {
             id,
             pred,
             is_terminal: false,
@@ -40,7 +45,7 @@ impl PacketPNode {
         self.children.iter().any(|n| &n.pred == pred)
     }
 
-    fn get_child(&mut self, pred: &Predicate) -> &mut PacketPNode {
+    fn get_child(&mut self, pred: &Predicate) -> &mut PredPNode {
         self.children.iter_mut().find(|n| &n.pred == pred).unwrap()
     }
 
@@ -53,7 +58,7 @@ impl PacketPNode {
     }
 }
 
-impl fmt::Display for PacketPNode {
+impl fmt::Display for PredPNode {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         write!(f, "{}", self.pred)?;
         Ok(())
@@ -65,27 +70,30 @@ impl fmt::Display for PacketPNode {
 // for validating filter syntax.
 // Paths from root to leaf represent a pattern for a frame to match.
 #[derive(Debug)]
-pub struct PacketPTree {
+pub struct PredPTree {
     // Root node
-    pub root: PacketPNode,
+    pub root: PredPNode,
 
     // Number of nodes in tree
     pub size: usize,
 
     // Deliver
     pub deliver: HashSet<CallbackSpec>,
+
+    // Skip adding non-packet-level predicates
+    pub packet_only: bool,
 }
 
-impl PacketPTree {
+impl PredPTree {
     // Creates a new predicate tree from a slice of FlatPatterns
-    pub fn new(patterns: &[FlatPattern]) -> Self {
-        let mut ptree = Self::new_empty();
+    pub fn new(patterns: &[FlatPattern], packet_only: bool) -> Self {
+        let mut ptree = Self::new_empty(packet_only);
         ptree.build_tree(patterns, &vec![]);
         ptree
     }
 
-    pub fn new_empty() -> Self {
-        let root = PacketPNode {
+    pub fn new_empty(packet_only: bool) -> Self {
+        let root = PredPNode {
             id: 0,
             pred: Predicate::Unary {
                 protocol: protocol!("ethernet"),
@@ -94,10 +102,11 @@ impl PacketPTree {
             children: vec![],
             deliver: HashSet::new(),
         };
-        PacketPTree {
+        PredPTree {
             root,
             size: 1,
             deliver: HashSet::new(),
+            packet_only,
         }
     }
 
@@ -108,7 +117,7 @@ impl PacketPTree {
         fn build_pattern(
             patterns: &mut Vec<FlatPattern>,
             predicates: &mut Vec<Predicate>,
-            node: &PacketPNode,
+            node: &PredPNode,
         ) {
             if *node.pred.get_protocol() != protocol!("ethernet") {
                 predicates.push(node.pred.to_owned());
@@ -173,13 +182,13 @@ impl PacketPTree {
         let mut node = &mut self.root;
         let mut is_terminal = true;
         for predicate in pattern.predicates.iter() {
-            if !predicate.on_packet() {
+            if self.packet_only && !predicate.on_packet() {
                 is_terminal = true;
                 break;
             }
             if !node.has_child(predicate) {
                 node.children
-                    .push(PacketPNode::new(predicate.clone(), self.size));
+                    .push(PredPNode::new(predicate.clone(), self.size));
                 self.size += 1;
             }
             node = node.get_child(predicate);
@@ -196,8 +205,8 @@ impl PacketPTree {
     }
 
     // Returns a copy of the subtree rooted at Node `id`
-    pub fn get_subtree(&self, id: usize) -> Option<PacketPNode> {
-        fn get_subtree(id: usize, node: &PacketPNode) -> Option<PacketPNode> {
+    pub fn get_subtree(&self, id: usize) -> Option<PredPNode> {
+        fn get_subtree(id: usize, node: &PredPNode) -> Option<PredPNode> {
             if node.id == id {
                 return Some(node.clone());
             }
@@ -214,7 +223,7 @@ impl PacketPTree {
     // Removes some patterns that are covered by others, but not all.
     // (e.g. "ipv4 or ipv4.src_addr = 1.2.3.4" will remove "ipv4.src_addr = 1.2.3.4")
     pub fn prune_branches(&mut self) {
-        fn prune(node: &mut PacketPNode) {
+        fn prune(node: &mut PredPNode) {
             if node.is_terminal && !node.delivers() {
                 node.children.clear();
             }
@@ -227,7 +236,7 @@ impl PacketPTree {
 
     // modified from https://vallentin.dev/2019/05/14/pretty-print-tree
     fn pprint(&self) -> String {
-        fn pprint(s: &mut String, node: &PacketPNode, prefix: String, last: bool) {
+        fn pprint(s: &mut String, node: &PredPNode, prefix: String, last: bool) {
             let prefix_current = if last { "`- " } else { "|- " };
             s.push_str(format!("{}{}{} ({})\n", prefix, prefix_current, node, node.id).as_str());
             if !node.deliver.is_empty() {
@@ -256,7 +265,7 @@ impl PacketPTree {
     }
 }
 
-impl fmt::Display for PacketPTree {
+impl fmt::Display for PredPTree {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         write!(f, "{}", self.pprint())?;
         Ok(())

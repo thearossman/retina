@@ -61,10 +61,7 @@ where
 
     /// Initializes actions at all layers when first packet
     /// in L4 connection is observed.
-    pub(crate) fn filter_first_packet(
-        &mut self,
-        subscription: &Subscription<T::Subscribed>,
-    ) {
+    pub(crate) fn filter_first_packet(&mut self, subscription: &Subscription<T::Subscribed>) {
         subscription.state_tx::<T>(self, &StateTransition::L4FirstPacket);
     }
 

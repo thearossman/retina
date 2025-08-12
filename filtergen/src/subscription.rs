@@ -4,7 +4,7 @@ use retina_core::conntrack::{DataLevel, StateTransition};
 use retina_core::filter::{
     ast::{FuncIdent, Predicate},
     pattern::FlatPattern,
-    pkt_ptree::PacketPTree,
+    pred_ptree::PredPTree,
     ptree::PTree,
     subscription::{CallbackSpec, DataLevelSpec, SubscriptionLevel},
     Filter,
@@ -385,8 +385,8 @@ impl SubscriptionDecoder {
             )
     }
 
-    pub(crate) fn get_packet_filter_tree(&self) -> PacketPTree {
-        let mut ptree: PacketPTree = PacketPTree::new_empty();
+    pub(crate) fn get_packet_filter_tree(&self) -> PredPTree {
+        let mut ptree: PredPTree = PredPTree::new_empty(true);
         for spec in &self.subscriptions {
             let patterns = spec.patterns.as_ref().unwrap();
             ptree.build_tree(patterns, &spec.callbacks);

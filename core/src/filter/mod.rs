@@ -15,7 +15,7 @@ mod hardware;
 mod parser;
 pub mod pattern;
 #[doc(hidden)]
-pub mod pkt_ptree;
+pub mod pred_ptree;
 #[doc(hidden)]
 pub mod ptree;
 #[doc(hidden)]
@@ -26,7 +26,7 @@ use crate::filter::ast::Predicate;
 use crate::filter::hardware::{flush_rules, HardwareFilter};
 use crate::filter::parser::FilterParser;
 use crate::filter::pattern::{FlatPattern, LayeredPattern};
-use crate::filter::pkt_ptree::PacketPTree;
+use crate::filter::pred_ptree::PredPTree;
 use crate::lcore::CoreId;
 use crate::memory::mbuf::Mbuf;
 use crate::port::Port;
@@ -62,11 +62,7 @@ impl<T> FilterFactory<T>
 where
     T: Trackable,
 {
-    pub fn new(
-        hw_filter_str: &str,
-        packet_filter: PacketFilterFn,
-        state_tx: StateTxFn<T>,
-    ) -> Self {
+    pub fn new(hw_filter_str: &str, packet_filter: PacketFilterFn, state_tx: StateTxFn<T>) -> Self {
         FilterFactory {
             hw_filter_str: hw_filter_str.to_string(),
             packet_filter,
@@ -105,7 +101,7 @@ impl Filter {
         // prune redundant branches
         let flat_patterns: Vec<_> = fq_patterns.iter().map(|p| p.to_flat_pattern()).collect();
 
-        let mut ptree = PacketPTree::new(&flat_patterns);
+        let mut ptree = PredPTree::new(&flat_patterns, false);
         ptree.prune_branches();
 
         Ok(Filter {
@@ -127,8 +123,8 @@ impl Filter {
     }
 
     // Returns predicate tree
-    pub fn to_ptree(&self) -> PacketPTree {
-        PacketPTree::new(&self.get_patterns_flat())
+    pub fn to_ptree(&self) -> PredPTree {
+        PredPTree::new(&self.get_patterns_flat(), false)
     }
 
     // Returns `true` if filter can be completely realized in hardware
