@@ -518,6 +518,7 @@ impl CallbackSpec {
     }
 }
 
+#[doc(hidden)]
 /// Utility for tracking, for a subscription pattern*, the Levels needed to
 /// correctly apply (1) all filter predicates, (2) all datatype updates,
 /// and (3), if applicable, updates to a streaming callback.
@@ -525,21 +526,17 @@ impl CallbackSpec {
 /// *For each subscription, one of these structs is needed for each end-to-end
 /// filter pattern (i.e., root-to-leaf predicate tree path).
 #[derive(Debug, Clone)]
-pub(crate) struct SubscriptionLevel {
+pub struct SubscriptionLevel {
     /// Levels at which datatype updates need to happen
-    pub(crate) datatypes: HashSet<DataLevel>,
+    pub datatypes: HashSet<DataLevel>,
     /// Levels at which a new filter predicate needs to be applied
-    pub(crate) filter_preds: HashSet<DataLevel>,
+    pub filter_preds: HashSet<DataLevel>,
     /// If the callback explicitly requests to be delivered at a level
-    pub(crate) callback: Option<DataLevel>,
+    pub callback: Option<DataLevel>,
 }
 
 impl SubscriptionLevel {
-    pub(crate) fn new(
-        data: &Vec<DataLevelSpec>,
-        preds: &FlatPattern,
-        cb: Option<DataLevel>,
-    ) -> Self {
+    pub fn new(data: &Vec<DataLevelSpec>, preds: &FlatPattern, cb: Option<DataLevel>) -> Self {
         let mut ret = Self::empty();
         for d in data {
             ret.add_datatype(d);
@@ -556,7 +553,7 @@ impl SubscriptionLevel {
     /// _not less than_ any of the predicates and it is _equal_ to at least one
     /// of the predicates (i.e., this may be the first state TX where the "not less than"
     /// bound is true). This must be true for all filter and datatype predicates.
-    pub(crate) fn can_deliver(&self, curr: &StateTransition) -> bool {
+    pub fn can_deliver(&self, curr: &StateTransition) -> bool {
         // Create iterator over all filter and datatype predicates
         let mut iter = self.datatypes.iter().chain(self.filter_preds.iter());
         iter.clone()
@@ -567,7 +564,7 @@ impl SubscriptionLevel {
     /// Can the pattern of predicates be skipped at this state transition layer?
     /// That is, is this subscription guaranteed to have terminated at a level
     /// that is strictly less than (before) the current level?
-    pub(crate) fn can_skip(&self, curr: &StateTransition) -> bool {
+    pub fn can_skip(&self, curr: &StateTransition) -> bool {
         let cb_done = match self.callback {
             Some(cb) => curr.compare(&cb) == StateTxOrd::Greater,
             None => false,

@@ -1,8 +1,8 @@
 #![allow(clippy::needless_doctest_main)]
 
 use proc_macro::TokenStream;
-use syn::{parse_macro_input, Item};
 use quote::quote;
+use syn::{parse_macro_input, Item};
 
 mod parse;
 use parse::*;
@@ -150,5 +150,6 @@ pub fn retina_main(_args: TokenStream, input: TokenStream) -> TokenStream {
         }
 
         #input
-    }.into()
+    }
+    .into()
 }

@@ -6,7 +6,7 @@ use retina_core::filter::{
     pattern::FlatPattern,
     pkt_ptree::PacketPTree,
     ptree::PTree,
-    subscription::{CallbackSpec, DataLevelSpec},
+    subscription::{CallbackSpec, DataLevelSpec, SubscriptionLevel},
     Filter,
 };
 use std::collections::{HashMap, HashSet};
@@ -352,9 +352,7 @@ impl SubscriptionDecoder {
             )
     }
 
-    pub(crate) fn get_packet_filter_tree(
-        &self,
-    ) -> PacketPTree {
+    pub(crate) fn get_packet_filter_tree(&self) -> PacketPTree {
         let mut ptree: PacketPTree = PacketPTree::new_empty();
         for spec in &self.subscriptions {
             let patterns = spec.patterns.as_ref().unwrap();
@@ -364,10 +362,7 @@ impl SubscriptionDecoder {
         ptree
     }
 
-    pub(crate) fn get_filter_tree(
-        &self,
-        filter_layer: StateTransition,
-    ) -> PTree {
+    pub(crate) fn get_filter_tree(&self, filter_layer: StateTransition) -> PTree {
         assert!(!matches!(filter_layer, StateTransition::Packet));
         let mut ptree = PTree::new_empty(filter_layer);
         for spec in &self.subscriptions {
@@ -376,6 +371,40 @@ impl SubscriptionDecoder {
         }
         ptree.collapse();
         ptree
+    }
+
+    /// The application requires a filter at this stage
+    /// I.e., at this state transition, the application may have
+    /// new information to invoke a callback, update Actions, or
+    /// drop traffic.
+    pub(crate) fn requires_filter(&self, filter_layer: &StateTransition) -> bool {
+        for spec in &self.subscriptions {
+            for cb in &spec.callbacks {
+                let patterns = spec.patterns.as_ref().unwrap();
+                for pat in patterns {
+                    let level = SubscriptionLevel::new(&cb.datatypes, pat, cb.expl_level);
+                    if level.can_skip(filter_layer) {
+                        continue;
+                    }
+                    // 1. Delivery may be required or no longer required
+                    // (in case of unsubscribe)
+                    if level.can_deliver(filter_layer) {
+                        return true;
+                    }
+                    // 2. Callback might unsubscribe
+                    if let Some(cb) = level.callback {
+                        if cb.is_streaming() && &cb == filter_layer {
+                            return true;
+                        }
+                    }
+                    // 3. Filter predicate might match
+                    if level.filter_preds.iter().any(|l| l == filter_layer) {
+                        return true;
+                    }
+                }
+            }
+        }
+        false
     }
 }
 

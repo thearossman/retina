@@ -1,7 +1,6 @@
 /// Generate code for the filter applied to every packet that hits an RX core.
 /// This returns `true` if a packet should continue to the connection tracker
 /// and `false` otherwise.
-
 use crate::codegen::binary_to_tokens;
 use heck::CamelCase;
 use proc_macro2::{Ident, Span};
