@@ -45,7 +45,7 @@ where
     }
 
     /// Invoked when a filter pattern for callback has matched.
-    pub fn set_active(&mut self) {
+    pub fn try_set_active(&mut self) {
         if !matches!(self.state, CallbackState::Unsubscribed) {
             self.state = CallbackState::Active;
         }

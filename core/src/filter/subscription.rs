@@ -484,6 +484,12 @@ pub struct CallbackSpec {
     /// Typically true if ``FilterStr`` (i.e., information
     /// about the specific filter matched) is a parameter.
     pub must_deliver: bool,
+    /// The framework must track when it has invoked this callback
+    /// in order to ensure it is invoked at most once.
+    /// Typically required if the associated filter includes a
+    /// streaming predicate but the callback is stateless
+    /// and not streaming.
+    pub invoke_once: bool,
     /// The name of the callback function (excluding parameters).
     /// Also excludes the struct for stateful callbacks, if applicable.
     pub as_str: String,

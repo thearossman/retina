@@ -2,11 +2,14 @@ use super::parse::*;
 use super::subscription::*;
 use proc_macro2::{Ident, Span};
 use quote::quote;
-use retina_core::conntrack::Actions;
-use retina_core::conntrack::StateTransition;
-use retina_core::conntrack::TrackedActions;
-use retina_core::filter::ast::{BinOp, FieldName, ProtocolName, Value};
-use retina_core::filter::subscription::DataActions;
+use retina_core::conntrack::{
+    conn::conn_layers::SupportedLayer, conn::conn_state::LayerState, Actions, StateTransition,
+    TrackedActions,
+};
+use retina_core::filter::{
+    ast::{BinOp, FieldName, Predicate, ProtocolName, Value},
+    subscription::{CallbackSpec, DataActions},
+};
 
 use heck::CamelCase;
 use regex::{bytes::Regex as BytesRegex, Regex};
@@ -17,6 +20,7 @@ pub(crate) fn cb_to_tokens(
     datatypes: &Vec<String>,
     cb_name: &String,
     cb_group: Option<&String>,
+    invoke_once: bool,
 ) -> proc_macro2::TokenStream {
     let mut conditions = vec![];
     let mut cond_match = vec![];
@@ -29,9 +33,8 @@ pub(crate) fn cb_to_tokens(
         &mut params,
     );
 
-    // Invoking this CB requires invoking a method on a struct
-    // TODO also handle the static CBs that are tracked to avoid being
-    // invoked 2x!!
+    // Invoking this CB requires invoking a method on a struct or
+    // this is a streaming CB that can unsubscribe
     let cb_name = Ident::new(&cb_name, Span::call_site());
     let (cb_id, cb_wrapper) = match &cb_group {
         Some(grp) => {
@@ -48,9 +51,13 @@ pub(crate) fn cb_to_tokens(
 
     let invoke = match cb_group.is_some() {
         true => {
+            // Allow for unsubscribe
+            // Need to check for `is_active` in the `update` method
             quote! {
-                if !conn.tracked.#cb_id.#cb_name(#( #params ), *) {
-                    conn.tracked.#cb_wrapper.set_inactive();
+                if conn.tracked.#cb_wrapper.is_active() {
+                    if !conn.tracked.#cb_id.#cb_name(#( #params ), *) {
+                        conn.tracked.#cb_wrapper.set_inactive();
+                    }
                 }
             }
         }
@@ -85,7 +92,17 @@ pub(crate) fn cb_to_tokens(
             }
         }
         false => {
-            quote! { #invoke }
+            // Invoking this CB requires checking that it
+            // hasn't already been invoked
+            match invoke_once {
+                true => quote! {
+                    if tracked.#cb_wrapper.should_invoke() {
+                        tracked.#cb_wrapper.set_invoked();
+                        #invoke
+                    }
+                },
+                false => quote! { #invoke },
+            }
         }
     }
 }
@@ -350,9 +367,16 @@ pub(crate) fn update_to_tokens(
     };
     let mut ret = vec![];
     for upd in updates {
+        // Note these CBs are only here if streaming
         match upd {
             ParsedInput::Callback(cb) => {
-                ret.push(cb_to_tokens(sub, &cb.func.datatypes, &cb.func.name, None));
+                ret.push(cb_to_tokens(
+                    sub,
+                    &cb.func.datatypes,
+                    &cb.func.name,
+                    Some(&cb.func.name),
+                    false,
+                ));
             }
             ParsedInput::CallbackGroupFn(cb) => {
                 ret.push(cb_to_tokens(
@@ -360,6 +384,7 @@ pub(crate) fn update_to_tokens(
                     &cb.func.datatypes,
                     &cb.func.name,
                     Some(&cb.group_name),
+                    false,
                 ));
             }
             ParsedInput::Filter(_) | ParsedInput::FilterGroupFn(_) => {
@@ -434,6 +459,89 @@ pub(crate) fn tracked_update_to_tokens(sub: &SubscriptionDecoder) -> proc_macro2
             #( #all_updates )*
             _ => {},
         }
+    }
+}
+
+// CB invoked within a filter
+pub(crate) fn fil_callback_to_tokens(
+    sub: &SubscriptionDecoder,
+    spec: &CallbackSpec,
+) -> proc_macro2::TokenStream {
+    let dts = spec.datatypes.iter().map(|dt| dt.name.clone()).collect();
+    let name = &spec.as_str;
+
+    // Will track CB state within a streaming wrapper, either because
+    // this is a multi-function CB or because it's a streaming CB
+    let mut group = None;
+    if &spec.subscription_id != name {
+        group = Some(&spec.subscription_id);
+    } else if let Some(l) = spec.expl_level {
+        if l.is_streaming() {
+            group = Some(&spec.subscription_id);
+        }
+    }
+
+    // Actual CB invocation, including checking for unsubscribe and
+    // constructing parameters, if applicable.
+    let mut invoke = cb_to_tokens(sub, &dts, name, group, spec.invoke_once);
+
+    // "try set active" will set the CB as "matched" unless it has
+    // already unsubscribed
+    if let Some(grp) = group {
+        let mut grp = grp.to_lowercase();
+        grp.push_str("_wrap");
+        let wrapper = Ident::new(&grp.to_lowercase(), Span::call_site());
+        invoke = quote! {
+            tracked.#wrapper.try_set_active();
+            #invoke
+        };
+    }
+
+    invoke
+}
+
+pub(crate) fn custom_pred_to_tokens(pred: &Predicate) -> proc_macro2::TokenStream {
+    match pred {
+        Predicate::Custom { name, matched, .. } => {
+            let ident = Ident::new(&name.0.to_lowercase(), Span::call_site());
+            match matched {
+                true => quote! { tracked.#ident.matched() },
+                false => quote! { tracked.#ident.is_active() },
+            }
+        }
+        Predicate::Callback { name } => {
+            let ident = Ident::new(&name.0.to_lowercase(), Span::call_site());
+            quote! { tracked.#ident.is_active() }
+        }
+        _ => panic!(),
+    }
+}
+
+pub(crate) fn layerstate_to_tokens(
+    layer: &SupportedLayer,
+    state: &LayerState,
+    op: BinOp,
+) -> proc_macro2::TokenStream {
+    let op = match op {
+        BinOp::Eq => quote! { == },
+        BinOp::Ge => quote! { >= },
+        BinOp::Gt => quote! { > },
+        BinOp::Le => quote! { <= },
+        BinOp::Lt => quote! { < },
+        _ => panic!("Invalid op for state: {:?}", op),
+    };
+    let layer_access = match layer {
+        SupportedLayer::L4 => {
+            quote! { tracked.info.linfo.state }
+        }
+        SupportedLayer::L7 => {
+            quote! { &tracked.info.layers[0].layer_info().state }
+        }
+    };
+    let state_ident = format!("LayerState::{:?}", state);
+    let state_ident = Ident::new(&state_ident, Span::call_site());
+    quote! {
+        #layer_access #op &#state_ident
     }
 }
 

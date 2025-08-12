@@ -40,6 +40,37 @@ impl SubscriptionSpec {
             self.patterns = Some(filter.get_patterns_flat());
         }
     }
+
+    fn add_invoke_once(&mut self) {
+        // We don't make guarantees for grouped CBs
+        // [TODO could change this in future]
+        if self.callbacks.len() > 1 {
+            return;
+        }
+
+        // Streaming CBs invoked until unsubscribe; L4Terminated subscriptions
+        // don't need to be tracked.
+        if let Some(level) = self.callbacks[0].expl_level {
+            if level.is_streaming() || level == DataLevel::L4Terminated {
+                return;
+            }
+        }
+
+        // Any CB that has streaming patterns
+        let patterns = self.patterns.as_ref().unwrap();
+        let mut invoke_once = false;
+        for pat in patterns {
+            if pat.predicates.iter().any(|p| p.is_streaming()) {
+                invoke_once = true;
+                break;
+            }
+        }
+        if invoke_once {
+            for cb in &mut self.callbacks {
+                cb.invoke_once = true;
+            }
+        }
+    }
 }
 
 /// Responsible for transforming the raw data in `parse.rs` into the formats
@@ -86,6 +117,7 @@ impl SubscriptionDecoder {
         ret.decode_updates();
         for spec in &mut ret.subscriptions {
             spec.add_patterns(&ret.custom_preds);
+            spec.add_invoke_once();
         }
         ret
     }
@@ -269,6 +301,7 @@ impl SubscriptionDecoder {
             expl_level,
             datatypes,
             must_deliver,
+            invoke_once: false, // Filled in when patterns are built
             as_str,
             subscription_id,
             tracked_data: vec![],
