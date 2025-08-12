@@ -66,11 +66,8 @@ pub struct Subscription<S>
 where
     S: Subscribable,
 {
-    packet_continue: PacketContFn,
-    packet_filter: PacketFilterFn<S::Tracked>,
-    proto_filter: ProtoFilterFn<S::Tracked>,
-    session_filter: SessionFilterFn<S::Tracked>,
-    conn_deliver: ConnDeliverFn<S::Tracked>,
+    packet_filter: PacketFilterFn,
+    state_tx_filter: StateTxFn<S::Tracked>,
     #[cfg(feature = "timing")]
     pub(crate) timers: Timers,
 }
@@ -82,11 +79,8 @@ where
 {
     pub fn new(factory: FilterFactory<S::Tracked>) -> Self {
         Subscription {
-            packet_continue: factory.packet_continue,
             packet_filter: factory.packet_filter,
-            proto_filter: factory.proto_filter,
-            session_filter: factory.session_filter,
-            conn_deliver: factory.conn_deliver,
+            state_tx_filter: factory.state_tx,
             #[cfg(feature = "timing")]
             timers: Timers::new(),
         }
@@ -116,56 +110,13 @@ where
     /// Invokes the software packet filter.
     /// Used for each packet to determine
     /// forwarding to conn. tracker. /// TMP - todo return bool
-    pub fn continue_packet(&self, mbuf: &Mbuf, core_id: &CoreId) -> bool {
-        (self.packet_continue)(mbuf, core_id)
+    pub fn filter_packet(&self, mbuf: &Mbuf, core_id: &CoreId) -> bool {
+        (self.packet_filter)(mbuf, core_id)
     }
 
-    /// Initializes connection actions by filtering on the first packet in the connection.
-    pub fn filter_packet<T: Trackable>(&self, conn: &mut ConnInfo<S::Tracked>, mbuf: &Mbuf) {
-        (self.packet_filter)(conn, mbuf);
-    }
-
-    /// Invokes the L6/L7 protocol filter, i.e., filtering on the protocol (e.g., TLS, HTTP)
-    pub fn filter_protocol<T: Trackable>(&self, conn: &mut ConnInfo<S::Tracked>) {
-        conn.tracked.state_tx(StateTxData::from_tx(
-            &StateTransition::L7OnDisc,
-            &mut conn.layers[0],
-        ));
-        (self.proto_filter)(conn);
-    }
-
-    /// Invokes the Session filter, i.e., filtering on fields in a parsed session.
-    pub fn filter_session<T: Trackable>(&self, conn: &mut ConnInfo<S::Tracked>) {
-        conn.tracked.state_tx(StateTxData::from_tx(
-            &StateTransition::L7EndHdrs,
-            &mut conn.layers[0],
-        ));
-        (self.session_filter)(conn)
-    }
-
-    /// Invokes any L4 Connection-level subscriptions
-    pub fn connection_terminated<T: Trackable>(&self, conn: &mut ConnInfo<S::Tracked>) {
-        conn.tracked.state_tx(StateTxData::from_tx(
-            &StateTransition::L4Terminated,
-            &mut conn.layers[0],
-        ));
-        (self.conn_deliver)(conn);
-    }
-
-    /// Indicates that the TCP handshake has completed
-    pub fn handshake_done<T: Trackable>(&self, conn: &mut ConnInfo<S::Tracked>) {
-        conn.tracked.state_tx(StateTxData::from_tx(
-            &StateTransition::L4EndHshk,
-            &mut conn.layers[0],
-        ));
-        // TODO
-    }
-
-    /// Invoked if an `update` method returned `true`, indicating that some Actions need
-    /// to be refreshed. The `state` parameter helps the subscription determine which
-    /// set of filter predicates to apply.
-    pub fn in_update<T: Trackable>(&self, conn: &mut ConnInfo<S::Tracked>, state: StateTransition) {
-        conn.tracked.stream_tx(state);
-        // TODO
+    /// Called on any StateTransition.
+    /// Updates actions and invokes filters.
+    pub fn state_tx<T: Trackable>(&self, conn: &mut ConnInfo<S::Tracked>, tx: &StateTransition) {
+        (self.state_tx_filter)(conn, tx)
     }
 }

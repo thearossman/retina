@@ -63,10 +63,9 @@ where
     /// in L4 connection is observed.
     pub(crate) fn filter_first_packet(
         &mut self,
-        pdu: &L4Pdu,
         subscription: &Subscription<T::Subscribed>,
     ) {
-        subscription.filter_packet::<T>(self, pdu.mbuf_ref());
+        subscription.state_tx::<T>(self, &StateTransition::L4FirstPacket);
     }
 
     /// Update tracked data when new packet is observed.
@@ -148,25 +147,15 @@ where
         {
             return;
         }
-
         self.linfo.actions.start_state_tx(tx);
         for layer in self.layers.iter_mut() {
             layer.layer_info_mut().actions.start_state_tx(tx);
         }
         match tx {
-            StateTransition::L7OnDisc => subscription.filter_protocol::<T>(self),
-            StateTransition::L7EndHdrs => subscription.filter_session::<T>(self),
-            StateTransition::L4Terminated => subscription.connection_terminated::<T>(self),
-            StateTransition::L4EndHshk => subscription.handshake_done::<T>(self),
-            StateTransition::L4InPayload(_)
-            | StateTransition::L7InHdrs
-            | StateTransition::L7InPayload => {
-                subscription.in_update::<T>(self, tx);
-            }
             StateTransition::L7EndPayload => unimplemented!(),
             StateTransition::L4FirstPacket | StateTransition::Packet => {}
+            _ => subscription.state_tx::<T>(self, &tx),
         }
-
         for layer in &mut self.layers {
             layer.end_state_tx();
         }

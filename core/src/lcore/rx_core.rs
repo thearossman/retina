@@ -130,7 +130,7 @@ where
                     TOTAL_PKT.inc();
                     TOTAL_BYTE.inc_by(mbuf.data_len() as u64);
 
-                    let cont = self.subscription.continue_packet(&mbuf, &self.id);
+                    let cont = self.subscription.filter_packet(&mbuf, &self.id);
                     if cont {
                         self.subscription.process_packet(mbuf, &mut conn_table);
                     } else {

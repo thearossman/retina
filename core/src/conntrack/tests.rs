@@ -70,24 +70,20 @@ impl Trackable for TestTrackable {
 }
 
 fn filter() -> FilterFactory<TestTrackable> {
-    fn packet_continue(_mbuf: &Mbuf, _core_id: &CoreId) -> bool {
+    fn packet_filter(_mbuf: &Mbuf, _core_id: &CoreId) -> bool {
         true
     }
-    fn packet_filter(conn: &mut ConnInfo<TestTrackable>, _mbuf: &Mbuf) {
-        conn.linfo.actions.active |= Actions::Update;
-        conn.linfo.actions.active |= Actions::PassThrough;
-        conn.layers[0].layer_info_mut().actions.active |= Actions::Update;
+    fn state_tx(conn: &mut ConnInfo<TestTrackable>, tx: &StateTransition) {
+        if matches!(tx, StateTransition::L4FirstPacket) {
+            conn.linfo.actions.active |= Actions::Update;
+            conn.linfo.actions.active |= Actions::PassThrough;
+            conn.layers[0].layer_info_mut().actions.active |= Actions::Update;
+        }
     }
-    fn proto_filter(_conn: &mut ConnInfo<TestTrackable>) {}
-    fn session_filter(_conn: &mut ConnInfo<TestTrackable>) {}
-    fn conn_deliver(_conn: &mut ConnInfo<TestTrackable>) {}
     FilterFactory::new(
         "",
-        packet_continue,
         packet_filter,
-        proto_filter,
-        session_filter,
-        conn_deliver,
+        state_tx,
     )
 }
 

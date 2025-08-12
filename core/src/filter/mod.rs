@@ -21,7 +21,7 @@ pub mod ptree;
 #[doc(hidden)]
 pub mod subscription;
 
-use crate::conntrack::ConnInfo;
+use crate::conntrack::{ConnInfo, StateTransition};
 use crate::filter::ast::Predicate;
 use crate::filter::hardware::{flush_rules, HardwareFilter};
 use crate::filter::parser::FilterParser;
@@ -44,21 +44,9 @@ use thiserror::Error;
 /// Software filter applied to each packet. Will drop, deliver, and/or
 /// forward packets to the connection manager. If hardware assist is enabled,
 /// the framework will additionally attempt to install the filter in the NICs.
-pub type PacketContFn = fn(&Mbuf, &CoreId) -> bool;
-/// Filter applied to the first packet of a connection to initialize actions.
-pub type PacketFilterFn<T> = fn(&mut ConnInfo<T>, &Mbuf);
-/// Filter applied when the application-layer protocol is identified.
-/// This may drop connections or update actions.
-/// It may also drain buffered packets to packet-level subscriptions that match
-/// at the protocol stage.
-pub type ProtoFilterFn<T> = fn(&mut ConnInfo<T>);
-/// Filter applied when the application-layer session is parsed.
-/// This may drop connections, drop sessions, or update actions.
-/// It may also deliver session-level subscriptions.
-pub type SessionFilterFn<T> = fn(&mut ConnInfo<T>);
-/// Filter applied to disambiguate and deliver matched connection-level subscriptions
-/// (those delivered at connection termination).
-pub type ConnDeliverFn<T> = fn(&mut ConnInfo<T>);
+pub type PacketFilterFn = fn(&Mbuf, &CoreId) -> bool;
+/// Filter applied on a state transition.
+pub type StateTxFn<T> = fn(&mut ConnInfo<T>, &StateTransition);
 
 #[doc(hidden)]
 pub struct FilterFactory<T>
@@ -66,11 +54,8 @@ where
     T: Trackable,
 {
     pub hw_filter_str: String,
-    pub packet_continue: PacketContFn,
-    pub packet_filter: PacketFilterFn<T>,
-    pub proto_filter: ProtoFilterFn<T>,
-    pub session_filter: SessionFilterFn<T>,
-    pub conn_deliver: ConnDeliverFn<T>,
+    pub packet_filter: PacketFilterFn,
+    pub state_tx: StateTxFn<T>,
 }
 
 impl<T> FilterFactory<T>
@@ -79,19 +64,13 @@ where
 {
     pub fn new(
         hw_filter_str: &str,
-        packet_continue: PacketContFn,
-        packet_filter: PacketFilterFn<T>,
-        proto_filter: ProtoFilterFn<T>,
-        session_filter: SessionFilterFn<T>,
-        conn_deliver: ConnDeliverFn<T>,
+        packet_filter: PacketFilterFn,
+        state_tx: StateTxFn<T>,
     ) -> Self {
         FilterFactory {
             hw_filter_str: hw_filter_str.to_string(),
-            packet_continue,
             packet_filter,
-            proto_filter,
-            session_filter,
-            conn_deliver,
+            state_tx,
         }
     }
 }
