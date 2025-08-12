@@ -1,9 +1,14 @@
 use crate::parse::*;
 use lazy_static::lazy_static;
-use retina_core::conntrack::DataLevel;
-use retina_core::filter::ast::{FuncIdent, Predicate};
-use retina_core::filter::subscription::{CallbackSpec, DataLevelSpec};
-use retina_core::filter::{Filter, pattern::FlatPattern};
+use retina_core::conntrack::{DataLevel, StateTransition};
+use retina_core::filter::{
+    ast::{FuncIdent, Predicate},
+    pattern::FlatPattern,
+    pkt_ptree::PacketPTree,
+    ptree::PTree,
+    subscription::{CallbackSpec, DataLevelSpec},
+    Filter,
+};
 use std::collections::{HashMap, HashSet};
 
 lazy_static! {
@@ -345,6 +350,33 @@ impl SubscriptionDecoder {
             .any(|inp|
                 inp.levels().iter().any(|l| l.is_streaming())
             )
+    }
+
+    pub(crate) fn get_packet_filter_tree(
+        filter_layer: &StateTransition,
+        sub: &SubscriptionDecoder,
+    ) -> PacketPTree {
+        assert!(matches!(filter_layer, StateTransition::Packet));
+        let mut ptree: PacketPTree = PacketPTree::new_empty();
+        for spec in &sub.subscriptions {
+            let patterns = spec.patterns.as_ref().unwrap();
+            ptree.build_tree(patterns, &spec.callbacks);
+        }
+        ptree
+    }
+
+    pub(crate) fn get_filter_tree(
+        filter_layer: StateTransition,
+        sub: &SubscriptionDecoder,
+    ) -> PTree {
+        assert!(!matches!(filter_layer, StateTransition::Packet));
+        let mut ptree = PTree::new_empty(filter_layer);
+        for spec in &sub.subscriptions {
+            let patterns = spec.patterns.as_ref().unwrap();
+            ptree.add_subscription(patterns, &spec.callbacks, &spec.as_str);
+        }
+        ptree.collapse();
+        ptree
     }
 }
 

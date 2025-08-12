@@ -7,7 +7,6 @@ mod parse;
 use parse::*;
 mod cache;
 mod codegen;
-mod ptree;
 mod subscription;
 
 mod packet_filter;

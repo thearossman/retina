@@ -5,12 +5,12 @@ use quote::quote;
 use retina_core::conntrack::Actions;
 use retina_core::conntrack::StateTransition;
 use retina_core::conntrack::TrackedActions;
-use retina_core::filter::subscription::DataActions;
 use retina_core::filter::ast::{BinOp, FieldName, ProtocolName, Value};
+use retina_core::filter::subscription::DataActions;
 
-use std::collections::HashSet;
-use regex::{bytes::Regex as BytesRegex, Regex};
 use heck::CamelCase;
+use regex::{bytes::Regex as BytesRegex, Regex};
+use std::collections::HashSet;
 
 pub(crate) fn cb_to_tokens(
     sub: &SubscriptionDecoder,

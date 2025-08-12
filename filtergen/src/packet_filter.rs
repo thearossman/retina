@@ -1,13 +1,11 @@
-use quote::quote;
-use proc_macro2::{Ident, Span};
+use crate::codegen::binary_to_tokens;
 use heck::CamelCase;
+use proc_macro2::{Ident, Span};
+use quote::quote;
 use retina_core::filter::ast::*;
 use retina_core::filter::pkt_ptree::{PacketPNode, PacketPTree};
-use crate::codegen::binary_to_tokens;
 
-pub(crate) fn gen_packet_filter(
-    ptree: &PacketPTree,
-) -> proc_macro2::TokenStream {
+pub(crate) fn gen_packet_filter(ptree: &PacketPTree) -> proc_macro2::TokenStream {
     let mut body: Vec<proc_macro2::TokenStream> = vec![];
 
     // Store result in variable (vs. early return)
@@ -23,12 +21,10 @@ pub(crate) fn gen_packet_filter(
     gen_packet_filter_util(&mut body, &ptree.root, &ptree);
 
     // Return value
-    body.push(
-        match ptree.deliver.is_empty() {
-            true => quote! { false },
-            false => quote! { matched },
-        }
-    );
+    body.push(match ptree.deliver.is_empty() {
+        true => quote! { false },
+        false => quote! { matched },
+    });
 
     // Extract outer protocol (ethernet)
     let outer = Ident::new("ethernet", Span::call_site());
@@ -40,7 +36,6 @@ pub(crate) fn gen_packet_filter(
         }
     }
 }
-
 
 fn gen_packet_filter_util(
     code: &mut Vec<proc_macro2::TokenStream>,
@@ -57,7 +52,7 @@ fn gen_packet_filter_util(
                     node.pred.get_protocol(),
                     protocol,
                     first_unary,
-                    tree
+                    tree,
                 );
                 first_unary = false;
             }
@@ -67,31 +62,19 @@ fn gen_packet_filter_util(
                 op,
                 value,
             } => {
-                add_binary_pred(
-                    code,
-                    child,
-                    protocol,
-                    field,
-                    op,
-                    value,
-                    tree
-                );
+                add_binary_pred(code, child, protocol, field, op, value, tree);
             }
             _ => panic!("Unexpected predicate in packet filter: {:?}", child.pred),
         }
     }
 }
 
-fn update_body(
-    body: &mut Vec<proc_macro2::TokenStream>,
-    node: &PacketPNode,
-    tree: &PacketPTree
-) {
+fn update_body(body: &mut Vec<proc_macro2::TokenStream>, node: &PacketPNode, tree: &PacketPTree) {
     if node.is_terminal {
         // If there won't be anything that needs to be delivered,
         // return `true` immediately
         if tree.deliver.is_empty() {
-            body.push(quote! { return true; } );
+            body.push(quote! { return true; });
         } else {
             body.push(quote! { ret = true; });
         }
