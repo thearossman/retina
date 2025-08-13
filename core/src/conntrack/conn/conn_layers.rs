@@ -1,14 +1,21 @@
 // Additional traffic layers built on top of the L4 base transport layer.
 
 use super::conn_actions::TrackedActions;
-use super::conn_state::{DataLevel, LayerState, StateTransition};
+use super::conn_state::{LayerState, StateTransition};
 use crate::conntrack::Actions;
 use crate::protocols::stream::{
-    ConnParser, ParseResult, ParserRegistry, ParsingState, ProbeRegistryResult, SessionProto,
+    ConnParser, ParseResult, ParserRegistry, ParsingState, ProbeRegistryResult, SessionData,
+    SessionProto,
 };
 use crate::protocols::Session;
-use crate::subscription::Trackable;
 use crate::L4Pdu;
+
+lazy_static! {
+    static ref DEFAULT_SESSION: Session = Session {
+        data: SessionData::Null,
+        id: 0,
+    };
+}
 
 /// "Layers" that can be built on top of the transport layer (L4).
 /// Each associated datatype must implement LayerInfo API (see below)
@@ -35,12 +42,7 @@ pub(crate) trait TrackableLayer {
     /// If multiple state transitions are triggered, the "Streaming" (InX)
     /// should be returned first. This will invoke methods on `T` based
     /// on the Layer and current State.
-    fn process_stream<T: Trackable>(
-        &mut self,
-        pdu: &mut L4Pdu,
-        tracked: &mut T,
-        registry: &ParserRegistry,
-    ) -> [StateTransition; 2];
+    fn process_stream(&mut self, pdu: &mut L4Pdu, registry: &ParserRegistry) -> StateTransition;
 
     /// Should be checked directly after a state transition to see
     /// if process_stream needs to be called again.
@@ -51,6 +53,15 @@ pub(crate) trait TrackableLayer {
     /// No actions are active and, if applicable, no sub-layers have
     /// active actions.
     fn drop(&self) -> bool;
+
+    /// "Consume_stream" must be called by the transport layer.
+    /// TCP reassemly is expected if applicable.
+    fn needs_stream(&self) -> bool;
+
+    /// "State" that should be passed into an `update` function.
+    /// May have two if the PDU includes data from, e.g., both header and payload.
+    /// Should be called AFTER process_stream.
+    fn updates(&self, pdu: &L4Pdu) -> [StateTransition; 2];
 
     /// Used to remove any actions that are invalid at this layer.
     /// For example: an L4 Update may trigger an L7 "parse" action, which
@@ -76,17 +87,43 @@ impl Layer {
     pub fn push_action(&mut self, action: &TrackedActions) {
         self.layer_info_mut().actions.extend(&action)
     }
+
+    /// Accessors
+    pub fn last_session(&self) -> &Session {
+        match self {
+            Layer::L7(session) => match session.sessions.last() {
+                Some(s) => s,
+                None => &DEFAULT_SESSION,
+            },
+        }
+    }
+
+    pub fn first_session(&self) -> &Session {
+        match self {
+            Layer::L7(session) => match session.sessions.first() {
+                Some(s) => s,
+                None => &DEFAULT_SESSION,
+            },
+        }
+    }
+
+    pub fn sessions(&self) -> &Vec<Session> {
+        match self {
+            Layer::L7(session) => &session.sessions,
+        }
+    }
+
+    pub fn last_protocol(&self) -> SessionProto {
+        match self {
+            Layer::L7(session) => session.get_protocol(),
+        }
+    }
 }
 
 impl TrackableLayer for Layer {
-    fn process_stream<T: Trackable>(
-        &mut self,
-        pdu: &mut L4Pdu,
-        tracked: &mut T,
-        registry: &ParserRegistry,
-    ) -> [StateTransition; 2] {
+    fn process_stream(&mut self, pdu: &mut L4Pdu, registry: &ParserRegistry) -> StateTransition {
         match self {
-            Layer::L7(session) => session.process_stream(pdu, tracked, registry),
+            Layer::L7(session) => session.process_stream(pdu, registry),
         }
     }
 
@@ -99,6 +136,18 @@ impl TrackableLayer for Layer {
     fn drop(&self) -> bool {
         match self {
             Layer::L7(session) => session.drop(),
+        }
+    }
+
+    fn needs_stream(&self) -> bool {
+        match self {
+            Layer::L7(session) => session.needs_stream(),
+        }
+    }
+
+    fn updates(&self, pdu: &L4Pdu) -> [StateTransition; 2] {
+        match self {
+            Layer::L7(session) => session.updates(pdu),
         }
     }
 
@@ -136,8 +185,8 @@ pub struct L7Session {
     pub linfo: LayerInfo,
     /// Stateful protocol parser (once identified, or None)
     pub parser: ConnParser,
-    /// Last session ID parsed, if applicable
-    pub last_parsed: Option<usize>,
+    /// Parsed sessions, if applicable
+    pub sessions: Vec<Session>,
     // Further encapsulated layers could go here.
 }
 
@@ -149,22 +198,11 @@ impl L7Session {
         Self {
             linfo: LayerInfo::new(),
             parser: ConnParser::Unknown,
-            last_parsed: None,
+            sessions: Vec::new(),
         }
     }
 
-    /// Accessors for Sessions
-    pub fn pop_session(&mut self) -> Option<Session> {
-        match self.last_parsed {
-            Some(id) => self.parser.remove_session(id),
-            None => None,
-        }
-    }
-
-    pub fn remove_session(&mut self, id: usize) -> Option<Session> {
-        self.parser.remove_session(id)
-    }
-
+    /// Drain remaining (not yet fully parsed) sessions
     pub fn drain_sessions(&mut self) -> Vec<Session> {
         self.parser.drain_sessions()
     }
@@ -199,53 +237,56 @@ impl TrackableLayer for L7Session {
         self.linfo.drop()
     }
 
-    fn process_stream<T: Trackable>(
-        &mut self,
-        pdu: &mut L4Pdu,
-        tracked: &mut T,
-        registry: &ParserRegistry,
-    ) -> [StateTransition; 2] {
-        let mut state_tx = [StateTransition::Packet; 2];
+    fn needs_stream(&self) -> bool {
+        self.linfo.actions.needs_parse() || self.linfo.actions.has_next_layer()
+    }
+
+    fn updates(&self, pdu: &L4Pdu) -> [StateTransition; 2] {
+        match self.linfo.state {
+            LayerState::None | LayerState::Discovery => [StateTransition::Packet; 2],
+            LayerState::Headers => [StateTransition::L7InHdrs, StateTransition::Packet],
+            LayerState::Payload => match pdu.app_body_offset() {
+                Some(_) => [StateTransition::L7InHdrs, StateTransition::L7InPayload],
+                None => [StateTransition::L7InPayload, StateTransition::Packet],
+            },
+        }
+    }
+
+    fn process_stream(&mut self, pdu: &mut L4Pdu, registry: &ParserRegistry) -> StateTransition {
         match self.linfo.state {
             LayerState::Discovery => {
                 match registry.probe_all(pdu) {
                     ProbeRegistryResult::Some(conn_parser) => {
                         // Application-layer protocol known
                         self.parser = conn_parser;
-                        state_tx[0] = StateTransition::L7OnDisc;
                         self.linfo.state = LayerState::Headers;
+                        return StateTransition::L7OnDisc;
                     }
                     ProbeRegistryResult::None => {
                         // All relevant parsers have failed to match
-                        state_tx[0] = StateTransition::L7OnDisc;
                         self.linfo.state = LayerState::None;
+                        return StateTransition::L7OnDisc;
                     }
                     ProbeRegistryResult::Unsure => { /* skip */ }
                 }
             }
             LayerState::Headers => {
-                let mut new_state = self.linfo.state;
                 match self.parser.parse(pdu) {
                     ParseResult::Done(id) => {
-                        self.last_parsed = Some(id);
-                        state_tx[1] = StateTransition::L7EndHdrs;
-                        new_state = LayerState::Payload;
+                        if let Some(session) = self.parser.remove_session(id) {
+                            self.sessions.push(session);
+                        }
+                        self.linfo.state = LayerState::Payload;
                     }
                     ParseResult::None => {
-                        state_tx[1] = StateTransition::L7EndHdrs;
-                        new_state = LayerState::None;
+                        self.linfo.state = LayerState::None;
+                        return StateTransition::L7EndHdrs;
                     }
                     _ => { /* continue */ }
                 }
                 if let Some(offset) = self.parser.body_offset() {
                     pdu.ctxt.app_offset = Some(offset);
                 }
-                if self.linfo.actions.needs_update() {
-                    if tracked.update(pdu, DataLevel::L7InHdrs) {
-                        state_tx[0] = StateTransition::L7InHdrs;
-                    }
-                }
-                self.linfo.state = new_state;
             }
             LayerState::Payload => {
                 pdu.ctxt.app_offset = Some(0);
@@ -260,11 +301,6 @@ impl TrackableLayer for L7Session {
                         _ => {}
                     }
                 }
-                if self.linfo.actions.needs_update() {
-                    if tracked.update(pdu, DataLevel::L7InPayload) {
-                        state_tx[0] = StateTransition::L7InPayload;
-                    }
-                }
                 // TODO - add API for parser to consume payload
                 // if applicable and return when session is "done"
             }
@@ -272,6 +308,6 @@ impl TrackableLayer for L7Session {
                 // Do nothing
             }
         }
-        state_tx
+        StateTransition::Packet
     }
 }

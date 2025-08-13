@@ -200,25 +200,25 @@ pub(crate) const NUM_STATE_TRANSITIONS: usize = 9;
 /// State Transitions with associated data, used as wrappers for users to subscribe to
 /// TODO which mod should these live in...
 #[derive(Debug)]
-pub enum StateTxData {
+pub enum StateTxData<'a> {
     L4EndHshk,
     L7OnDisc(SessionProto),
-    L7EndHdrs(Session),
+    L7EndHdrs(&'a Session),
     L4Terminated,
 }
 
-impl StateTxData {
-    pub fn from_tx(state: &StateTransition, layer: &mut Layer) -> Self {
+impl<'a> StateTxData<'a> {
+    pub fn from_tx(state: &StateTransition, layer: &'a Layer) -> Option<Self> {
         match layer {
             Layer::L7(layer) => {
                 return match state {
-                    DataLevel::L4EndHshk => Self::L4EndHshk,
-                    DataLevel::L7OnDisc => Self::L7OnDisc(layer.get_protocol()),
-                    DataLevel::L7EndHdrs => {
-                        Self::L7EndHdrs(layer.pop_session().expect("L7EndHdrs without session"))
-                    }
-                    DataLevel::L4Terminated => Self::L4Terminated,
-                    _ => panic!("Called from_tx on streaming state {:?}", state),
+                    DataLevel::L4EndHshk => Some(Self::L4EndHshk),
+                    DataLevel::L7OnDisc => Some(Self::L7OnDisc(layer.get_protocol())),
+                    DataLevel::L7EndHdrs => Some(Self::L7EndHdrs(
+                        layer.sessions.last().expect("L7EndHdrs without session"),
+                    )),
+                    DataLevel::L4Terminated => Some(Self::L4Terminated),
+                    _ => None,
                 };
             }
         }

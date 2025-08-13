@@ -1,4 +1,3 @@
-use crate::conntrack::conn::conn_state::StateTxData;
 use crate::conntrack::pdu::{L4Context, L4Pdu};
 use crate::conntrack::{ConnInfo, ConnTracker, DataLevel, StateTransition};
 use crate::filter::*;
@@ -49,16 +48,6 @@ pub trait Trackable {
 
     /// Clear all internal data
     fn clear(&mut self);
-
-    /// Invoke "update" API, returning `true` if Actions may need
-    /// to be refreshed (i.e., a subscription has gone out of scope).
-    fn update(&mut self, pdu: &L4Pdu, state: DataLevel) -> bool;
-
-    /// Indicates a state transition occurred
-    fn state_tx(&mut self, state: StateTxData);
-
-    /// Indicates that a callback or filter unsubscribed during a stream
-    fn stream_tx(&mut self, state: StateTransition);
 }
 
 #[allow(dead_code)]
@@ -68,6 +57,7 @@ where
 {
     packet_filter: PacketFilterFn,
     state_tx_filter: StateTxFn<S::Tracked>,
+    update_fn: UpdateFn<S::Tracked>,
     #[cfg(feature = "timing")]
     pub(crate) timers: Timers,
 }
@@ -81,6 +71,7 @@ where
         Subscription {
             packet_filter: factory.packet_filter,
             state_tx_filter: factory.state_tx,
+            update_fn: factory.update_fn,
             #[cfg(feature = "timing")]
             timers: Timers::new(),
         }
@@ -118,5 +109,11 @@ where
     /// Updates actions and invokes filters.
     pub fn state_tx<T: Trackable>(&self, conn: &mut ConnInfo<S::Tracked>, tx: &StateTransition) {
         (self.state_tx_filter)(conn, tx)
+    }
+
+    /// Invoke "update" API, returning `true` if Actions may need
+    /// to be refreshed (i.e., a subscription has gone out of scope).
+    pub fn update(&self, conn: &mut ConnInfo<S::Tracked>, pdu: &L4Pdu, state: DataLevel) -> bool {
+        (self.update_fn)(conn, pdu, state)
     }
 }

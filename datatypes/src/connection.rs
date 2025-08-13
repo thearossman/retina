@@ -1,12 +1,12 @@
 //! A sample connection record that provides various TCP and/or UDP connection
 //! information, statistics, and state history. It does not deliver payload data.
 
-use retina_core::conntrack::conn::conn_state::StateTxData;
 use retina_core::conntrack::conn::tcp_conn::reassembly::wrapping_lt;
 use retina_core::conntrack::conn_id::FiveTuple;
 use retina_core::conntrack::pdu::L4Pdu;
 use retina_core::protocols::packet::tcp::{ACK, FIN, RST, SYN};
 use retina_core::subscription::Tracked;
+use retina_core::StateTxData;
 #[allow(dead_code)]
 use retina_filtergen::{datatype, datatype_group};
 

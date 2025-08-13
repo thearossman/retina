@@ -2,6 +2,7 @@
 
 use proc_macro::TokenStream;
 use quote::quote;
+use std::collections::HashMap;
 use syn::{parse_macro_input, Item};
 
 mod parse;
@@ -139,14 +140,100 @@ pub fn retina_main(_args: TokenStream, input: TokenStream) -> TokenStream {
 
     let packet_tree = decoder.get_packet_filter_tree();
     let packet_filter = packet_filter::gen_packet_filter(&packet_tree);
+    let filter_str = packet_tree.to_filter_string();
+
+    let statics: HashMap<String, proc_macro2::TokenStream> = HashMap::new();
+    let lazy_statics = if statics.is_empty() {
+        quote! {}
+    } else {
+        let statics = statics.values().collect::<Vec<_>>();
+        quote! {
+            lazy_static::lazy_static! {
+                #( #statics )*
+            }
+        }
+    };
 
     quote! {
-        fn packet_filter(
-            mbuf: &retina_core::Mbuf,
-            core_id: &retina_core::CoreId
-        ) -> bool
-        {
-            #packet_filter
+
+        use retina_core::subscription::{Trackable, Subscribable};
+        use retina_core::conntrack::{TrackedActions, ConnInfo};
+        use retina_core::protocols::stream::ParserRegistry;
+
+        #lazy_statics
+
+        pub struct SubscribedWrapper;
+        impl Subscribable for SubscribedWrapper {
+            type Tracked = TrackedWrapper;
+        }
+
+        pub struct TrackedWrapper {
+            packets: Vec<retina_core::Mbuf>,
+            core_id: retina_core::CoreId,
+            // TODO tracked
+        }
+
+        impl Trackable for TrackedWrapper {
+            type Subscribed = SubscribedWrapper;
+            fn new(first_pkt: &L4Pdu, core_id: retina_core::CoreId) -> Self {
+                Self {
+                    packets: Vec::new(),
+                    core_id,
+                    // TODO #new
+                }
+            }
+
+            fn packets(&self) -> &Vec<retina_core::Mbuf> {
+                &self.packets
+            }
+
+            fn core_id(&self) -> &retina_core::CoreId {
+                &self.core_id
+            }
+
+            fn parsers() -> ParserRegistry {
+                // TODO
+                ParserRegistry::from_strings(vec![])
+            }
+
+            fn clear(&mut self) {
+                self.packets.clear();
+                // TODO: #clear
+            }
+        }
+
+        pub fn filter() -> retina_core::filter::FilterFactory<TrackedWrapper> {
+
+            fn packet_filter(
+                mbuf: &retina_core::Mbuf,
+                core_id: &retina_core::CoreId
+            ) -> bool
+            {
+                #packet_filter
+            }
+
+            fn state_tx(conn: &mut ConnInfo<TrackedWrapper>,
+                    tx: &retina_core::StateTransition) {
+                let tx_data = retina_core::StateTxData::from_tx(&tx, &conn.layers[0]);
+                match tx {
+                    _ => {},
+                }
+            }
+
+            fn update(conn: &mut ConnInfo<TrackedWrapper>,
+                pdu: &retina_core::L4Pdu,
+                state: retina_core::StateTransition) -> bool
+            {
+                false
+                // TODO: #update; let ret = false; ret
+            }
+
+            retina_core::filter::FilterFactory::new(
+                #filter_str,
+                packet_filter,
+                state_tx,
+                update
+            )
         }
 
         #input

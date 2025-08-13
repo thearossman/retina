@@ -1,5 +1,3 @@
-use conn::conn_state::StateTxData;
-
 use crate::config::default_config;
 use crate::conntrack::conn::conn_state::NUM_STATE_TRANSITIONS;
 use crate::conntrack::*;
@@ -54,19 +52,6 @@ impl Trackable for TestTrackable {
     fn clear(&mut self) {
         self.packets.clear();
     }
-
-    fn update(&mut self, _pdu: &L4Pdu, state: DataLevel) -> bool {
-        self.invoked[state.as_usize()] += 1;
-        self.invoked[state.as_usize()] % 2 == 0
-    }
-
-    fn state_tx(&mut self, state: StateTxData) {
-        self.state_tx[state.as_usize()] += 1;
-    }
-
-    fn stream_tx(&mut self, state: StateTransition) {
-        self.state_tx[state.as_usize()] += 1;
-    }
 }
 
 fn filter() -> FilterFactory<TestTrackable> {
@@ -80,7 +65,11 @@ fn filter() -> FilterFactory<TestTrackable> {
             conn.layers[0].layer_info_mut().actions.active |= Actions::Update;
         }
     }
-    FilterFactory::new("", packet_filter, state_tx)
+    fn update(conn: &mut ConnInfo<TestTrackable>, _pdu: &L4Pdu, state: DataLevel) -> bool {
+        conn.tracked.invoked[state.as_usize()] += 1;
+        conn.tracked.invoked[state.as_usize()] % 2 == 0
+    }
+    FilterFactory::new("", packet_filter, state_tx, update)
 }
 
 const MBUF: [u8; 1500] = [0; 1500];

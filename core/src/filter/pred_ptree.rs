@@ -234,6 +234,38 @@ impl PredPTree {
         prune(&mut self.root);
     }
 
+    // Displays the conditions in the PTree as a filter string
+    pub fn to_filter_string(&self) -> String {
+        fn to_filter_string(p: &PredPNode, all: &mut Vec<String>, curr: String) {
+            let mut curr = curr;
+            if curr.is_empty() {
+                curr.push('(');
+            } else {
+                curr.push_str(&format!("({})", p.pred));
+            }
+            if p.children.is_empty() {
+                let mut path_str = curr.clone();
+                path_str.push(')');
+                all.push(path_str);
+            } else {
+                if curr != "(" {
+                    curr.push_str(" and ");
+                }
+                for child in &p.children {
+                    to_filter_string(child, all, curr.clone());
+                }
+            }
+        }
+
+        let mut all_filters = Vec::new();
+        let curr_filter = String::new();
+        if self.root.children.is_empty() {
+            return "".into();
+        }
+        to_filter_string(&self.root, &mut all_filters, curr_filter);
+        all_filters.join(" or ")
+    }
+
     // modified from https://vallentin.dev/2019/05/14/pretty-print-tree
     fn pprint(&self) -> String {
         fn pprint(s: &mut String, node: &PredPNode, prefix: String, last: bool) {

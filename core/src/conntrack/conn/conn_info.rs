@@ -71,10 +71,7 @@ where
     /// flag if it has passed through the TCP reassembly module.
     pub(crate) fn new_packet(&mut self, pdu: &L4Pdu, subscription: &Subscription<T::Subscribed>) {
         if self.linfo.actions.needs_update() {
-            if self
-                .tracked
-                .update(pdu, DataLevel::L4InPayload(pdu.ctxt.reassembled))
-            {
+            if subscription.update(self, pdu, DataLevel::L4InPayload(pdu.ctxt.reassembled)) {
                 self.exec_state_tx(
                     StateTransition::L4InPayload(pdu.ctxt.reassembled),
                     subscription,
@@ -100,15 +97,18 @@ where
         // Update tracked data
         self.new_packet(pdu, subscription);
         // Pass to next layer(s) if applicable
-        if !self.layers[0].drop() {
-            let tx_ = self.layers[0].process_stream(pdu, &mut self.tracked, registry);
-            for tx in tx_ {
-                if tx == StateTransition::Packet {
-                    continue;
-                }
-                self.exec_state_tx(tx, subscription);
-                if self.layers[0].needs_process(tx, pdu) {
-                    self.layers[0].process_stream(pdu, &mut self.tracked, registry);
+        if self.layers[0].needs_stream() {
+            let tx = self.layers[0].process_stream(pdu, registry);
+            self.exec_state_tx(tx, subscription);
+            if self.layers[0].needs_process(tx, pdu) {
+                self.layers[0].process_stream(pdu, registry);
+            }
+        }
+        // Update if needed (can be in payload)
+        if self.layers[0].layer_info().actions.needs_update() {
+            for update in self.layers[0].updates(pdu) {
+                if subscription.update(self, pdu, update) {
+                    self.exec_state_tx(update, subscription);
                 }
             }
         }
@@ -170,6 +170,6 @@ where
     }
 
     pub(crate) fn needs_reassembly(&self) -> bool {
-        self.linfo.actions.needs_reassembly() || self.linfo.actions.has_next_layer()
+        self.linfo.actions.needs_reassembly() || self.layers.iter().any(|l| l.needs_stream())
     }
 }

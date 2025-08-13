@@ -21,7 +21,7 @@ pub mod ptree;
 #[doc(hidden)]
 pub mod subscription;
 
-use crate::conntrack::{ConnInfo, StateTransition};
+use crate::conntrack::{ConnInfo, DataLevel, StateTransition};
 use crate::filter::ast::Predicate;
 use crate::filter::hardware::{flush_rules, HardwareFilter};
 use crate::filter::parser::FilterParser;
@@ -31,6 +31,7 @@ use crate::lcore::CoreId;
 use crate::memory::mbuf::Mbuf;
 use crate::port::Port;
 use crate::subscription::Trackable;
+use crate::L4Pdu;
 
 use std::fmt;
 
@@ -47,6 +48,9 @@ use thiserror::Error;
 pub type PacketFilterFn = fn(&Mbuf, &CoreId) -> bool;
 /// Filter applied on a state transition.
 pub type StateTxFn<T> = fn(&mut ConnInfo<T>, &StateTransition);
+/// Invoked to update internal data on each new packet
+/// Returns `true` if something changed (CB unsubscribed, streaming filter matched/didn't match)
+pub type UpdateFn<T> = fn(&mut ConnInfo<T>, &L4Pdu, DataLevel) -> bool;
 
 #[doc(hidden)]
 pub struct FilterFactory<T>
@@ -56,17 +60,24 @@ where
     pub hw_filter_str: String,
     pub packet_filter: PacketFilterFn,
     pub state_tx: StateTxFn<T>,
+    pub update_fn: UpdateFn<T>,
 }
 
 impl<T> FilterFactory<T>
 where
     T: Trackable,
 {
-    pub fn new(hw_filter_str: &str, packet_filter: PacketFilterFn, state_tx: StateTxFn<T>) -> Self {
+    pub fn new(
+        hw_filter_str: &str,
+        packet_filter: PacketFilterFn,
+        state_tx: StateTxFn<T>,
+        update_fn: UpdateFn<T>,
+    ) -> Self {
         FilterFactory {
             hw_filter_str: hw_filter_str.to_string(),
             packet_filter,
             state_tx,
+            update_fn,
         }
     }
 }
