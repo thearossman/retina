@@ -7,14 +7,25 @@ use retina_core::conntrack::{
     TrackedActions,
 };
 use retina_core::filter::{
-    ast::{BinOp, FieldName, Predicate, ProtocolName, Value},
+    ast::{BinOp, FieldName, ProtocolName, Value},
     subscription::{CallbackSpec, DataActions},
 };
 
 use heck::CamelCase;
 use regex::{bytes::Regex as BytesRegex, Regex};
-use std::collections::HashSet;
+use std::collections::HashMap;
 
+// TODO THIS IS BROKEN, including params_to_tokens
+/*
+produced
+                        match (new(conn.layers[0].last_session()),) {
+                            (Some(tlshandshake),) => {
+                                ();
+                            }
+                            _ => {}
+                        }
+
+*/
 pub(crate) fn cb_to_tokens(
     sub: &SubscriptionDecoder,
     datatypes: &Vec<String>,
@@ -33,26 +44,15 @@ pub(crate) fn cb_to_tokens(
         &mut params,
     );
 
-    // Invoking this CB requires invoking a method on a struct or
-    // this is a streaming CB that can unsubscribe
-    let cb_name = Ident::new(&cb_name, Span::call_site());
-    let (cb_id, cb_wrapper) = match &cb_group {
+    let invoke = match cb_group {
         Some(grp) => {
-            let mut grp = grp.to_lowercase();
-            let id = Ident::new(&grp, Span::call_site());
-            grp.push_str("_wrap");
-            (id, Ident::new(&grp.to_lowercase(), Span::call_site()))
-        }
-        None => (
-            Ident::new("", Span::call_site()),
-            Ident::new("", Span::call_site()),
-        ),
-    };
-
-    let invoke = match cb_group.is_some() {
-        true => {
             // Allow for unsubscribe
             // Need to check for `is_active` in the `update` method
+            // Invoke method on struct and check for unsubscribe
+            let mut grp = grp.to_lowercase();
+            let cb_id = Ident::new(&grp, Span::call_site());
+            grp.push_str("_wrap");
+            let cb_wrapper = Ident::new(&grp.to_lowercase(), Span::call_site());
             quote! {
                 if conn.tracked.#cb_wrapper.is_active() {
                     if !conn.tracked.#cb_id.#cb_name(#( #params ), *) {
@@ -61,7 +61,7 @@ pub(crate) fn cb_to_tokens(
                 }
             }
         }
-        false => {
+        None => {
             quote! { #cb_name(#( #params ), *); }
         }
     };
@@ -82,28 +82,20 @@ pub(crate) fn cb_to_tokens(
         }
     };
 
-    match cb_group.is_some() {
+    // Invoking this CB requires checking that it
+    // hasn't already been invoked
+    match invoke_once {
         true => {
+            let cb_wrapper = cb_name.to_lowercase() + "_wrap";
+            let cb_wrapper = Ident::new(&cb_wrapper, Span::call_site());
             quote! {
-                // Only invoke if active; unsubscribe if needed
-                if tracked.#cb_wrapper.is_active() {
+                if conn.tracked.#cb_wrapper.should_invoke() {
+                    conn.tracked.#cb_wrapper.set_invoked();
                     #invoke
                 }
             }
         }
-        false => {
-            // Invoking this CB requires checking that it
-            // hasn't already been invoked
-            match invoke_once {
-                true => quote! {
-                    if tracked.#cb_wrapper.should_invoke() {
-                        tracked.#cb_wrapper.set_invoked();
-                        #invoke
-                    }
-                },
-                false => quote! { #invoke },
-            }
-        }
+        false => quote! { #invoke },
     }
 }
 
@@ -186,30 +178,14 @@ pub(crate) fn datatype_func_to_tokens(dt: &DatatypeFnSpec) -> proc_macro2::Token
     let fname = Ident::new(&dt.func.name, Span::call_site());
     if param == "L4Pdu" {
         return quote! {
-            tracked.#dt_name.#fname(pdu);
+            conn.tracked.#dt_name.#fname(pdu);
         };
     } else if param == "StateTxOrd" {
         return quote! {
-            tracked.#dt_name.#fname(tx);
+            conn.tracked.#dt_name.#fname(tx);
         };
     }
     panic!("Unknown param for {}: {}", dt.func.name, param);
-}
-
-/// Checking whether a custom filter matched
-pub(crate) fn filter_check_to_tokens(
-    sub: &SubscriptionDecoder,
-    fil_id: &String,
-) -> proc_macro2::TokenStream {
-    let _fil = sub
-        .filters_raw
-        .get(fil_id)
-        .expect(&format!("Cannot find {} in defined filters", fil_id));
-
-    // TODO support custom filters that don't need to be tracked
-
-    let ident = Ident::new(&fil_id, Span::call_site());
-    quote! { tracked.#ident.matched() }
 }
 
 /// Used for filters and CBs
@@ -239,7 +215,7 @@ pub(crate) fn params_to_tokens(
         if sub.tracked.contains(dt) {
             // TODO need to standardize how `tracked` is stored
             // (`self` vs. in `conn`).
-            params.push(quote! { &conn.tracked.#dt_name_ident, });
+            params.push(quote! { &conn.tracked.#dt_name_ident });
             continue;
         }
 
@@ -287,7 +263,7 @@ pub(crate) fn constr_to_tokens(
         let param = if dt == "L4Pdu" {
             quote! { pdu }
         } else if dt == "Session" {
-            quote! { conn.tracked.last_session }
+            quote! { conn.layers[0].last_session() }
         } else if dt == "Mbuf" {
             quote! { &pdu.mbuf }
         } else {
@@ -297,17 +273,18 @@ pub(crate) fn constr_to_tokens(
             );
         };
         let name = Ident::new(&spec.func.name, Span::call_site());
-        quote! { #name(#param) }
+        let type_name = Ident::new(&spec.group_name, Span::call_site());
+        quote! { #type_name::#name(#param) }
     };
 
     if matches!(returns, Constructor::Opt | Constructor::OptRef) {
         conditions.push(quote! { #constructor, });
         cond_match.push(quote! { Some(#name_ident), });
         if matches!(returns, Constructor::OptRef) {
-            params.push(quote! { #name_ident, });
+            params.push(quote! { #name_ident });
         } else {
             // TODO can relax the borrowing requirement here
-            params.push(quote! { &#name_ident, });
+            params.push(quote! { &#name_ident });
         }
     } else {
         // TODO check is &Self also an option?
@@ -328,11 +305,11 @@ pub(crate) fn data_actions_to_tokens(actions: &DataActions) -> proc_macro2::Toke
     let mut ret = vec![quote! {}];
     if !actions.transport.drop() {
         let tracked = tracked_actions_to_tokens(&actions.transport);
-        ret.push(quote! { conn.linfo.actions.extend(#tracked); });
+        ret.push(quote! { conn.linfo.actions.extend(&#tracked); });
     }
     if !actions.layers[0].drop() {
         let lyrs = tracked_actions_to_tokens(&actions.layers[0]);
-        ret.push(quote! { conn.layers[0].push_action(#lyrs); });
+        ret.push(quote! { conn.layers[0].push_action(&#lyrs); });
     }
     quote! { #( #ret )* }
 }
@@ -354,7 +331,7 @@ pub(crate) fn tracked_actions_to_tokens(actions: &TrackedActions) -> proc_macro2
 
 pub(crate) fn actions_to_tokens(actions: &Actions) -> proc_macro2::TokenStream {
     let bits = syn::LitInt::new(&actions.bits().to_string(), Span::call_site());
-    quote! { Actions::from(#bits) }
+    quote! { retina_core::conntrack::Actions::from(#bits) }
 }
 
 pub(crate) fn update_to_tokens(
@@ -401,9 +378,9 @@ pub(crate) fn update_to_tokens(
     }
 }
 
-pub(crate) fn tracked_to_tokens(tracked_datatypes: &HashSet<String>) -> proc_macro2::TokenStream {
+pub(crate) fn tracked_to_tokens(sub: &SubscriptionDecoder) -> proc_macro2::TokenStream {
     let mut def = vec![];
-    for name in tracked_datatypes {
+    for name in &sub.tracked {
         let field_name = Ident::new(&name.to_lowercase(), Span::call_site());
         let type_name = Ident::new(name, Span::call_site());
         def.push(quote! {
@@ -411,18 +388,13 @@ pub(crate) fn tracked_to_tokens(tracked_datatypes: &HashSet<String>) -> proc_mac
         });
     }
     quote! {
-        pub struct TrackedWrapper {
-            core_id: retina_core::CoreId,
-            #( #def )*
-        }
+        #( #def )*
     }
 }
 
-pub(crate) fn tracked_new_to_tokens(
-    tracked_datatypes: &HashSet<String>,
-) -> proc_macro2::TokenStream {
+pub(crate) fn tracked_new_to_tokens(sub: &SubscriptionDecoder) -> proc_macro2::TokenStream {
     let mut new = vec![];
-    for name in tracked_datatypes {
+    for name in &sub.tracked {
         let field_name = Ident::new(&name.to_lowercase(), Span::call_site());
         let type_name = Ident::new(name, Span::call_site());
         new.push(quote! {
@@ -430,13 +402,7 @@ pub(crate) fn tracked_new_to_tokens(
         });
     }
     quote! {
-        pub(crate) fn new(pdu: &retina_core::L4Pdu,
-               core_id: retina_core::CoreId) -> Self {
-            Self {
-                core_id,
-                #( #new )*
-            }
-        }
+        #( #new )*
     }
 }
 
@@ -455,7 +421,7 @@ pub(crate) fn tracked_update_to_tokens(sub: &SubscriptionDecoder) -> proc_macro2
         });
     }
     quote! {
-        match tx {
+        match state {
             #( #all_updates )*
             _ => {},
         }
@@ -492,7 +458,7 @@ pub(crate) fn fil_callback_to_tokens(
         grp.push_str("_wrap");
         let wrapper = Ident::new(&grp.to_lowercase(), Span::call_site());
         invoke = quote! {
-            tracked.#wrapper.try_set_active();
+            conn.tracked.#wrapper.try_set_active();
             #invoke
         };
     }
@@ -500,21 +466,17 @@ pub(crate) fn fil_callback_to_tokens(
     invoke
 }
 
-pub(crate) fn custom_pred_to_tokens(pred: &Predicate) -> proc_macro2::TokenStream {
-    match pred {
-        Predicate::Custom { name, matched, .. } => {
-            let ident = Ident::new(&name.0.to_lowercase(), Span::call_site());
-            match matched {
-                true => quote! { tracked.#ident.matched() },
-                false => quote! { tracked.#ident.is_active() },
-            }
-        }
-        Predicate::Callback { name } => {
-            let ident = Ident::new(&name.0.to_lowercase(), Span::call_site());
-            quote! { tracked.#ident.is_active() }
-        }
-        _ => panic!(),
+pub(crate) fn custom_pred_to_tokens(name: &String, matched: bool) -> proc_macro2::TokenStream {
+    let ident = Ident::new(&name.to_lowercase(), Span::call_site());
+    match matched {
+        true => quote! { conn.tracked.#ident.matched() },
+        false => quote! { conn.tracked.#ident.is_active() },
     }
+}
+
+pub(crate) fn callback_pred_to_tokens(name: &String) -> proc_macro2::TokenStream {
+    let ident = Ident::new(&name.to_lowercase(), Span::call_site());
+    quote! { conn.tracked.#ident.is_active() }
 }
 
 pub(crate) fn layerstate_to_tokens(
@@ -532,16 +494,16 @@ pub(crate) fn layerstate_to_tokens(
     };
     let layer_access = match layer {
         SupportedLayer::L4 => {
-            quote! { tracked.info.linfo.state }
+            quote! { conn.tracked.info.linfo.state }
         }
         SupportedLayer::L7 => {
-            quote! { &tracked.info.layers[0].layer_info().state }
+            quote! { conn.tracked.info.layers[0].layer_info().state }
         }
     };
-    let state_ident = format!("LayerState::{:?}", state);
+    let state_ident = format!("{:?}", state);
     let state_ident = Ident::new(&state_ident, Span::call_site());
     quote! {
-        #layer_access #op &#state_ident
+        #layer_access #op retina_core::conntrack::LayerState::#state_ident
     }
 }
 
@@ -551,7 +513,7 @@ pub(crate) fn binary_to_tokens(
     field: &FieldName,
     op: &BinOp,
     value: &Value,
-    statics: &mut Vec<proc_macro2::TokenStream>,
+    statics: &mut HashMap<String, (String, proc_macro2::TokenStream)>,
 ) -> proc_macro2::TokenStream {
     assert!(!field.is_combined()); // should have been split when building tree
     let proto = Ident::new(protocol.name(), Span::call_site());
@@ -650,91 +612,58 @@ pub(crate) fn binary_to_tokens(
                 _ => panic!("Invalid binary operation `{}` for value: `{}`.", op, value),
             }
         }
-        Value::Text(text) => {
-            match *op {
-                BinOp::Eq => {
-                    let val_lit = syn::LitStr::new(text, Span::call_site());
-                    quote! { #proto.#field() == #val_lit }
-                }
-                BinOp::Ne => {
-                    let val_lit = syn::LitStr::new(text, Span::call_site());
-                    quote! { #proto.#field() != #val_lit }
-                }
-                BinOp::En => {
-                    let field_ident =
-                        Ident::new(&field.to_string().to_camel_case(), Span::call_site());
-                    let variant_ident =
-                        Ident::new(&text.as_str().to_camel_case(), Span::call_site());
-                    quote! { #proto.#field() == retina_core::protocols::stream::#proto::#field_ident::#variant_ident }
-                }
-                BinOp::Re => {
-                    let val_lit = syn::LitStr::new(text, Span::call_site());
-                    if Regex::new(text).is_err() {
-                        panic!("Invalid Regex string")
-                    }
-
-                    let re_name = format!("RE{}", statics.len());
-                    let re_ident = Ident::new(&re_name, Span::call_site());
-                    let lazy_re = quote! {
-                        static ref #re_ident: regex::Regex = regex::Regex::new(#val_lit).unwrap();
-                    };
-                    // avoids compiling the Regex every time
-                    statics.push(lazy_re);
-                    quote! {
-                        #re_ident.is_match(&#proto.#field()[..])
-                    }
-                    // quote! {
-                    //     Regex::new(#val_lit).unwrap().is_match(#proto.#field())
-                    // }
-                }
-                BinOp::ByteRe => {
-                    let val_lit = syn::LitStr::new(text, Span::call_site());
-                    if BytesRegex::new(text).is_err() {
-                        panic!("Invalid Regex string")
-                    }
-
-                    let re_name = format!("RE{}", statics.len());
-                    let re_ident = Ident::new(&re_name, Span::call_site());
-
-                    let lazy_re = quote! {
-                        static ref #re_ident: regex::bytes::Regex = regex::bytes::Regex::new(#val_lit).unwrap();
-                    };
-                    // avoids compiling the Regex every time
-                    statics.push(lazy_re);
-
-                    quote! {
-                        #re_ident.is_match((&#proto.#field()).as_ref())
-                    }
-                }
-                BinOp::Contains => {
-                    let val_lit = syn::LitStr::new(text, Span::call_site());
-
-                    let finder_name = format!("FINDER{}", statics.len());
-                    let finder_ident = Ident::new(&finder_name, Span::call_site());
-                    let lazy_finder = quote! {
-                        static ref #finder_ident: memchr::memmem::Finder<'static> = memchr::memmem::Finder::new(#val_lit.as_bytes());
-                    };
-                    statics.push(lazy_finder);
-                    quote! {
-                        #finder_ident.find(#proto.#field().as_bytes()).is_some()
-                    }
-                }
-                BinOp::NotContains => {
-                    let val_lit = syn::LitStr::new(text, Span::call_site());
-
-                    let finder_name = format!("FINDER{}", statics.len());
-                    let finder_ident = Ident::new(&finder_name, Span::call_site());
-                    let lazy_finder = quote! {
-                        static ref #finder_ident: memchr::memmem::Finder<'static> = memchr::memmem::Finder::new(#val_lit.as_bytes());
-                    };
-                    statics.push(lazy_finder);
-                    quote! {
-                        #finder_ident.find(#proto.#field().as_bytes()).is_none()
-                    }
-                }
-                _ => panic!("Invalid binary operation `{}` for value: `{}`.", op, value),
+        Value::Text(text) => match *op {
+            BinOp::Eq => {
+                let val_lit = syn::LitStr::new(text, Span::call_site());
+                quote! { #proto.#field() == #val_lit }
             }
-        }
+            BinOp::Ne => {
+                let val_lit = syn::LitStr::new(text, Span::call_site());
+                quote! { #proto.#field() != #val_lit }
+            }
+            BinOp::En => {
+                let field_ident = Ident::new(&field.to_string().to_camel_case(), Span::call_site());
+                let variant_ident = Ident::new(&text.as_str().to_camel_case(), Span::call_site());
+                quote! { #proto.#field() == retina_core::protocols::stream::#proto::#field_ident::#variant_ident }
+            }
+            BinOp::Re => {
+                if Regex::new(text).is_err() {
+                    panic!("Invalid Regex string")
+                }
+                let val_lit = syn::LitStr::new(text, Span::call_site());
+                let kind = quote! { regex::Regex };
+                let re_ident = static_ident_re(statics, text, val_lit, kind);
+                quote! {
+                    #re_ident.is_match(&#proto.#field()[..])
+                }
+            }
+            BinOp::ByteRe => {
+                if BytesRegex::new(text).is_err() {
+                    panic!("Invalid Regex string")
+                }
+                let val_lit = syn::LitStr::new(text, Span::call_site());
+                let kind = quote! { regex::bytes::Regex };
+                let re_ident = static_ident_re(statics, text, val_lit, kind);
+                quote! {
+                    #re_ident.is_match((&#proto.#field()).as_ref())
+                }
+            }
+            BinOp::Contains => {
+                let val_lit = syn::LitStr::new(text, Span::call_site());
+                let finder_ident = static_ident_memchr(statics, text, quote! { #val_lit });
+                quote! {
+                    #finder_ident.find(#proto.#field().as_bytes()).is_some()
+                }
+            }
+            BinOp::NotContains => {
+                let val_lit = syn::LitStr::new(text, Span::call_site());
+                let finder_ident = static_ident_memchr(statics, text, quote! { #val_lit });
+                quote! {
+                    #finder_ident.find(#proto.#field().as_bytes()).is_none()
+                }
+            }
+            _ => panic!("Invalid binary operation `{}` for value: `{}`.", op, value),
+        },
         Value::Byte(b) => match *op {
             BinOp::Eq => {
                 let bytes_lit = syn::LitByteStr::new(b, Span::call_site());
@@ -750,31 +679,64 @@ pub(crate) fn binary_to_tokens(
             }
             BinOp::Contains => {
                 let bytes_lit = syn::LitByteStr::new(b, Span::call_site());
-
-                let finder_name = format!("FINDER{}", statics.len());
-                let finder_ident = Ident::new(&finder_name, Span::call_site());
-                let lazy_finder = quote! {
-                    static ref #finder_ident: memchr::memmem::Finder<'static> = memchr::memmem::Finder::new(#bytes_lit);
-                };
-                statics.push(lazy_finder);
+                let debug = b.iter().map(|b| format!("{:02x}", b)).collect::<String>();
+                let finder_ident =
+                    static_ident_memchr(statics, &debug, quote! { #bytes_lit.as_bytes() });
                 quote! {
                     #finder_ident.find(#proto.#field().as_ref()).is_some()
                 }
             }
             BinOp::NotContains => {
                 let bytes_lit = syn::LitByteStr::new(b, Span::call_site());
-
-                let finder_name = format!("FINDER{}", statics.len());
-                let finder_ident = Ident::new(&finder_name, Span::call_site());
-                let lazy_finder = quote! {
-                    static ref #finder_ident: memchr::memmem::Finder<'static> = memchr::memmem::Finder::new(#bytes_lit);
-                };
-                statics.push(lazy_finder);
+                let debug = b.iter().map(|b| format!("{:02x}", b)).collect::<String>();
+                let finder_ident =
+                    static_ident_memchr(statics, &debug, quote! { #bytes_lit.as_bytes() });
                 quote! {
                     #finder_ident.find(#proto.#field().as_ref()).is_none()
                 }
             }
             _ => panic!("Invalid binary operation `{}` for value: `{}`.", op, value),
         },
+    }
+}
+
+fn static_ident_re(
+    statics: &mut HashMap<String, (String, proc_macro2::TokenStream)>,
+    text: &String,
+    val_lit: syn::LitStr,
+    kind: proc_macro2::TokenStream,
+) -> Ident {
+    let key = format!("RE_{}", text);
+    match statics.get(&key) {
+        Some((name, _)) => Ident::new(name, Span::call_site()),
+        None => {
+            let name = format!("RE{}", statics.len());
+            let ident = Ident::new(&name, Span::call_site());
+            let lazy = quote! {
+                static ref #ident: #kind = #kind::new(#val_lit).unwrap();
+            };
+            statics.insert(key, (name, lazy));
+            ident
+        }
+    }
+}
+
+fn static_ident_memchr(
+    statics: &mut HashMap<String, (String, proc_macro2::TokenStream)>,
+    text: &String,
+    val_lit: proc_macro2::TokenStream,
+) -> Ident {
+    let key = format!("FINDER_{}", text);
+    match statics.get(&key) {
+        Some((name, _)) => Ident::new(name, Span::call_site()),
+        None => {
+            let name = format!("FINDER{}", statics.len());
+            let ident = Ident::new(&name, Span::call_site());
+            let lazy = quote! {
+                static ref #ident: memchr::memmem::Finder<'static> = memchr::memmem::Finder::new(#val_lit);
+            };
+            statics.insert(key, (name, lazy));
+            ident
+        }
     }
 }

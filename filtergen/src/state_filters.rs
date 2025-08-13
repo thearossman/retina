@@ -1,0 +1,287 @@
+use std::collections::HashMap;
+
+use crate::codegen::*;
+use crate::subscription::SubscriptionDecoder;
+use heck::CamelCase;
+use proc_macro2::{Ident, Span};
+use quote::quote;
+use retina_core::conntrack::conn::conn_layers::SupportedLayer;
+use retina_core::conntrack::conn::conn_state::StateTxOrd;
+use retina_core::conntrack::LayerState;
+use retina_core::filter::ast::*;
+use retina_core::filter::ptree::{PNode, PTree};
+use retina_core::StateTransition;
+use strum::IntoEnumIterator;
+
+pub(crate) fn gen_state_filters(
+    sub: &SubscriptionDecoder,
+    statics: &mut HashMap<String, (String, proc_macro2::TokenStream)>,
+) -> (proc_macro2::TokenStream, proc_macro2::TokenStream) {
+    let mut fns = vec![];
+    let mut main = vec![];
+    for tx in StateTransition::iter() {
+        if tx == StateTransition::Packet {
+            continue;
+        }
+        if !sub.requires_filter(&tx) {
+            println!("{:?}: Skipped", tx);
+            continue;
+        }
+        let ptree = sub.build_ptree(tx);
+        let mut body: Vec<proc_macro2::TokenStream> = vec![];
+
+        // Ensure root delivery/matches are covered
+        if !ptree.root.deliver.is_empty() || !ptree.root.actions.drop() {
+            update_body(&mut body, &ptree.root, sub);
+        }
+        let extract_sessions = matches!(
+            tx.compare(&StateTransition::L7EndHdrs),
+            StateTxOrd::Greater | StateTxOrd::Equal
+        );
+        gen_state_filter_util(
+            &mut body,
+            &ptree.root,
+            &ptree,
+            statics,
+            sub,
+            extract_sessions,
+        );
+        let fn_name = Ident::new(
+            &("tx_".to_owned() + &tx.to_string().to_lowercase()),
+            Span::call_site(),
+        );
+
+        let ident = Ident::new(&tx.to_string(), Span::call_site());
+        main.push(quote! {
+            StateTransition::#ident => #fn_name(conn),
+        });
+        fns.push(quote! {
+            fn #fn_name(conn: &mut ConnInfo<TrackedWrapper>) {
+                #( #body )*
+            }
+        })
+    }
+    (
+        quote! {
+            match tx {
+                #( #main )*
+                _ => { },
+            }
+        },
+        quote! { #( #fns )* },
+    )
+}
+
+fn gen_state_filter_util(
+    code: &mut Vec<proc_macro2::TokenStream>,
+    node: &PNode,
+    tree: &PTree, // TODO may not need to pass in `tree`
+    statics: &mut HashMap<String, (String, proc_macro2::TokenStream)>,
+    sub: &SubscriptionDecoder,
+    extract_sessions: bool,
+) {
+    let mut first_unary = true;
+    for child in &node.children {
+        match &child.pred {
+            Predicate::Unary { protocol } => {
+                if child.pred.on_packet() {
+                    add_unary_pred(
+                        code,
+                        child,
+                        tree,
+                        protocol,
+                        statics,
+                        first_unary,
+                        sub,
+                        extract_sessions,
+                    );
+                    first_unary = false;
+                } else if child.pred.on_proto() {
+                    add_service_pred(code, child, tree, protocol, statics, sub, extract_sessions);
+                } else {
+                    panic!("Unknown unary predicate: {}", child.pred);
+                }
+            }
+            Predicate::Binary {
+                protocol,
+                field,
+                op,
+                value,
+            } => {
+                if child.pred.on_packet() {
+                    let pred_tokenstream = binary_to_tokens(protocol, field, op, value, statics);
+                    add_pred(
+                        code,
+                        child,
+                        tree,
+                        pred_tokenstream,
+                        statics,
+                        sub,
+                        extract_sessions,
+                    );
+                } else if child.pred.on_session() {
+                    let pred_tokenstream = binary_to_tokens(protocol, field, op, value, statics);
+                    add_pred(
+                        code,
+                        child,
+                        tree,
+                        pred_tokenstream,
+                        statics,
+                        sub,
+                        extract_sessions,
+                    );
+                } else {
+                    panic!("Unknown binary predicate: {}", child.pred);
+                }
+            }
+            Predicate::LayerState { layer, state, op } => {
+                let extract_sessions_ = extract_sessions
+                    || (layer == &SupportedLayer::L7 && state >= &LayerState::Headers);
+                let pred_tokenstream = layerstate_to_tokens(layer, state, *op);
+                add_pred(
+                    code,
+                    child,
+                    tree,
+                    pred_tokenstream,
+                    statics,
+                    sub,
+                    extract_sessions_,
+                );
+            }
+            Predicate::Custom { name, matched, .. } => {
+                let pred_tokenstream = custom_pred_to_tokens(&name.0, *matched);
+                add_pred(
+                    code,
+                    child,
+                    tree,
+                    pred_tokenstream,
+                    statics,
+                    sub,
+                    extract_sessions,
+                );
+            }
+            Predicate::Callback { name } => {
+                let pred_tokenstream = callback_pred_to_tokens(&name.0);
+                add_pred(
+                    code,
+                    child,
+                    tree,
+                    pred_tokenstream,
+                    statics,
+                    sub,
+                    extract_sessions,
+                );
+            }
+        }
+    }
+}
+
+#[allow(clippy::too_many_arguments)]
+fn add_unary_pred(
+    code: &mut Vec<proc_macro2::TokenStream>,
+    node: &PNode,
+    tree: &PTree,
+    protocol: &ProtocolName,
+    statics: &mut HashMap<String, (String, proc_macro2::TokenStream)>,
+    first_unary: bool,
+    sub: &SubscriptionDecoder,
+    extract_sessions: bool,
+) {
+    let ident = Ident::new(protocol.name(), Span::call_site());
+    let ident_type = Ident::new(
+        &(protocol.name().to_owned().to_camel_case() + "CData"),
+        Span::call_site(),
+    );
+    let pred_tokenstream = quote! {
+        &retina_core::protocols::stream::ConnData::parse_to::<retina_core::protocols::stream::conn::#ident_type>(&conn.cdata)
+    };
+
+    let mut body: Vec<proc_macro2::TokenStream> = vec![];
+    gen_state_filter_util(&mut body, node, tree, statics, sub, extract_sessions);
+    update_body(&mut body, node, sub);
+
+    if first_unary {
+        code.push(quote! {
+            if let Ok(#ident) = #pred_tokenstream {
+                #( #body )*
+            }
+        });
+    } else {
+        code.push(quote! {
+            else if let Ok(#ident) = #pred_tokenstream {
+                #( #body )*
+            }
+        });
+    }
+}
+
+#[allow(clippy::too_many_arguments)]
+fn add_service_pred(
+    code: &mut Vec<proc_macro2::TokenStream>,
+    node: &PNode,
+    tree: &PTree,
+    protocol: &ProtocolName,
+    statics: &mut HashMap<String, (String, proc_macro2::TokenStream)>,
+    sub: &SubscriptionDecoder,
+    extract_sessions: bool,
+) {
+    let service_ident = Ident::new(&protocol.name().to_camel_case(), Span::call_site());
+    let pred_tokenstream = if extract_sessions {
+        let proto_ident = Ident::new(&protocol.name(), Span::call_site());
+        quote! {
+            let retina_core::protocols::stream::SessionData::#service_ident(#proto_ident) = conn.layers[0].last_session()
+        }
+    } else {
+        quote! {
+            matches!(conn.layers[0].last_protocol(), retina_core::protocols::stream::SessionProto::#service_ident)
+        }
+    };
+    add_pred(
+        code,
+        node,
+        tree,
+        pred_tokenstream,
+        statics,
+        sub,
+        extract_sessions,
+    );
+}
+
+fn add_pred(
+    code: &mut Vec<proc_macro2::TokenStream>,
+    node: &PNode,
+    tree: &PTree,
+    pred_tokenstream: proc_macro2::TokenStream,
+    statics: &mut HashMap<String, (String, proc_macro2::TokenStream)>,
+    sub: &SubscriptionDecoder,
+    extract_sessions: bool,
+) {
+    let mut body: Vec<proc_macro2::TokenStream> = vec![];
+    gen_state_filter_util(&mut body, node, tree, statics, sub, extract_sessions);
+    update_body(&mut body, node, sub);
+    if node.if_else {
+        code.push(quote! {
+            else if #pred_tokenstream {
+                #( #body )*
+            }
+        });
+    } else {
+        code.push(quote! {
+            if #pred_tokenstream {
+                #( #body )*
+            }
+        });
+    }
+}
+
+fn update_body(body: &mut Vec<proc_macro2::TokenStream>, node: &PNode, sub: &SubscriptionDecoder) {
+    if !node.actions.drop() {
+        let actions = data_actions_to_tokens(&node.actions);
+        body.push(quote! { #actions });
+    }
+    for deliver in &node.deliver {
+        let cb = fil_callback_to_tokens(sub, deliver);
+        body.push(quote! { #cb });
+    }
+    // TODO datatypes
+}

@@ -16,6 +16,7 @@
 use retina_core::{protocols::Session, L4Pdu, Mbuf};
 pub mod conn_fts;
 pub mod tls_handshake;
+#[allow(unused_imports)]
 use retina_filtergen::cache_file;
 pub use tls_handshake::TlsHandshake;
 pub mod static_type;

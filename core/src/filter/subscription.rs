@@ -60,7 +60,7 @@ impl DataActions {
         self.layers[0].extend(&peer.layers[0]);
     }
 
-    pub(crate) fn drop(&self) -> bool {
+    pub fn drop(&self) -> bool {
         self.transport.drop() && self.layers[0].drop()
     }
 

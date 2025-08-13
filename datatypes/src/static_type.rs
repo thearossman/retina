@@ -7,7 +7,7 @@ use super::StaticData;
 use pnet::datalink::MacAddr;
 use retina_core::conntrack::conn_id::FiveTuple;
 use retina_core::conntrack::pdu::L4Pdu;
-#[allow(dead_code)]
+#[allow(unused_imports)]
 use retina_filtergen::datatype;
 
 /// Subscribable alias for [`retina_core::FiveTuple`]

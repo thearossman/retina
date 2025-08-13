@@ -114,6 +114,7 @@ impl SubscriptionDecoder {
         ret.decode_datatypes();
         ret.decode_filters();
         ret.decode_subscriptions();
+        ret.prune_filters_and_datatypes();
         ret.decode_updates();
         for spec in &mut ret.subscriptions {
             spec.add_patterns(&ret.custom_preds);
@@ -335,6 +336,46 @@ impl SubscriptionDecoder {
         lvls
     }
 
+    fn prune_filters_and_datatypes(&mut self) {
+        // Only retain filters that are actually used by a subscription
+        self.filters_raw.retain(|name, _| {
+            self.subscriptions
+                .iter()
+                .any(|spec| spec.filter.contains(name))
+        });
+
+        // Only retain datatypes that are actually used by a datatype or filter
+        let mut req_datatypes = HashSet::new();
+        for (_, v) in &self.filters_raw {
+            for inp in v {
+                match inp {
+                    ParsedInput::FilterGroupFn(spec) => {
+                        req_datatypes.extend(&spec.func.datatypes);
+                    }
+                    ParsedInput::Filter(spec) => {
+                        req_datatypes.extend(&spec.func.datatypes);
+                    }
+                    _ => {}
+                }
+            }
+        }
+        for (_, v) in &self.cbs_raw {
+            for inp in v {
+                match inp {
+                    ParsedInput::Callback(spec) => {
+                        req_datatypes.extend(&spec.func.datatypes);
+                    }
+                    ParsedInput::CallbackGroupFn(spec) => {
+                        req_datatypes.extend(&spec.func.datatypes);
+                    }
+                    _ => {}
+                }
+            }
+        }
+        self.datatypes_raw
+            .retain(|name, _| req_datatypes.contains(name));
+    }
+
     fn decode_updates(&mut self) {
         let mut updates = HashMap::new();
         for (name, v) in &self.filters_raw {
@@ -344,6 +385,9 @@ impl SubscriptionDecoder {
             }
         }
         for (name, v) in &self.datatypes_raw {
+            if !self.datatypes_raw.contains_key(name) {
+                continue;
+            }
             Self::push_update(&mut updates, v);
             if Self::is_tracked_type(v) {
                 self.tracked.insert(name.clone());
@@ -392,10 +436,11 @@ impl SubscriptionDecoder {
             ptree.build_tree(patterns, &spec.callbacks);
         }
         ptree.prune_branches();
+        println!("{}", ptree);
         ptree
     }
 
-    pub(crate) fn get_filter_tree(&self, filter_layer: StateTransition) -> PTree {
+    pub(crate) fn build_ptree(&self, filter_layer: StateTransition) -> PTree {
         assert!(!matches!(filter_layer, StateTransition::Packet));
         let mut ptree = PTree::new_empty(filter_layer);
         for spec in &self.subscriptions {
@@ -403,6 +448,7 @@ impl SubscriptionDecoder {
             ptree.add_subscription(patterns, &spec.callbacks, &spec.as_str);
         }
         ptree.collapse();
+        println!("{}", ptree);
         ptree
     }
 

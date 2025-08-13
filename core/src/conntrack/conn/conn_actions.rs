@@ -97,7 +97,7 @@ impl TrackedActions {
     /// Append TrackedActions. Used at compile-time and
     /// when building up actions in runtime filters.
     #[inline]
-    pub(crate) fn extend(&mut self, other: &TrackedActions) {
+    pub fn extend(&mut self, other: &TrackedActions) {
         self.active |= other.active;
         for i in 0..NUM_STATE_TRANSITIONS {
             self.refresh_at[i] |= other.refresh_at[i];

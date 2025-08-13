@@ -12,6 +12,7 @@ mod codegen;
 mod subscription;
 
 mod packet_filter;
+mod state_filters;
 
 use subscription::SubscriptionDecoder;
 
@@ -134,19 +135,23 @@ pub fn retina_main(_args: TokenStream, input: TokenStream) -> TokenStream {
         let mut inputs = cache::CACHED_DATA.lock().unwrap();
         SubscriptionDecoder::new(inputs.as_mut())
     };
-    let _tracked_def = codegen::tracked_to_tokens(&decoder.tracked);
-    let _tracked_new = codegen::tracked_new_to_tokens(&decoder.tracked);
-    let _tracked_update = codegen::tracked_update_to_tokens(&decoder);
+    let tracked_def = codegen::tracked_to_tokens(&decoder);
+    let tracked_new = codegen::tracked_new_to_tokens(&decoder);
+    let tracked_update = codegen::tracked_update_to_tokens(&decoder);
 
     let packet_tree = decoder.get_packet_filter_tree();
     let packet_filter = packet_filter::gen_packet_filter(&packet_tree);
     let filter_str = packet_tree.to_filter_string();
 
-    let statics: HashMap<String, proc_macro2::TokenStream> = HashMap::new();
+    let mut statics: HashMap<String, (String, proc_macro2::TokenStream)> = HashMap::new();
+    let (state_tx_main, state_fns) = state_filters::gen_state_filters(&decoder, &mut statics);
     let lazy_statics = if statics.is_empty() {
         quote! {}
     } else {
-        let statics = statics.values().collect::<Vec<_>>();
+        let statics = statics
+            .into_values()
+            .map(|(_, tokens)| tokens)
+            .collect::<Vec<_>>();
         quote! {
             lazy_static::lazy_static! {
                 #( #statics )*
@@ -159,6 +164,7 @@ pub fn retina_main(_args: TokenStream, input: TokenStream) -> TokenStream {
         use retina_core::subscription::{Trackable, Subscribable};
         use retina_core::conntrack::{TrackedActions, ConnInfo};
         use retina_core::protocols::stream::ParserRegistry;
+        use retina_core::StateTransition;
 
         #lazy_statics
 
@@ -170,7 +176,7 @@ pub fn retina_main(_args: TokenStream, input: TokenStream) -> TokenStream {
         pub struct TrackedWrapper {
             packets: Vec<retina_core::Mbuf>,
             core_id: retina_core::CoreId,
-            // TODO tracked
+            #tracked_def
         }
 
         impl Trackable for TrackedWrapper {
@@ -179,7 +185,7 @@ pub fn retina_main(_args: TokenStream, input: TokenStream) -> TokenStream {
                 Self {
                     packets: Vec::new(),
                     core_id,
-                    // TODO #new
+                    #tracked_new
                 }
             }
 
@@ -215,17 +221,19 @@ pub fn retina_main(_args: TokenStream, input: TokenStream) -> TokenStream {
             fn state_tx(conn: &mut ConnInfo<TrackedWrapper>,
                     tx: &retina_core::StateTransition) {
                 let tx_data = retina_core::StateTxData::from_tx(&tx, &conn.layers[0]);
-                match tx {
-                    _ => {},
-                }
+                #state_tx_main
             }
+
+            #state_fns
 
             fn update(conn: &mut ConnInfo<TrackedWrapper>,
                 pdu: &retina_core::L4Pdu,
                 state: retina_core::StateTransition) -> bool
             {
-                false
-                // TODO: #update; let ret = false; ret
+                // TODO modify to actually return `ret`
+                let mut ret = false;
+                #tracked_update
+                ret
             }
 
             retina_core::filter::FilterFactory::new(

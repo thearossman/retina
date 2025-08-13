@@ -7,7 +7,7 @@ use retina_core::conntrack::pdu::L4Pdu;
 use retina_core::protocols::packet::tcp::{ACK, FIN, RST, SYN};
 use retina_core::subscription::Tracked;
 use retina_core::StateTxData;
-#[allow(dead_code)]
+#[allow(unused_imports)]
 use retina_filtergen::{datatype, datatype_group};
 
 use serde::ser::{SerializeStruct, Serializer};

@@ -2,6 +2,10 @@ use retina_core::{config::default_config, subscription::FilterResult, L4Pdu, Run
 use retina_datatypes::{ConnRecord, TlsHandshake};
 use retina_filtergen::{callback, filter, filter_group, input_files, retina_main};
 
+// TODO better way to specify imports required by generated code
+// (This is req'd because ConnRecord is requested as a param)
+use retina_core::subscription::Tracked;
+
 #[filter]
 struct ConnLen {
     len: usize,

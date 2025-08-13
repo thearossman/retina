@@ -61,6 +61,14 @@ impl PredPNode {
 impl fmt::Display for PredPNode {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         write!(f, "{}", self.pred)?;
+        if !self.deliver.is_empty() {
+            write!(f, " D: ")?;
+            write!(f, "( ")?;
+            for d in &self.deliver {
+                write!(f, "{}, ", d.as_str)?;
+            }
+            write!(f, ")")?;
+        }
         Ok(())
     }
 }
@@ -299,7 +307,7 @@ impl PredPTree {
 
 impl fmt::Display for PredPTree {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(f, "{}", self.pprint())?;
+        write!(f, "Tree Per-Packet:\n{}", self.pprint())?;
         Ok(())
     }
 }
