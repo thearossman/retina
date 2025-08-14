@@ -34,7 +34,10 @@ pub(crate) const IMPLEMENTED_PROTOCOLS: [&str; 5] = ["tls", "dns", "http", "quic
 /// Represents the result of parsing one packet as a protocol message.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) enum ParseResult {
-    /// Session parsing done, check session filter. Returns the most-recently-updated session ID.
+    /// Session headers done, ready to be filtered on.
+    /// Returns the most-recently-updated session ID.
+    HeadersDone(usize),
+    /// Session parsing, including body, done. Returns the most-recently-updated session ID.
     Done(usize),
     /// Successfully extracted data, continue processing more packets. Returns most recently updated
     /// session ID.
@@ -132,9 +135,14 @@ pub(crate) trait ConnParsable {
 
     /// Indicates whether we expect to see >1 sessions per connection
     fn session_parsed_state(&self) -> ParsingState;
+
+    /// If applicable, returns the offset into the most recently processed payload
+    /// where application-layer body begins. Some and non-zero if a payload contains
+    /// both header and body data. Clears the offset after access.
+    fn body_offset(&mut self) -> Option<usize>;
 }
 
-/// Data required to filter on connections.
+/// Data required to filter on Five-Tuple fields after the first packet.
 ///
 /// ## Note
 /// This must have `pub` visibility because it needs to be accessible by the
@@ -146,10 +154,9 @@ pub(crate) trait ConnParsable {
 pub struct ConnData {
     /// The connection 5-tuple.
     pub five_tuple: FiveTuple,
-    /// The protocol parser associated with the connection.
-    pub conn_parser: ConnParser,
 }
 
+// TODO get rid of ConnData - likely no longer needed
 impl ConnData {
     pub(crate) fn supported_fields() -> Vec<&'static str> {
         let mut v: Vec<_> = TcpCData::supported_fields()
@@ -169,19 +176,7 @@ impl ConnData {
     /// Create a new `ConnData` from the connection `five_tuple` and the ID of the last matched node
     /// in the filter predicate trie.
     pub(crate) fn new(five_tuple: FiveTuple) -> Self {
-        ConnData {
-            five_tuple,
-            conn_parser: ConnParser::Unknown,
-        }
-    }
-
-    pub(crate) fn clear(&mut self) {
-        self.conn_parser = ConnParser::Unknown;
-    }
-
-    /// Returns the application-layer protocol parser associated with the connection.
-    pub fn service(&self) -> &ConnParser {
-        &self.conn_parser
+        ConnData { five_tuple }
     }
 
     /// Parses the `ConnData`'s FiveTuple into sub-protocol metadata
@@ -209,6 +204,22 @@ pub enum SessionData {
     Http(Box<Http>),
     Quic(Box<QuicConn>),
     Ssh(Box<Ssh>),
+    Null,
+}
+
+/// Supported session (encapsulated in L4 connection)
+/// Includes possibility for nested protocols
+#[derive(Debug, Clone)]
+pub enum SessionProto {
+    Tls,
+    Dns,
+    Http,
+    Quic,
+    Ssh,
+    Ipv4,
+    Ipv6,
+    Tcp,
+    Udp,
     Null,
 }
 
@@ -330,6 +341,17 @@ impl ConnParser {
         }
     }
 
+    pub(crate) fn body_offset(&mut self) -> Option<usize> {
+        match self {
+            ConnParser::Tls(parser) => parser.body_offset(),
+            ConnParser::Dns(parser) => parser.body_offset(),
+            ConnParser::Http(parser) => parser.body_offset(),
+            ConnParser::Quic(parser) => parser.body_offset(),
+            ConnParser::Ssh(parser) => parser.body_offset(),
+            ConnParser::Unknown => None,
+        }
+    }
+
     // \note This should match the name of the protocol used
     // in the filter syntax (see filter/ast.rs::LAYERS)
     pub fn protocol_name(&self) -> Option<String> {
@@ -340,6 +362,17 @@ impl ConnParser {
             ConnParser::Quic(_parser) => Some("quic".into()),
             ConnParser::Ssh(_parser) => Some("ssh".into()),
             ConnParser::Unknown => None,
+        }
+    }
+
+    pub fn protocol(&self) -> SessionProto {
+        match self {
+            ConnParser::Tls(_) => SessionProto::Tls,
+            ConnParser::Dns(_) => SessionProto::Dns,
+            ConnParser::Http(_) => SessionProto::Http,
+            ConnParser::Quic(_) => SessionProto::Quic,
+            ConnParser::Ssh(_) => SessionProto::Ssh,
+            ConnParser::Unknown => SessionProto::Null,
         }
     }
 

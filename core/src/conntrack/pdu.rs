@@ -6,6 +6,8 @@ use crate::protocols::packet::tcp::{Tcp, TCP_PROTOCOL};
 use crate::protocols::packet::udp::{Udp, UDP_PROTOCOL};
 use crate::protocols::packet::Packet;
 
+use std::time::Instant;
+
 use anyhow::{bail, Result};
 
 use std::net::{IpAddr, SocketAddr};
@@ -19,11 +21,33 @@ pub struct L4Pdu {
     pub ctxt: L4Context,
     /// `true` if segment is in the direction of orig -> resp.
     pub dir: bool,
+    /// Time observed from timerwheel.
+    pub ts: Instant,
+    /// Order received in unidirectional flow (i.e., packets in connection
+    /// with same `dir`). None for UDP.
+    pub flow_ord: Option<usize>,
+    /// Order received in connection (bidirectional).
+    /// None for UDP
+    pub conn_ord: Option<usize>,
 }
 
 impl L4Pdu {
-    pub(crate) fn new(mbuf: Mbuf, ctxt: L4Context, dir: bool) -> Self {
-        L4Pdu { mbuf, ctxt, dir }
+    pub(crate) fn new(
+        mbuf: Mbuf,
+        ctxt: L4Context,
+        dir: bool,
+        ts: Instant,
+        flow_ord: Option<usize>,
+        conn_ord: Option<usize>,
+    ) -> Self {
+        L4Pdu {
+            mbuf,
+            ctxt,
+            dir,
+            ts,
+            flow_ord,
+            conn_ord,
+        }
     }
 
     #[inline]
@@ -38,7 +62,12 @@ impl L4Pdu {
 
     #[inline]
     pub fn offset(&self) -> usize {
-        self.ctxt.offset
+        self.ctxt.offset.unwrap()
+    }
+
+    #[inline]
+    pub fn app_body_offset(&self) -> Option<usize> {
+        self.ctxt.app_offset
     }
 
     #[inline]
@@ -71,8 +100,12 @@ pub struct L4Context {
     pub dst: SocketAddr,
     /// L4 protocol.
     pub proto: usize,
-    /// Offset into the mbuf where payload begins.
-    pub offset: usize,
+    /// Offset into mbuf where L4 payload begins.
+    /// If this segment is reassembled, this is the offset where
+    /// *new* payload begins. None indicates that no new data.
+    /// If segment has not been reassembled, this is offset after
+    /// TCP header.
+    pub offset: Option<usize>,
     /// Length of the payload in bytes.
     pub length: usize,
     /// Raw sequence number of segment.
@@ -81,6 +114,13 @@ pub struct L4Context {
     pub ack_no: u32,
     /// TCP flags.
     pub flags: u8,
+    /// True if packet has been reassembled, with corresponding
+    /// possible updates to `offset`.
+    pub reassembled: bool,
+    /// If segment contains application-layer body, its offset
+    /// into the payload (after `offset`, i.e. L4 headers).
+    /// None indicates no application-layer body.
+    pub app_offset: Option<usize>,
 }
 
 impl L4Context {
@@ -95,11 +135,13 @@ impl L4Context {
                             src: SocketAddr::new(IpAddr::V4(ipv4.src_addr()), tcp.src_port()),
                             dst: SocketAddr::new(IpAddr::V4(ipv4.dst_addr()), tcp.dst_port()),
                             proto: TCP_PROTOCOL,
-                            offset: tcp.next_header_offset(),
+                            offset: Some(tcp.next_header_offset()),
                             length: payload_size,
                             seq_no: tcp.seq_no(),
                             ack_no: tcp.ack_no(),
                             flags: tcp.flags(),
+                            reassembled: false,
+                            app_offset: None,
                         })
                     } else {
                         bail!("Malformed Packet");
@@ -112,11 +154,13 @@ impl L4Context {
                             src: SocketAddr::new(IpAddr::V4(ipv4.src_addr()), udp.src_port()),
                             dst: SocketAddr::new(IpAddr::V4(ipv4.dst_addr()), udp.dst_port()),
                             proto: UDP_PROTOCOL,
-                            offset: udp.next_header_offset(),
+                            offset: Some(udp.next_header_offset()),
                             length: payload_size,
                             seq_no: 0,
                             ack_no: 0,
                             flags: 0,
+                            reassembled: false,
+                            app_offset: None,
                         })
                     } else {
                         bail!("Malformed Packet");
@@ -133,11 +177,13 @@ impl L4Context {
                             src: SocketAddr::new(IpAddr::V6(ipv6.src_addr()), tcp.src_port()),
                             dst: SocketAddr::new(IpAddr::V6(ipv6.dst_addr()), tcp.dst_port()),
                             proto: TCP_PROTOCOL,
-                            offset: tcp.next_header_offset(),
+                            offset: Some(tcp.next_header_offset()),
                             length: payload_size,
                             seq_no: tcp.seq_no(),
                             ack_no: tcp.ack_no(),
                             flags: tcp.flags(),
+                            reassembled: false,
+                            app_offset: None,
                         })
                     } else {
                         bail!("Malformed Packet");
@@ -150,11 +196,13 @@ impl L4Context {
                             src: SocketAddr::new(IpAddr::V6(ipv6.src_addr()), udp.src_port()),
                             dst: SocketAddr::new(IpAddr::V6(ipv6.dst_addr()), udp.dst_port()),
                             proto: UDP_PROTOCOL,
-                            offset: udp.next_header_offset(),
+                            offset: Some(udp.next_header_offset()),
                             length: payload_size,
                             seq_no: 0,
                             ack_no: 0,
                             flags: 0,
+                            reassembled: false,
+                            app_offset: None,
                         })
                     } else {
                         bail!("Malformed Packet");

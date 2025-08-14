@@ -5,7 +5,7 @@ edition = "2021"
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [build-dependencies]
-bindgen = "0.70.1"
+bindgen = "0.71.1"
 cc = "1.0.79"
 
 [dependencies]
@@ -63,10 +63,13 @@ hyper-util = { version = "0.1", features = ["full"], optional = true }
 prometheus-client = { version = "0.22.3", optional = true }
 http-body-util = { version = "0.1.2", optional = true }
 
+[dev-dependencies]
+nix = { version = "0.30", features = ["user"] }
+
 [features]
 timing = []
 prometheus = [
-    "dep:hyper", 
+    "dep:hyper",
     "dep:hyper-util",
     "dep:prometheus-client",
     "dep:http-body-util",

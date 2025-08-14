@@ -1,13 +1,16 @@
 //! Various individual connection-level subscribable types for TCP and/or UDP
 //! connection information, statistics, and state history.
 
-use crate::Tracked;
 use retina_core::L4Pdu;
+use retina_core::{subscription::Tracked, StateTxData};
+#[allow(unused_imports)]
+use retina_filtergen::{datatype, datatype_group};
 use serde::ser::{Serialize, SerializeSeq, SerializeStruct, Serializer};
 use std::time::{Duration, Instant};
 
 /// Tracks the start (first packet seen) and end (last packet seen)
 /// times of a connection
+#[cfg_attr(not(feature = "skip_expand"), datatype("L4Terminated"))]
 #[derive(Debug, Clone)]
 pub struct ConnDuration {
     pub start_ts: Instant,
@@ -52,11 +55,16 @@ impl Tracked for ConnDuration {
     fn clear(&mut self) {}
 
     #[inline]
-    fn update(&mut self, _pdu: &L4Pdu, reassembled: bool) {
-        if !reassembled {
-            self.last_ts = Instant::now();
-        }
+    #[cfg_attr(
+        not(feature = "skip_expand"),
+        datatype_group("ConnDuration,level=L4InPayload")
+    )]
+    fn update(&mut self, pdu: &L4Pdu) {
+        self.last_ts = pdu.ts.clone();
     }
+
+    #[inline]
+    fn phase_tx(&mut self, _: &StateTxData) {}
 
     fn stream_protocols() -> Vec<&'static str> {
         vec![]
@@ -65,6 +73,7 @@ impl Tracked for ConnDuration {
 
 /// The number of packets observed in a connection
 #[derive(Debug, serde::Serialize, Clone)]
+#[cfg_attr(not(feature = "skip_expand"), datatype("L4Terminated"))]
 pub struct PktCount {
     pub pkt_count: usize,
 }
@@ -84,11 +93,16 @@ impl Tracked for PktCount {
     fn clear(&mut self) {}
 
     #[inline]
-    fn update(&mut self, _pdu: &L4Pdu, reassembled: bool) {
-        if !reassembled {
-            self.pkt_count += 1;
-        }
+    #[cfg_attr(
+        not(feature = "skip_expand"),
+        datatype_group("PktCount,level=L4InPayload")
+    )]
+    fn update(&mut self, _: &L4Pdu) {
+        self.pkt_count += 1;
     }
+
+    #[inline]
+    fn phase_tx(&mut self, _: &StateTxData) {}
 
     fn stream_protocols() -> Vec<&'static str> {
         vec![]
@@ -97,6 +111,7 @@ impl Tracked for PktCount {
 
 /// The number of bytes, including headers, observed in a connection
 #[derive(Debug, serde::Serialize, Clone)]
+#[cfg_attr(not(feature = "skip_expand"), datatype("L4Terminated"))]
 pub struct ByteCount {
     pub byte_count: usize,
 }
@@ -116,11 +131,16 @@ impl Tracked for ByteCount {
     fn clear(&mut self) {}
 
     #[inline]
-    fn update(&mut self, pdu: &L4Pdu, reassembled: bool) {
-        if !reassembled {
-            self.byte_count += pdu.mbuf_ref().data_len();
-        }
+    #[cfg_attr(
+        not(feature = "skip_expand"),
+        datatype_group("ByteCount,level=L4InPayload")
+    )]
+    fn update(&mut self, pdu: &L4Pdu) {
+        self.byte_count += pdu.mbuf_ref().data_len();
     }
+
+    #[inline]
+    fn phase_tx(&mut self, _: &StateTxData) {}
 
     fn stream_protocols() -> Vec<&'static str> {
         vec![]
@@ -129,6 +149,7 @@ impl Tracked for ByteCount {
 
 /// Tracked data for packet inter-arrival times
 #[derive(Debug, Clone)]
+#[cfg_attr(not(feature = "skip_expand"), datatype)]
 pub struct InterArrivals {
     pkt_count_ctos: usize,
     pkt_count_stoc: usize,
@@ -159,27 +180,35 @@ impl Tracked for InterArrivals {
     }
 
     #[inline]
-    fn clear(&mut self) {}
+    fn clear(&mut self) {
+        self.interarrivals_ctos.clear();
+        self.interarrivals_stoc.clear();
+    }
 
     #[inline]
-    fn update(&mut self, pdu: &L4Pdu, reassembled: bool) {
-        if !reassembled {
-            let now = Instant::now();
-            if pdu.dir {
-                self.pkt_count_ctos += 1;
-                if self.pkt_count_ctos > 1 {
-                    self.interarrivals_ctos.push(now - self.last_pkt_ctos);
-                }
-                self.last_pkt_stoc = now;
-            } else {
-                self.pkt_count_stoc += 1;
-                if self.pkt_count_stoc > 1 {
-                    self.interarrivals_stoc.push(now - self.last_pkt_stoc);
-                }
-                self.last_pkt_stoc = now;
+    #[cfg_attr(
+        not(feature = "skip_expand"),
+        datatype_group("InterArrivals,level=L4InPayload")
+    )]
+    fn update(&mut self, pdu: &L4Pdu) {
+        let now = Instant::now();
+        if pdu.dir {
+            self.pkt_count_ctos += 1;
+            if self.pkt_count_ctos > 1 {
+                self.interarrivals_ctos.push(now - self.last_pkt_ctos);
             }
+            self.last_pkt_stoc = now;
+        } else {
+            self.pkt_count_stoc += 1;
+            if self.pkt_count_stoc > 1 {
+                self.interarrivals_stoc.push(now - self.last_pkt_stoc);
+            }
+            self.last_pkt_stoc = now;
         }
     }
+
+    #[inline]
+    fn phase_tx(&mut self, _: &StateTxData) {}
 
     fn stream_protocols() -> Vec<&'static str> {
         vec![]
@@ -230,6 +259,7 @@ use crate::connection::update_history;
 ///
 /// Each letter is recorded a maximum of once in either direction.
 #[derive(Default, Debug, serde::Serialize, Clone)]
+#[cfg_attr(not(feature = "skip_expand"), datatype)]
 pub struct ConnHistory {
     pub history: Vec<u8>,
 }
@@ -245,15 +275,20 @@ impl Tracked for ConnHistory {
     fn clear(&mut self) {}
 
     #[inline]
-    fn update(&mut self, pdu: &L4Pdu, reassembled: bool) {
-        if !reassembled {
-            if pdu.dir {
-                update_history(&mut self.history, pdu, 0x0);
-            } else {
-                update_history(&mut self.history, pdu, 0x20);
-            }
+    #[cfg_attr(
+        not(feature = "skip_expand"),
+        datatype_group("ConnHistory,level=L4InPayload")
+    )]
+    fn update(&mut self, pdu: &L4Pdu) {
+        if pdu.dir {
+            update_history(&mut self.history, pdu, 0x0);
+        } else {
+            update_history(&mut self.history, pdu, 0x20);
         }
     }
+
+    #[inline]
+    fn phase_tx(&mut self, _: &StateTxData) {}
 
     fn stream_protocols() -> Vec<&'static str> {
         vec![]

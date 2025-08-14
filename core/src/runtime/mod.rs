@@ -32,7 +32,7 @@ where
     #[allow(dead_code)]
     mempools: BTreeMap<SocketId, Mempool>,
     online: Option<OnlineRuntime<S>>,
-    offline: Option<OfflineRuntime<S>>,
+    pub(crate) offline: Option<OfflineRuntime<S>>, // Public for testing only
     #[cfg(feature = "timing")]
     subscription: Arc<Subscription<S>>,
 }
@@ -54,7 +54,7 @@ where
     /// let mut runtime = Runtime::new(config, filter, callback)?;
     pub fn new(config: RuntimeConfig, factory: fn() -> FilterFactory<S::Tracked>) -> Result<Self> {
         let factory = factory();
-        let filter_str = factory.filter_str.clone();
+        let filter_str = factory.hw_filter_str.clone();
         let subscription = Arc::new(Subscription::new(factory));
 
         println!("Initializing Retina runtime...");
