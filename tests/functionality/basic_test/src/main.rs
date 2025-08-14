@@ -54,6 +54,7 @@ fn tls_cb(tls: &TlsHandshake, bytecount: &ByteCount, five_tuple: &FiveTuple) {
 #[input_files("$RETINA_HOME/datatypes/data.jsonl")]
 #[retina_main]
 fn main() {
+    env_logger::init();
     let args = Args::parse();
     let config = default_config();
     let mut runtime: Runtime<SubscribedWrapper> = Runtime::new(config, filter).unwrap();

@@ -228,9 +228,11 @@ impl TrackableLayer for L7Session {
     }
 
     fn needs_process(&self, tx: StateTransition, pdu: &L4Pdu) -> bool {
-        if self.linfo.state == LayerState::None { return false; }
-        (tx == StateTransition::L7OnDisc && pdu.length() > 0) ||
-            (tx == StateTransition::L7EndHdrs && pdu.ctxt.app_offset.is_some())
+        if self.linfo.state == LayerState::None {
+            return false;
+        }
+        (tx == StateTransition::L7OnDisc && pdu.length() > 0)
+            || (tx == StateTransition::L7EndHdrs && pdu.ctxt.app_offset.is_some())
     }
 
     fn drop(&self) -> bool {
@@ -272,20 +274,28 @@ impl TrackableLayer for L7Session {
             }
             LayerState::Headers => {
                 match self.parser.parse(pdu) {
-                    ParseResult::Done(id) => {
+                    ParseResult::HeadersDone(id) => {
                         if let Some(session) = self.parser.remove_session(id) {
                             self.sessions.push(session);
                         }
+                        if let Some(offset) = self.parser.body_offset() {
+                            pdu.ctxt.app_offset = Some(offset);
+                        }
                         self.linfo.state = LayerState::Payload;
+                        return StateTransition::L7EndHdrs;
                     }
                     ParseResult::None => {
                         self.linfo.state = LayerState::None;
                         return StateTransition::L7EndHdrs;
                     }
+                    ParseResult::Done(id) => {
+                        if let Some(session) = self.parser.remove_session(id) {
+                            self.sessions.push(session);
+                        }
+                        self.linfo.state = LayerState::None;
+                        return StateTransition::L7EndHdrs;
+                    }
                     _ => { /* continue */ }
-                }
-                if let Some(offset) = self.parser.body_offset() {
-                    pdu.ctxt.app_offset = Some(offset);
                 }
             }
             LayerState::Payload => {

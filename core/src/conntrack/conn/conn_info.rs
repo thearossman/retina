@@ -136,7 +136,9 @@ where
     /// Update subscription data and current state, including actions,
     /// upon state transition.
     fn exec_state_tx(&mut self, tx: StateTransition, subscription: &Subscription<T::Subscribed>) {
-        if tx == StateTransition::Packet { return; }
+        if tx == StateTransition::Packet {
+            return;
+        }
 
         // Nothing to do at all layers
         if self.linfo.actions.skip_tx(&tx)
