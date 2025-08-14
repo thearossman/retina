@@ -12,6 +12,7 @@ pub mod data;
 #[doc(hidden)]
 pub mod filter;
 pub use data::Tracked;
+pub use filter::StreamingFilter;
 #[doc(hidden)]
 pub mod callback;
 pub use callback::StreamingCallback;

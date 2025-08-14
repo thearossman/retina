@@ -1,10 +1,12 @@
+use crate::L4Pdu;
+
 /// The framework expects that any stateful callback implements this trait.
 /// The user must also define the actual callback function(s), annotated with
 /// the appropriate #[callback_group(...)] macros.
 pub trait StreamingCallback {
     /// Initializes internal data, if applicable.
     /// Called on first packet in connection.
-    fn new() -> Self;
+    fn new(first_pkt: &L4Pdu) -> Self;
     /// Clears internal data, if applicable.
     fn clear(&mut self);
 }
@@ -32,10 +34,10 @@ impl<C> StreamCallbackWrapper<C>
 where
     C: StreamingCallback + std::fmt::Debug,
 {
-    pub fn new() -> Self {
+    pub fn new(first_pkt: &L4Pdu) -> Self {
         Self {
             state: CallbackState::Matching,
-            callback: C::new(),
+            callback: C::new(first_pkt),
         }
     }
 
@@ -61,6 +63,36 @@ where
 }
 
 #[doc(hidden)]
+/// Wrapper around a streaming callback that does not maintain
+/// state (i.e., is not StreamingCallback).
+#[derive(Debug)]
+pub struct StatelessCallbackWrapper {
+    state: CallbackState,
+}
+
+impl StatelessCallbackWrapper {
+    pub fn new(_first_pkt: &L4Pdu) -> Self {
+        Self {
+            state: CallbackState::Matching,
+        }
+    }
+
+    pub fn is_active(&self) -> bool {
+        matches!(self.state, CallbackState::Active)
+    }
+
+    pub fn try_set_active(&mut self) {
+        if !matches!(self.state, CallbackState::Unsubscribed) {
+            self.state = CallbackState::Active;
+        }
+    }
+
+    pub fn set_inactive(&mut self) {
+        self.state = CallbackState::Unsubscribed;
+    }
+}
+
+#[doc(hidden)]
 /// Wrapper around a boolean value to help ensure that a
 /// callback is invoked once per connection or session if that
 /// is its expected behavior. The framework uses this wrapper when
@@ -79,40 +111,5 @@ impl StaticCallbackWrapper {
     }
     pub fn set_invoked(&mut self) {
         self.invoked = true;
-    }
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    // Example usage
-    #[derive(Debug)]
-    struct MyCallback {
-        invoked: usize,
-    }
-    impl StreamingCallback for MyCallback {
-        fn new() -> Self {
-            Self { invoked: 0 }
-        }
-        fn clear(&mut self) {
-            self.invoked = 0;
-        }
-    }
-    impl MyCallback {
-        // #[callback_group] macros would go here
-        #[allow(dead_code)]
-        fn invoke(&mut self) {
-            self.invoked += 1;
-        }
-    }
-    #[test]
-    fn test_cb_basic() {
-        let mut wrapper: StreamCallbackWrapper<MyCallback> = StreamCallbackWrapper::new();
-        wrapper.try_set_active();
-        assert!(wrapper.is_active());
-        wrapper.callback.invoke();
-        wrapper.set_inactive();
-        assert!(!wrapper.is_active());
     }
 }

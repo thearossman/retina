@@ -43,7 +43,7 @@ pub(crate) fn cb_to_tokens(
         &mut cond_match,
         &mut params,
     );
-    let mut cb_wrapper_str = cb_name.to_lowercase();
+    let cb_wrapper_str = cb_name.to_lowercase();
     let cb_name = Ident::new(&cb_name, Span::call_site());
 
     let invoke = match cb_group {
@@ -98,15 +98,16 @@ pub(crate) fn cb_to_tokens(
     }
 }
 
-/// TODO this is wrong - need to double check
-/// - When is this actually invoked and for what code?
-/// - What code do we expect to get generated?
-/// Invoking a custom streaming filter function
+/// Invocation of a custom filter function to tokens.
+/// This is the actual invocation of the filter predicate, either in a
+/// filter PTree (static filter functions) or in an `update` function
+/// (streaming filter functions).
 pub(crate) fn filter_func_to_tokens(
     sub: &SubscriptionDecoder,
     filter: &ParsedInput,
     streaming: bool,
 ) -> proc_macro2::TokenStream {
+    let needs_track = streaming || matches!(filter, ParsedInput::FilterGroupFn(_));
     let func = match filter {
         ParsedInput::FilterGroupFn(fil) => &fil.func,
         ParsedInput::Filter(fil) => &fil.func,
@@ -142,13 +143,14 @@ pub(crate) fn filter_func_to_tokens(
         }
         _ => unreachable!(),
     };
-    // Record FilterResult
+    // Record FilterResult - update needs to return `true` if something changes
     let mut invoke = quote! {
         let filter_result = #invoke;
-        res = res || matches!(filter_result, FilterResult::Accept | FilterResult::Drop);
+        ret = ret ||
+            matches!(filter_result, FilterResult::Accept | FilterResult::Drop);
     };
     // Get return value for `update` function
-    if streaming {
+    if needs_track {
         invoke = quote! {
             #invoke
             conn.tracked.#fil_ident.record_result(filter_result);
@@ -167,16 +169,14 @@ pub(crate) fn filter_func_to_tokens(
         };
     }
 
-    match streaming {
-        true => {
-            quote! {
-                if conn.tracked.#fil_ident.is_active() {
-                    #invoke
-                }
+    if needs_track {
+        invoke = quote! {
+            if conn.tracked.#fil_ident.is_active() {
+                #invoke
             }
-        }
-        false => invoke,
+        };
     }
+    invoke
 }
 
 pub(crate) fn datatype_func_to_tokens(dt: &DatatypeFnSpec) -> proc_macro2::TokenStream {
@@ -223,9 +223,7 @@ pub(crate) fn params_to_tokens(
         let dt_name_ident = Ident::new(&dt.to_lowercase(), Span::call_site());
 
         // Case 1: extract directly from tracked data
-        if sub.tracked.contains(dt) {
-            // TODO need to standardize how `tracked` is stored
-            // (`self` vs. in `conn`).
+        if sub.tracked.iter().any(|tracked| &tracked.name == dt) {
             params.push(quote! { &conn.tracked.#dt_name_ident });
             continue;
         }
@@ -391,13 +389,12 @@ pub(crate) fn update_to_tokens(
 
 pub(crate) fn tracked_to_tokens(sub: &SubscriptionDecoder) -> proc_macro2::TokenStream {
     let mut def = vec![];
-    for name in &sub.tracked {
-        let field_name = Ident::new(&name.to_lowercase(), Span::call_site());
-        let type_name = Ident::new(name, Span::call_site());
+    for tracked in &sub.tracked {
+        let field_name = Ident::new(&tracked.name.to_lowercase(), Span::call_site());
+        let type_name = tracked_to_type_tokens(tracked);
         def.push(quote! {
             #field_name: #type_name,
         });
-        // TODO streaming filters
     }
     quote! {
         #( #def )*
@@ -406,9 +403,9 @@ pub(crate) fn tracked_to_tokens(sub: &SubscriptionDecoder) -> proc_macro2::Token
 
 pub(crate) fn tracked_new_to_tokens(sub: &SubscriptionDecoder) -> proc_macro2::TokenStream {
     let mut new = vec![];
-    for name in &sub.tracked {
-        let field_name = Ident::new(&name.to_lowercase(), Span::call_site());
-        let type_name = Ident::new(name, Span::call_site());
+    for tracked in &sub.tracked {
+        let field_name = Ident::new(&tracked.name.to_lowercase(), Span::call_site());
+        let type_name = tracked_to_type_tokens(tracked);
         new.push(quote! {
             #field_name: #type_name::new(first_pkt),
         });
@@ -418,6 +415,41 @@ pub(crate) fn tracked_new_to_tokens(sub: &SubscriptionDecoder) -> proc_macro2::T
     }
 }
 
+fn tracked_to_type_tokens(tracked: &TrackedType) -> proc_macro2::TokenStream {
+    let type_raw = Ident::new(&tracked.name, Span::call_site());
+    match tracked.kind {
+        TrackedKind::StreamCallback => {
+            quote! {
+                retina_core::subscription::callback::StreamingCallbackWrapper::<#type_raw>
+            }
+        }
+        TrackedKind::StatelessCallback => {
+            quote! {
+                retina_core::subscription::callback::StatelessCallbackWrapper
+            }
+        }
+        TrackedKind::StaticCallback => {
+            quote! {
+                retina_core::subscription::callback::StaticCallbackWrapper
+            }
+        }
+        TrackedKind::StreamFilter => {
+            quote! {
+                retina_core::subscription::filter::StreamFilterWrapper::<#type_raw>
+            }
+        }
+        TrackedKind::StatelessFilter => {
+            quote! {
+                retina_core::subscription::filter::StatelessFilterWrapper
+            }
+        }
+        TrackedKind::Datatype => quote! { #type_raw }, // No wrapper
+    }
+}
+
+/// Generates tokens for updates to all tracked datatypes, callbacks,
+/// and filters that need to be invoked within each streaming state.
+/// This invokes the `update` for each.
 pub(crate) fn tracked_update_to_tokens(sub: &SubscriptionDecoder) -> proc_macro2::TokenStream {
     let mut all_updates = vec![];
     for (level, inps) in &sub.updates {
@@ -440,7 +472,8 @@ pub(crate) fn tracked_update_to_tokens(sub: &SubscriptionDecoder) -> proc_macro2
     }
 }
 
-// CB invoked within a filter
+/// Callback invocation to tokens within a filter PTree.
+/// This actually invokes the callback.
 pub(crate) fn fil_callback_to_tokens(
     sub: &SubscriptionDecoder,
     spec: &CallbackSpec,
@@ -478,14 +511,20 @@ pub(crate) fn fil_callback_to_tokens(
     invoke
 }
 
+/// Custom streaming (stateful or stateless) predicate to tokens
+/// in a filter PTree. This checks for a filter result, but it does not
+/// invoke the filter.
 pub(crate) fn custom_pred_to_tokens(name: &String, matched: bool) -> proc_macro2::TokenStream {
-    let ident = Ident::new(&(name.to_lowercase() + "_wrapper"), Span::call_site());
+    let ident = Ident::new(&(name.to_lowercase()), Span::call_site());
     match matched {
         true => quote! { conn.tracked.#ident.matched() },
         false => quote! { conn.tracked.#ident.is_active() },
     }
 }
 
+/// Custom streaming (stateful or stateless) callback predicate to tokens
+/// in a filter PTree. This checks whether a callback is currently active,
+/// but it does not invoke the callback.
 pub(crate) fn callback_pred_to_tokens(name: &String) -> proc_macro2::TokenStream {
     let ident = Ident::new(&name.to_lowercase(), Span::call_site());
     quote! { conn.tracked.#ident.is_active() }

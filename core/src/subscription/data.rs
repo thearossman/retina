@@ -55,7 +55,7 @@ impl StringToTokens for FilterStr<'_> {
 #[doc(hidden)]
 pub struct TrackedDataWrapper<T>
 where
-    T: Tracked,
+    T: Tracked + std::fmt::Debug,
 {
     /// The wrapped tracked data.
     pub data: T,

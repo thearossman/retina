@@ -19,7 +19,7 @@ pub trait StreamingFilter {
 #[derive(Debug)]
 pub struct StreamFilterWrapper<F>
 where
-    F: StreamingFilter,
+    F: StreamingFilter + std::fmt::Debug,
 {
     /// The stateful filter.
     pub filter: F,
@@ -29,7 +29,7 @@ where
 
 impl<F> StreamFilterWrapper<F>
 where
-    F: StreamingFilter,
+    F: StreamingFilter + std::fmt::Debug,
 {
     /// Create a new filter wrapper.
     pub fn new(first_pkt: &L4Pdu) -> Self {
@@ -62,7 +62,7 @@ where
 }
 
 #[doc(hidden)]
-/// Wrapper for a filter that is not stateful but may be invoked
+/// Wrapper for a filter that is stateless but may be invoked
 /// in a streaming state and thus cannot be trivially reapplied.
 #[derive(Debug)]
 pub struct StatelessFilterWrapper {

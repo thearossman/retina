@@ -58,14 +58,10 @@ impl SubscriptionSpec {
 
         // Any CB that has streaming patterns
         let patterns = self.patterns.as_ref().unwrap();
-        let mut invoke_once = false;
-        for pat in patterns {
-            if pat.predicates.iter().any(|p| p.is_streaming()) {
-                invoke_once = true;
-                break;
-            }
-        }
-        if invoke_once {
+        let streaming_pred = patterns
+            .iter()
+            .any(|pat| pat.predicates.iter().any(|pred| pred.is_streaming()));
+        if streaming_pred {
             for cb in &mut self.callbacks {
                 cb.invoke_once = true;
             }
@@ -95,7 +91,7 @@ pub(crate) struct SubscriptionDecoder {
     /// datatype update, filter method, or streaming callback.
     pub(crate) updates: HashMap<DataLevel, Vec<ParsedInput>>,
     /// Tracked datatypes (stored as fields in Tracked struct)
-    pub(crate) tracked: HashSet<String>,
+    pub(crate) tracked: HashSet<TrackedType>,
 }
 
 impl SubscriptionDecoder {
@@ -378,25 +374,38 @@ impl SubscriptionDecoder {
 
     fn decode_updates(&mut self) {
         let mut updates = HashMap::new();
-        for (name, v) in &self.filters_raw {
+        for (_, v) in &self.filters_raw {
             Self::push_update(&mut updates, v);
-            if Self::is_tracked_type(v) {
-                self.tracked.insert(name.clone());
+            if let Some(tracked) = Self::is_tracked_type(v) {
+                self.tracked.insert(tracked);
             }
         }
-        for (name, v) in &self.datatypes_raw {
-            if !self.datatypes_raw.contains_key(name) {
-                continue;
-            }
+        for (_, v) in &self.datatypes_raw {
             Self::push_update(&mut updates, v);
-            if Self::is_tracked_type(v) {
-                self.tracked.insert(name.clone());
+            if let Some(tracked) = Self::is_tracked_type(v) {
+                self.tracked.insert(tracked);
             }
         }
-        for (name, v) in &self.cbs_raw {
+        for (_, v) in &self.cbs_raw {
             Self::push_update(&mut updates, v);
-            if Self::is_tracked_type(v) {
-                self.tracked.insert(name.clone());
+            if let Some(tracked) = Self::is_tracked_type(v) {
+                self.tracked.insert(tracked);
+            }
+        }
+        for spec in &self.subscriptions {
+            for cb in &spec.callbacks {
+                if cb.invoke_once {
+                    assert!(
+                        cb.subscription_id == cb.as_str,
+                        "Grouped CB {}::{} marked as invoke_once",
+                        cb.subscription_id,
+                        cb.as_str
+                    );
+                    self.tracked.insert(TrackedType {
+                        name: cb.as_str.clone(),
+                        kind: TrackedKind::StaticCallback,
+                    });
+                }
             }
         }
         self.updates = updates;
@@ -417,16 +426,70 @@ impl SubscriptionDecoder {
 
     // TODO CB also needs to be tracked (differently - just make sure it hasn't already been invoked)
     // if it is a static CB with a streaming filter
-    fn is_tracked_type(inps: &Vec<ParsedInput>) -> bool {
-        // More than one update function, or
-        inps.iter()
-            .filter(|i| matches!(i, ParsedInput::DatatypeFn(_)))
-            .count() > 1 ||
-        // Streaming update requested
-        inps.iter()
-            .any(|inp|
-                inp.levels().iter().any(|l| l.is_streaming())
-            )
+    fn is_tracked_type(inps: &Vec<ParsedInput>) -> Option<TrackedType> {
+        let is_streaming = inps
+            .iter()
+            .any(|inp| inp.levels().iter().any(|l| l.is_streaming()));
+        // Only one function and it's not streaming
+        if inps.len() == 1 && !is_streaming {
+            return None;
+        }
+        // Multiple parsed inputs, but one is a group definition
+        // and only one is a function and it's not streaming.
+        if !is_streaming
+            && inps
+                .iter()
+                .filter(|i| {
+                    matches!(
+                        i,
+                        ParsedInput::CallbackGroupFn(_)
+                            | ParsedInput::DatatypeFn(_)
+                            | ParsedInput::FilterGroupFn(_)
+                    )
+                })
+                .count()
+                <= 1
+        {
+            return None;
+        }
+
+        // Streaming or multiple functions
+        for inp in inps {
+            match inp {
+                ParsedInput::CallbackGroup(group) => {
+                    return Some(TrackedType {
+                        kind: TrackedKind::StreamCallback,
+                        name: group.name.clone(),
+                    });
+                }
+                ParsedInput::FilterGroup(group) => {
+                    return Some(TrackedType {
+                        kind: TrackedKind::StreamFilter,
+                        name: group.name.clone(),
+                    });
+                }
+                ParsedInput::Datatype(group) => {
+                    return Some(TrackedType {
+                        kind: TrackedKind::Datatype,
+                        name: group.name.clone(),
+                    })
+                }
+                ParsedInput::Callback(cb) => {
+                    return Some(TrackedType {
+                        kind: TrackedKind::StatelessCallback,
+                        name: cb.func.name.clone(),
+                    });
+                }
+                ParsedInput::Filter(fil) => {
+                    return Some(TrackedType {
+                        kind: TrackedKind::StatelessFilter,
+                        name: fil.func.name.clone(),
+                    });
+                }
+                _ => continue,
+            }
+        }
+        None
     }
 
     pub(crate) fn get_packet_filter_tree(&self) -> PredPTree {
@@ -487,17 +550,28 @@ impl SubscriptionDecoder {
     }
 }
 
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) enum TrackedKind {
     StreamCallback,
+    StatelessCallback,
     StaticCallback,
     StreamFilter,
     StatelessFilter,
     Datatype,
 }
 
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) struct TrackedType {
-    kind: TrackedKind,
-    name: String,
+    pub(crate) kind: TrackedKind,
+    pub(crate) name: String,
+}
+
+use std::hash::{Hash, Hasher};
+impl Hash for TrackedType {
+    fn hash<H: Hasher>(&self, state: &mut H) {
+        self.name.hash(state);
+        format!("{:?}", self.kind).hash(state);
+    }
 }
 
 #[cfg(test)]

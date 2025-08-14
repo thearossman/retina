@@ -4,18 +4,23 @@ use retina_filtergen::{callback, filter, filter_group, input_files, retina_main}
 
 // TODO better way to specify imports required by generated code
 // (This is req'd because ConnRecord is requested as a param)
-use retina_core::subscription::Tracked;
+use retina_core::subscription::{StreamingFilter, Tracked};
 use retina_datatypes::FromSession;
 
-/*
+#[derive(Debug)]
 #[filter]
 struct ConnLen {
     len: usize,
 }
-impl ConnLen {
-    fn new() -> Self {
+
+impl StreamingFilter for ConnLen {
+    fn new(_first_pkt: &L4Pdu) -> Self {
         Self { len: 0 }
     }
+    fn clear(&mut self) {}
+}
+
+impl ConnLen {
     #[filter_group("ConnLen,level=L4InPayload")]
     fn update(&mut self, _: &L4Pdu) -> FilterResult {
         self.len += 1;
@@ -25,9 +30,8 @@ impl ConnLen {
         FilterResult::Continue
     }
 }
-*/
 
-#[callback("tls")]
+#[callback("tls and ConnLen,level=L4Terminated")]
 fn tls_cb(tls: &TlsHandshake, conn_record: &ConnRecord) {
     println!("Tls SNI: {}, conn. metrics: {:?}", tls.sni(), conn_record);
 }
