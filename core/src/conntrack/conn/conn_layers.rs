@@ -228,9 +228,9 @@ impl TrackableLayer for L7Session {
     }
 
     fn needs_process(&self, tx: StateTransition, pdu: &L4Pdu) -> bool {
-        self.linfo.state != LayerState::None
-            && (tx == StateTransition::L7OnDisc
-                || (tx == StateTransition::L7EndHdrs && pdu.ctxt.app_offset.is_some()))
+        if self.linfo.state == LayerState::None { return false; }
+        (tx == StateTransition::L7OnDisc && pdu.length() > 0) ||
+            (tx == StateTransition::L7EndHdrs && pdu.ctxt.app_offset.is_some())
     }
 
     fn drop(&self) -> bool {

@@ -96,14 +96,17 @@ where
     ) {
         // Update tracked data
         self.new_packet(pdu, subscription);
-        // Pass to next layer(s) if applicable
+
+        // Pass to next layer(s) if applicable for parsing
         if self.layers[0].needs_stream() {
             let tx = self.layers[0].process_stream(pdu, registry);
             self.exec_state_tx(tx, subscription);
             if self.layers[0].needs_process(tx, pdu) {
-                self.layers[0].process_stream(pdu, registry);
+                let tx = self.layers[0].process_stream(pdu, registry);
+                self.exec_state_tx(tx, subscription);
             }
         }
+
         // Update if needed (can be in payload)
         if self.layers[0].layer_info().actions.needs_update() {
             for update in self.layers[0].updates(pdu) {
@@ -133,7 +136,7 @@ where
     /// Update subscription data and current state, including actions,
     /// upon state transition.
     fn exec_state_tx(&mut self, tx: StateTransition, subscription: &Subscription<T::Subscribed>) {
-        debug_assert!(tx != StateTransition::Packet);
+        if tx == StateTransition::Packet { return; }
 
         // Nothing to do at all layers
         if self.linfo.actions.skip_tx(&tx)
