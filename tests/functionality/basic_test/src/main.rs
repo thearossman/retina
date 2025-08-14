@@ -1,8 +1,9 @@
 use clap::Parser;
 use lazy_static::lazy_static;
 use retina_core::{config::load_config, FiveTuple, Runtime};
-use retina_datatypes::{ByteCount, TlsHandshake};
-use retina_filtergen::{filter, retina_main};
+use retina_core::subscription::Tracked;
+use retina_datatypes::{conn_fts::ByteCount, TlsHandshake};
+use retina_filtergen::{callback, retina_main, input_files};
 use std::io::Write;
 use std::path::PathBuf;
 use std::sync::atomic::{AtomicUsize, Ordering};
@@ -36,7 +37,7 @@ lazy_static! {
     static ref RESULTS: Mutex<Vec<TlsResult>> = Mutex::new(Vec::new());
 }
 
-#[filter("tls")]
+#[callback("tls,level=L4Terminated")]
 fn tls_cb(tls: &TlsHandshake, bytecount: &ByteCount, five_tuple: &FiveTuple) {
     TLS_CB_COUNT.fetch_add(1, Ordering::Relaxed);
 
@@ -52,7 +53,8 @@ fn tls_cb(tls: &TlsHandshake, bytecount: &ByteCount, five_tuple: &FiveTuple) {
     }
 }
 
-#[retina_main(1)]
+#[input_files("$RETINA_HOME/datatypes/data.jsonl")]
+#[retina_main]
 fn main() {
     let args = Args::parse();
     let config = load_config(&args.config);

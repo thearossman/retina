@@ -182,7 +182,7 @@ pub fn retina_main(_args: TokenStream, input: TokenStream) -> TokenStream {
 
         impl Trackable for TrackedWrapper {
             type Subscribed = SubscribedWrapper;
-            fn new(first_pkt: &L4Pdu, core_id: retina_core::CoreId) -> Self {
+            fn new(first_pkt: &retina_core::L4Pdu, core_id: retina_core::CoreId) -> Self {
                 Self {
                     packets: Vec::new(),
                     core_id,
