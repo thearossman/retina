@@ -8,10 +8,11 @@ members = [
     # # Exclude from compilation; many subscriptions takes a long time to compile
     # # "examples/filter_stats",
     # "examples/protocols",
-    "examples/basic",
     # "examples/basic_file",
     # "examples/log_ssh",
     # "examples/streaming",
+    "examples/basic",
+    "tests/functionality/basic_test",
 ]
 resolver = "2"
 
