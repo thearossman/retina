@@ -1,4 +1,6 @@
 #![allow(clippy::needless_doctest_main)]
+//! Macros for defining subscriptions in Retina.
+//! TODO document
 
 use proc_macro::TokenStream;
 use quote::quote;
@@ -10,7 +12,6 @@ use parse::*;
 mod cache;
 mod codegen;
 mod subscription;
-
 mod packet_filter;
 mod state_filters;
 
