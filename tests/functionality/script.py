@@ -10,14 +10,13 @@ def main():
     parser = argparse.ArgumentParser(
         description="Run a debug build of the Retina test app with expected output and pcap files."
     )
-    parser.add_argument("app_name", help="Name of the test application binary (e.g., basic_test)")
-    parser.add_argument("expected_output_file_path", help="Path to the expected output binary file")
-    parser.add_argument("output_file_path", help="Path to the output file")
-    parser.add_argument("pcap_file", help="Path to the packet capture (pcap) file")
+    parser.add_argument("--app", help="Name of the test application binary (e.g., basic_test)")
+    parser.add_argument("--expected-outfile", help="Path to the expected output binary file")
+    parser.add_argument("--outfile", help="Path to the output file")
 
     args = parser.parse_args()
 
-    app_directory = os.path.join("..", "retina", "target", "debug", args.app_name)
+    app_directory = os.path.join("target", "debug", args.app)
     command_args = [app_directory]
 
     try:
@@ -34,10 +33,10 @@ def main():
         lines = result.stdout.splitlines()
         cleaned_output = "\n".join(lines[3:])
 
-        with open(args.output_file_path, "w") as f:
+        with open(args.outfile, "w") as f:
             f.write(cleaned_output)
 
-        print(f"Output written to {args.output_file_path}")
+        print(f"Output written to {args.outfile}")
 
     except subprocess.CalledProcessError as e:
         print("Error:\n", e.stderr)
@@ -46,7 +45,7 @@ def main():
         sys.exit(1)
 
     # Run diff on output file and expected_output file
-    diff_files(args.output_file_path, args.expected_output_file_path)
+    diff_files(args.outfile, args.expected_outfile)
 
 # Helper function
 def diff_files(file1, file2):
@@ -68,7 +67,7 @@ def diff_files(file1, file2):
         for line in diff_output:
             print(line)
     else:
-        print("Output files are identical. Test passed!")    
+        print("Output files are identical. Test passed!")
 
 if __name__ == "__main__":
     main()

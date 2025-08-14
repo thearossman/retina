@@ -449,7 +449,7 @@ fn tracked_to_type_tokens(tracked: &TrackedType) -> proc_macro2::TokenStream {
                 retina_core::subscription::filter::StatelessFilterWrapper
             }
         }
-        TrackedKind::Datatype => quote! { #type_raw }, // No wrapper
+        TrackedKind::Datatype | TrackedKind::StaticData => quote! { #type_raw }, // No wrapper
     }
 }
 

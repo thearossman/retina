@@ -1,8 +1,8 @@
 use clap::Parser;
 use lazy_static::lazy_static;
 use retina_core::subscription::Tracked;
-use retina_core::{config::load_config, FiveTuple, Runtime};
-use retina_datatypes::{conn_fts::ByteCount, TlsHandshake};
+use retina_core::{config::default_config, FiveTuple, Runtime};
+use retina_datatypes::{conn_fts::ByteCount, FromSession, StaticData, TlsHandshake};
 use retina_filtergen::{callback, input_files, retina_main};
 use std::io::Write;
 use std::path::PathBuf;
@@ -14,14 +14,12 @@ static TLS_CB_COUNT: AtomicUsize = AtomicUsize::new(0);
 
 #[derive(Parser, Debug)]
 struct Args {
-    #[clap(short, long, parse(from_os_str), value_name = "FILE")]
-    config: PathBuf,
     #[clap(
         short,
         long,
         parse(from_os_str),
         value_name = "FILE",
-        default_value = "filter_stats.jsonl"
+        default_value = "basic_test_output.jsonl"
     )]
     outfile: PathBuf,
 }
@@ -57,7 +55,7 @@ fn tls_cb(tls: &TlsHandshake, bytecount: &ByteCount, five_tuple: &FiveTuple) {
 #[retina_main]
 fn main() {
     let args = Args::parse();
-    let config = load_config(&args.config);
+    let config = default_config();
     let mut runtime: Runtime<SubscribedWrapper> = Runtime::new(config, filter).unwrap();
     runtime.run();
 

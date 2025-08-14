@@ -119,11 +119,11 @@ impl SubscriptionDecoder {
         ret.decode_filters();
         ret.decode_subscriptions();
         ret.prune_filters_and_datatypes();
-        ret.decode_updates();
         for spec in &mut ret.subscriptions {
             spec.add_patterns(&ret.custom_preds);
             spec.add_invoke_once();
         }
+        ret.decode_updates();
         ret
     }
 
@@ -432,6 +432,35 @@ impl SubscriptionDecoder {
                         kind: TrackedKind::StaticCallback,
                     });
                 }
+
+                // Datatypes that are not builtin but need t
+                // to be cached for future delivery
+                // TODO - may be other cases to cover
+                let static_dts = cb
+                    .datatypes
+                    .iter()
+                    .filter(|dt| {
+                        dt.updates.len() == 1 &&
+                    // TODO - other cases where a custom DT is ready before CB
+                    // but aren't covered here?
+                    dt.updates[0] == DataLevel::L4FirstPacket
+                    })
+                    .collect::<Vec<_>>();
+                if static_dts.len() > 0 {
+                    for pat in spec.patterns.as_ref().unwrap() {
+                        let sub_level =
+                            SubscriptionLevel::new(&cb.datatypes, pat, cb.expl_level.clone());
+                        if !sub_level.can_deliver(&DataLevel::L4FirstPacket) {
+                            for dt in static_dts {
+                                self.tracked.insert(TrackedType {
+                                    name: dt.name.clone(),
+                                    kind: TrackedKind::StaticData,
+                                });
+                            }
+                            break;
+                        }
+                    }
+                }
             }
         }
         self.updates = updates;
@@ -593,6 +622,8 @@ pub(crate) enum TrackedKind {
     StreamFilter,
     StatelessFilter,
     Datatype,
+    // Stored in struct but does not require updates
+    StaticData,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
