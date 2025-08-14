@@ -60,7 +60,7 @@ pub(crate) fn push_input(input: ParsedInput) {
                 .append(true)
                 .open(&fp)
                 .expect("Failed to open file to append");
-            let json = serde_json::to_string(&input).unwrap();
+            let json = serde_json::to_string(&input).expect("Failed to convert json to string");
             writeln!(file, "{}", json).expect("Failed to append to file");
         }
         None => {
@@ -79,7 +79,7 @@ pub(crate) fn set_input_files(fps: Vec<&str>) {
         let file = File::open(fp.clone()).expect(&format!("Cannot find input file: {}", fp));
         let reader = BufReader::new(file);
         for line in reader.lines() {
-            let line = line.unwrap();
+            let line = line.expect(&format!("Failed to read line from input file {}", fp));
             if line.trim().is_empty() {
                 continue;
             }

@@ -373,6 +373,9 @@ impl PTree {
     // TODO may not always need this (if no correctness issues?)
     fn split_custom(&self, patterns: &[FlatPattern]) -> Vec<FlatPattern> {
         let mut split_patterns = vec![];
+        if matches!(self.filter_layer, StateTransition::L4Terminated) {
+            return split_patterns;
+        }
         for pattern in patterns {
             split_patterns.extend(pattern.split_custom());
         }
@@ -605,6 +608,21 @@ impl PTree {
         get_subtree(id, &self.root)
     }
 
+    fn contains_term_filters(&self) -> bool {
+        fn contains_term_filters(node: &PNode) -> bool {
+            if node
+                .pred
+                .levels()
+                .iter()
+                .any(|l| matches!(l, DataLevel::L4Terminated))
+            {
+                return true;
+            }
+            node.children.iter().any(|c| contains_term_filters(c))
+        }
+        contains_term_filters(&self.root)
+    }
+
     // Sorts the PTree according to predicates
     // Useful as a pre-step for marking mutual exclusion; places
     // conditions with the same protocols/fields next to each other.
@@ -828,13 +846,17 @@ impl PTree {
             // determined that delivery is needed at the corresponding stage.
             // If disambiguation is not needed (i.e., only one possible delivery
             // outcome), then no filter condition is needed.
+            // The exception is if there is a filter that we still need to apply.
+            // --> TODO can we relax this requirement?
             if self.deliver.len() == 1 {
-                self.clear();
-                self.root
-                    .deliver
-                    .insert(self.deliver.iter().next().unwrap().clone());
-                self.update_size();
-                return;
+                if !self.contains_term_filters() {
+                    self.root
+                        .deliver
+                        .insert(self.deliver.iter().next().unwrap().clone());
+                    self.clear();
+                    self.update_size();
+                    return;
+                }
             }
         }
         self.prune_redundant_branches();
@@ -1067,6 +1089,23 @@ mod tests {
             ],
             matched: true,
         }];
+        static ref CUSTOM_FILTERS_GROUPED_TERM: Vec<Predicate> = vec![Predicate::Custom {
+            name: filterfunc!("GroupedFil"),
+            levels: vec![
+                vec![DataLevel::L4InPayload(false)],
+                vec![DataLevel::L4Terminated]
+            ],
+            matched: true,
+        }];
+        static ref TERM_SUB: Vec<CallbackSpec> = vec![CallbackSpec {
+            expl_level: Some(DataLevel::L4Terminated),
+            datatypes: vec![],
+            must_deliver: false,
+            invoke_once: false,
+            as_str: "basic_term".into(),
+            subscription_id: String::new(),
+            tracked_data: vec![],
+        }];
     }
 
     #[test]
@@ -1090,9 +1129,12 @@ mod tests {
         let node = tree.get_subtree(2).unwrap(); // L7=Disc
         assert!(node.actions.layers[0].needs_parse());
 
-        // let mut tree = PTree::new_empty(DataLevel::L7OnDisc);
-        // tree.add_subscription(&patterns, &STREAMING_SUB, &STREAMING_SUB[0].as_str);
-        // tree.collapse();
-        // println!("{}", tree);
+        let filter =
+            Filter::new("ipv4 and tls and GroupedFil", &CUSTOM_FILTERS_GROUPED_TERM).unwrap();
+        let patterns = filter.get_patterns_flat();
+        let mut tree = PTree::new_empty(DataLevel::L4Terminated);
+        tree.add_subscription(&patterns, &TERM_SUB, &TERM_SUB[0].as_str);
+        tree.collapse();
+        assert!(tree.size == 2, "Actual length: {}", tree.size);
     }
 }

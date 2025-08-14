@@ -191,7 +191,7 @@ pub(crate) fn datatype_func_to_tokens(dt: &DatatypeFnSpec) -> proc_macro2::Token
         return quote! {
             conn.tracked.#dt_name.#fname(pdu);
         };
-    } else if param == "StateTxOrd" {
+    } else if param == "StateTxData" {
         return quote! {
             conn.tracked.#dt_name.#fname(tx);
         };
@@ -267,7 +267,11 @@ pub(crate) fn constr_to_tokens(
 
     let constructor = {
         assert!(spec.func.datatypes.len() == 1);
-        let dt = spec.func.datatypes.first().unwrap();
+        let dt = spec
+            .func
+            .datatypes
+            .first()
+            .expect("Constructor without datatypes");
         // TODO confirm syntax
         let param = if dt == "L4Pdu" {
             quote! { pdu }

@@ -220,11 +220,8 @@ impl ParsedInput {
                         if let Some(args) = args {
                             let keys = InputKeys::from_string(args)?;
                             func.level = keys.levels;
-                            if keys.first.is_some() {
-                                bail!(ParserError::InvalidParam(
-                                    keys.first.unwrap(),
-                                    spec.name.clone()
-                                ));
+                            if let Some(key) = keys.first {
+                                bail!(ParserError::InvalidParam(key, spec.name.clone()));
                             }
                         }
                         func.func = spec;
@@ -245,6 +242,12 @@ impl ParsedInput {
                             bail!(ParserError::InvalidReturn(spec.name));
                         }
                         let (group_name, level) = InputKeys::grouped_fn(args, &spec.name)?;
+                        if level.is_empty() {
+                            bail!(ParserError::MissingLevel(format!(
+                                "{}:{}",
+                                group_name, spec.name
+                            )));
+                        }
                         func.group_name = group_name;
                         if level.len() < 1 {
                             bail!(ParserError::MissingParam("level".into(), spec.name.clone()));
@@ -481,7 +484,8 @@ impl InputKeys {
                 ret.first = Some(v);
             } else if k.contains("level") {
                 for l in v.split("|") {
-                    ret.levels.push(DataLevel::from_str(l.trim()).unwrap());
+                    ret.levels
+                        .push(DataLevel::from_str(l.trim()).expect("`level` key without values"));
                 }
             } else if k.contains("reassembled") {
                 reassembled =
@@ -609,4 +613,6 @@ pub enum ParserError {
     InvalidParam(String, String),
     #[error("Invalid input datatype for macro {0}")]
     InvalidType(String),
+    #[error("{0} requires explicit level annotation")]
+    MissingLevel(String),
 }

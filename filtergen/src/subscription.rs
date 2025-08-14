@@ -19,7 +19,15 @@ lazy_static! {
         }),
         ParsedInput::Datatype(DatatypeSpec {
             name: "FilterStr".into(),
-            level: None,
+            level: Some(DataLevel::Packet),
+        }),
+        ParsedInput::Datatype(DatatypeSpec {
+            name: "StateTxData".into(),
+            level: Some(DataLevel::Packet),
+        }),
+        ParsedInput::Datatype(DatatypeSpec {
+            name: "CoreId".into(),
+            level: Some(DataLevel::Packet),
         })
     ];
 }
@@ -57,7 +65,7 @@ impl SubscriptionSpec {
         }
 
         // Any CB that has streaming patterns
-        let patterns = self.patterns.as_ref().unwrap();
+        let patterns = self.patterns.as_ref().expect("Patterns not populated");
         let streaming_pred = patterns
             .iter()
             .any(|pat| pat.predicates.iter().any(|pred| pred.is_streaming()));
@@ -209,6 +217,14 @@ impl SubscriptionDecoder {
                     }
                     _ => continue,
                 }
+                if lvls.iter().any(|l| l.is_streaming()) {
+                    assert!(
+                        !inp.levels().is_empty(),
+                        "Filter {}::{} requests streaming datatypes; must explicitly specify level",
+                        name,
+                        inp.name()
+                    );
+                }
                 // Explicitly annotated levels
                 lvls.extend(inp.levels());
                 lvls.sort();
@@ -222,6 +238,10 @@ impl SubscriptionDecoder {
                 levels,
                 matched: true,
             });
+            println!(
+                "Got custom predicate: {:?}",
+                self.custom_preds.last().unwrap()
+            );
         }
     }
 
@@ -294,6 +314,16 @@ impl SubscriptionDecoder {
                     .clone()
             })
             .collect::<Vec<_>>();
+        if datatypes
+            .iter()
+            .any(|dt| dt.updates.iter().any(|l| l.is_streaming()))
+        {
+            assert!(
+                expl_level.is_some(),
+                "Callback {} requests streaming datatype; must explicitly specify level.",
+                spec.name
+            );
+        }
         CallbackSpec {
             expl_level,
             datatypes,
@@ -495,7 +525,7 @@ impl SubscriptionDecoder {
     pub(crate) fn get_packet_filter_tree(&self) -> PredPTree {
         let mut ptree: PredPTree = PredPTree::new_empty(true);
         for spec in &self.subscriptions {
-            let patterns = spec.patterns.as_ref().unwrap();
+            let patterns = spec.patterns.as_ref().expect("Patterns not populated");
             ptree.build_tree(patterns, &spec.callbacks);
         }
         ptree.prune_branches();
@@ -507,7 +537,7 @@ impl SubscriptionDecoder {
         assert!(!matches!(filter_layer, StateTransition::Packet));
         let mut ptree = PTree::new_empty(filter_layer);
         for spec in &self.subscriptions {
-            let patterns = spec.patterns.as_ref().unwrap();
+            let patterns = spec.patterns.as_ref().expect("Patterns not populated");
             ptree.add_subscription(patterns, &spec.callbacks, &spec.as_str);
         }
         ptree.collapse();
@@ -522,7 +552,7 @@ impl SubscriptionDecoder {
     pub(crate) fn requires_filter(&self, filter_layer: &StateTransition) -> bool {
         for spec in &self.subscriptions {
             for cb in &spec.callbacks {
-                let patterns = spec.patterns.as_ref().unwrap();
+                let patterns = spec.patterns.as_ref().expect("Patterns not populated");
                 for pat in patterns {
                     let level = SubscriptionLevel::new(&cb.datatypes, pat, cb.expl_level);
                     if level.can_skip(filter_layer) {
