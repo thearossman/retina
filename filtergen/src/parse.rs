@@ -266,8 +266,11 @@ impl ParsedInput {
                             func.func.name
                         );
                         assert!(
+                            // TODO group these "allowed inputs" together
                             func.func.datatypes[0].contains("L4Pdu")
-                                || func.func.datatypes[0].contains("StateTxData"),
+                                || func.func.datatypes[0].contains("StateTxData")
+                                || func.func.datatypes[0].contains("Session")
+                                || func.func.datatypes[0].contains("Mbuf"),
                             "{}:{} requested non-trivial datatypes",
                             func.group_name,
                             func.func.name

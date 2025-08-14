@@ -43,20 +43,20 @@ pub(crate) fn cb_to_tokens(
         &mut cond_match,
         &mut params,
     );
+    let mut cb_wrapper_str = cb_name.to_lowercase();
+    let cb_name = Ident::new(&cb_name, Span::call_site());
 
     let invoke = match cb_group {
         Some(grp) => {
             // Allow for unsubscribe
             // Need to check for `is_active` in the `update` method
             // Invoke method on struct and check for unsubscribe
-            let mut grp = grp.to_lowercase();
-            let cb_id = Ident::new(&grp, Span::call_site());
-            grp.push_str("_wrap");
-            let cb_wrapper = Ident::new(&grp.to_lowercase(), Span::call_site());
+            let cb_wrapper_ident = Ident::new(&grp.to_lowercase(), Span::call_site());
             quote! {
-                if conn.tracked.#cb_wrapper.is_active() {
-                    if !conn.tracked.#cb_id.#cb_name(#( #params ), *) {
-                        conn.tracked.#cb_wrapper.set_inactive();
+                if conn.tracked.#cb_wrapper_ident.is_active() {
+                    if !conn.tracked.#cb_wrapper_ident.callback.#cb_name(#( #params ), *) {
+                        conn.tracked.#cb_wrapper_ident.set_inactive();
+                        ret = true; // CB unsubscribed; something changed
                     }
                 }
             }
@@ -86,11 +86,10 @@ pub(crate) fn cb_to_tokens(
     // hasn't already been invoked
     match invoke_once {
         true => {
-            let cb_wrapper = cb_name.to_lowercase() + "_wrap";
-            let cb_wrapper = Ident::new(&cb_wrapper, Span::call_site());
+            let cb_wrapper_ident = Ident::new(&cb_wrapper_str, Span::call_site());
             quote! {
-                if conn.tracked.#cb_wrapper.should_invoke() {
-                    conn.tracked.#cb_wrapper.set_invoked();
+                if conn.tracked.#cb_wrapper_ident.should_invoke() {
+                    conn.tracked.#cb_wrapper_ident.set_invoked();
                     #invoke
                 }
             }
@@ -99,6 +98,9 @@ pub(crate) fn cb_to_tokens(
     }
 }
 
+/// TODO this is wrong - need to double check
+/// - When is this actually invoked and for what code?
+/// - What code do we expect to get generated?
 /// Invoking a custom streaming filter function
 pub(crate) fn filter_func_to_tokens(
     sub: &SubscriptionDecoder,
@@ -121,31 +123,35 @@ pub(crate) fn filter_func_to_tokens(
         &mut params,
     );
     let func_ident = Ident::new(&func.name, Span::call_site());
-    let fil_ident = Ident::new(&filter.name(), Span::call_site());
-    let mut fil_wrapper = filter.name().to_lowercase();
-    fil_wrapper.push_str("_wrap");
-    let fil_wrapper = Ident::new(&fil_wrapper, Span::call_site());
+    let fil_ident = match filter {
+        ParsedInput::FilterGroupFn(fil) => {
+            Ident::new(&fil.group_name.to_lowercase(), Span::call_site())
+        }
+        ParsedInput::Filter(fil) => Ident::new(&fil.func.name.to_lowercase(), Span::call_site()),
+        _ => unreachable!(),
+    };
 
     // Either invoke via `tracked` parent struct or just invoke directly
     let invoke = match filter {
         ParsedInput::FilterGroupFn(_) => {
-            quote! { conn.tracked.#fil_ident.#func_ident(#( #params ), *) }
+            quote! { conn.tracked.#fil_ident.filter.#func_ident(#( #params ), *) }
         }
         ParsedInput::Filter(_) => {
+            // TODO StatelessFilterWrapper needed - handle this case
             quote! { #func_ident(#( #params ), *) }
         }
         _ => unreachable!(),
     };
     // Record FilterResult
     let mut invoke = quote! {
-        let res = #invoke;
-        conn.tracked.#fil_wrapper.record_result(res);
+        let filter_result = #invoke;
+        res = res || matches!(filter_result, FilterResult::Accept | FilterResult::Drop);
     };
     // Get return value for `update` function
     if streaming {
         invoke = quote! {
             #invoke
-            state_tx = state_tx || matches!(res, FilterResult::Accept | FilterResult::Drop);
+            conn.tracked.#fil_ident.record_result(filter_result);
         };
     }
 
@@ -161,10 +167,15 @@ pub(crate) fn filter_func_to_tokens(
         };
     }
 
-    quote! {
-        if conn.tracked.#fil_wrapper.is_active() {
-            #invoke
+    match streaming {
+        true => {
+            quote! {
+                if conn.tracked.#fil_ident.is_active() {
+                    #invoke
+                }
+            }
         }
+        false => invoke,
     }
 }
 
@@ -386,6 +397,7 @@ pub(crate) fn tracked_to_tokens(sub: &SubscriptionDecoder) -> proc_macro2::Token
         def.push(quote! {
             #field_name: #type_name,
         });
+        // TODO streaming filters
     }
     quote! {
         #( #def )*
@@ -398,7 +410,7 @@ pub(crate) fn tracked_new_to_tokens(sub: &SubscriptionDecoder) -> proc_macro2::T
         let field_name = Ident::new(&name.to_lowercase(), Span::call_site());
         let type_name = Ident::new(name, Span::call_site());
         new.push(quote! {
-            #field_name: #type_name::new(),
+            #field_name: #type_name::new(first_pkt),
         });
     }
     quote! {
@@ -455,7 +467,7 @@ pub(crate) fn fil_callback_to_tokens(
     // already unsubscribed
     if let Some(grp) = group {
         let mut grp = grp.to_lowercase();
-        grp.push_str("_wrap");
+        grp.push_str("_wrapper");
         let wrapper = Ident::new(&grp.to_lowercase(), Span::call_site());
         invoke = quote! {
             conn.tracked.#wrapper.try_set_active();
@@ -467,7 +479,7 @@ pub(crate) fn fil_callback_to_tokens(
 }
 
 pub(crate) fn custom_pred_to_tokens(name: &String, matched: bool) -> proc_macro2::TokenStream {
-    let ident = Ident::new(&name.to_lowercase(), Span::call_site());
+    let ident = Ident::new(&(name.to_lowercase() + "_wrapper"), Span::call_site());
     match matched {
         true => quote! { conn.tracked.#ident.matched() },
         false => quote! { conn.tracked.#ident.is_active() },
@@ -494,10 +506,10 @@ pub(crate) fn layerstate_to_tokens(
     };
     let layer_access = match layer {
         SupportedLayer::L4 => {
-            quote! { conn.tracked.info.linfo.state }
+            quote! { conn.linfo.state }
         }
         SupportedLayer::L7 => {
-            quote! { conn.tracked.info.layers[0].layer_info().state }
+            quote! { conn.layers[0].layer_info().state }
         }
     };
     let state_ident = format!("{:?}", state);

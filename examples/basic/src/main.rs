@@ -5,7 +5,9 @@ use retina_filtergen::{callback, filter, filter_group, input_files, retina_main}
 // TODO better way to specify imports required by generated code
 // (This is req'd because ConnRecord is requested as a param)
 use retina_core::subscription::Tracked;
+use retina_datatypes::FromSession;
 
+/*
 #[filter]
 struct ConnLen {
     len: usize,
@@ -23,8 +25,9 @@ impl ConnLen {
         FilterResult::Continue
     }
 }
+*/
 
-#[callback("tls and ConnLen")]
+#[callback("tls")]
 fn tls_cb(tls: &TlsHandshake, conn_record: &ConnRecord) {
     println!("Tls SNI: {}, conn. metrics: {:?}", tls.sni(), conn_record);
 }

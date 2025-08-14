@@ -1,4 +1,5 @@
 use super::FilterResult;
+use crate::L4Pdu;
 
 /// The framework expects that any stateful filter implements this trait.
 /// The user must also define the actual filter function(s), annotated with
@@ -6,7 +7,7 @@ use super::FilterResult;
 /// return a FilterResult.
 pub trait StreamingFilter {
     /// Initialize internal data, if applicable. Invoked on first packet.
-    fn new() -> Self;
+    fn new(first_packet: &L4Pdu) -> Self;
     /// Clears internal data, if applicable.
     fn clear(&mut self);
 }
@@ -31,9 +32,9 @@ where
     F: StreamingFilter,
 {
     /// Create a new filter wrapper.
-    pub fn new() -> Self {
+    pub fn new(first_pkt: &L4Pdu) -> Self {
         StreamFilterWrapper {
-            filter: F::new(),
+            filter: F::new(first_pkt),
             matched: FilterResult::Continue,
         }
     }

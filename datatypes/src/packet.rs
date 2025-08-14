@@ -2,6 +2,8 @@
 
 use super::FromMbuf;
 use retina_core::{conntrack::pdu::L4Context, Mbuf};
+#[allow(unused_imports)]
+use retina_filtergen::{datatype, datatype_group};
 
 /// Subscribable alias for [`retina_core::Mbuf`]
 #[cfg_attr(not(feature = "skip_expand"), datatype("Packet"))]

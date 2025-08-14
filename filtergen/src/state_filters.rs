@@ -24,7 +24,7 @@ pub(crate) fn gen_state_filters(
             continue;
         }
         if !sub.requires_filter(&tx) {
-            println!("{:?}: Skipped", tx);
+            println!("{}: Skipped", tx);
             continue;
         }
         let ptree = sub.build_ptree(tx);
@@ -46,15 +46,18 @@ pub(crate) fn gen_state_filters(
             sub,
             extract_sessions,
         );
-        let fn_name = Ident::new(
-            &("tx_".to_owned() + &tx.to_string().to_lowercase()),
-            Span::call_site(),
-        );
+        let fn_name = Ident::new(&(format!("tx_{}", tx).to_lowercase()), Span::call_site());
 
-        let ident = Ident::new(&tx.to_string(), Span::call_site());
-        main.push(quote! {
-            StateTransition::#ident => #fn_name(conn),
-        });
+        if matches!(tx, StateTransition::L4InPayload(_)) {
+            main.push(quote! {
+                StateTransition::L4InPayload(_) => #fn_name(conn),
+            });
+        } else {
+            let ident = Ident::new(&tx.to_string(), Span::call_site());
+            main.push(quote! {
+                StateTransition::#ident => #fn_name(conn),
+            });
+        }
         fns.push(quote! {
             fn #fn_name(conn: &mut ConnInfo<TrackedWrapper>) {
                 #( #body )*
@@ -229,7 +232,7 @@ fn add_service_pred(
     let pred_tokenstream = if extract_sessions {
         let proto_ident = Ident::new(&protocol.name(), Span::call_site());
         quote! {
-            let retina_core::protocols::stream::SessionData::#service_ident(#proto_ident) = conn.layers[0].last_session()
+            let retina_core::protocols::stream::SessionData::#service_ident(#proto_ident) = &conn.layers[0].last_session().data
         }
     } else {
         quote! {

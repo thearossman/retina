@@ -19,7 +19,7 @@ impl FromSession for TlsHandshake {
         not(feature = "skip_expand"),
         datatype_group("TlsHandshake,level=L7EndHdrs")
     )]
-    fn new(session: &Session) -> Option<&Self> {
+    fn from_session(session: &Session) -> Option<&Self> {
         if let SessionData::Tls(tls) = &session.data {
             return Some(tls);
         }

@@ -487,6 +487,19 @@ impl SubscriptionDecoder {
     }
 }
 
+pub(crate) enum TrackedKind {
+    StreamCallback,
+    StaticCallback,
+    StreamFilter,
+    StatelessFilter,
+    Datatype,
+}
+
+pub(crate) struct TrackedType {
+    kind: TrackedKind,
+    name: String,
+}
+
 #[cfg(test)]
 mod tests {
     use retina_core::conntrack::DataLevel;
