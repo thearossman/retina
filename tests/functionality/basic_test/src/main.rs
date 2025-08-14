@@ -1,9 +1,9 @@
 use clap::Parser;
 use lazy_static::lazy_static;
-use retina_core::{config::load_config, FiveTuple, Runtime};
 use retina_core::subscription::Tracked;
+use retina_core::{config::load_config, FiveTuple, Runtime};
 use retina_datatypes::{conn_fts::ByteCount, TlsHandshake};
-use retina_filtergen::{callback, retina_main, input_files};
+use retina_filtergen::{callback, input_files, retina_main};
 use std::io::Write;
 use std::path::PathBuf;
 use std::sync::atomic::{AtomicUsize, Ordering};

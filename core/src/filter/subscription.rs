@@ -278,7 +278,6 @@ impl NodeActions {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct DataLevelSpec {
     /// Updates: streaming updates and state transitions requested.
-    /// This should include the `level` above.
     pub updates: Vec<DataLevel>,
     /// The name of the datatype as a string
     pub name: String,
@@ -563,6 +562,9 @@ impl SubscriptionLevel {
     /// of the predicates (i.e., this may be the first state TX where the "not less than"
     /// bound is true). This must be true for all filter and datatype predicates.
     pub fn can_deliver(&self, curr: &StateTransition) -> bool {
+        if let Some(expl_level) = &self.callback {
+            return curr == expl_level;
+        }
         // Create iterator over all filter and datatype predicates
         let mut iter = self.datatypes.iter().chain(self.filter_preds.iter());
         iter.clone()

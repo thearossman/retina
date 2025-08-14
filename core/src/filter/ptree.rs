@@ -436,9 +436,7 @@ impl PTree {
         // Allow callback to `unsubscribe`
         for callback in callbacks {
             if let Some(cb_level) = &callback.expl_level {
-                if cb_level.is_streaming() {
-                    node_actions.push_cb(*cb_level);
-                }
+                node_actions.push_cb(*cb_level);
             }
         }
 
@@ -616,6 +614,7 @@ impl PTree {
                 .iter()
                 .any(|l| matches!(l, DataLevel::L4Terminated))
             {
+                println!("PRED IS L4TERMINATED");
                 return true;
             }
             node.children.iter().any(|c| contains_term_filters(c))
@@ -634,11 +633,6 @@ impl PTree {
             node.children.sort();
         }
         sort(&mut self.root);
-    }
-
-    // Remove all nodes and callbacks from the tree
-    fn clear(&mut self) {
-        *self = PTree::new_empty(self.filter_layer);
     }
 
     // Best-effort to give the filter generator hints as to where an "else"
@@ -841,6 +835,9 @@ impl PTree {
     pub fn collapse(&mut self) {
         if matches!(self.filter_layer, DataLevel::L4Terminated) {
             self.collapsed = true;
+            // Shouldn't have another filter stage here unless there may
+            // be something to deliver
+            assert!(self.deliver.len() >= 1);
 
             // The delivery filter will only be invoked if a previous filter
             // determined that delivery is needed at the corresponding stage.
@@ -853,7 +850,7 @@ impl PTree {
                     self.root
                         .deliver
                         .insert(self.deliver.iter().next().unwrap().clone());
-                    self.clear();
+                    self.root.children.clear();
                     self.update_size();
                     return;
                 }
@@ -1136,5 +1133,40 @@ mod tests {
         tree.add_subscription(&patterns, &TERM_SUB, &TERM_SUB[0].as_str);
         tree.collapse();
         assert!(tree.size == 2, "Actual length: {}", tree.size);
+    }
+
+    lazy_static! {
+        static ref TERM_SUB_STREAM: Vec<CallbackSpec> = vec![CallbackSpec {
+            expl_level: Some(DataLevel::L4Terminated),
+            datatypes: vec![SESS_RECORD_DATATYPE.clone()],
+            must_deliver: false,
+            invoke_once: false,
+            as_str: "term_streaming".into(),
+            subscription_id: String::new(),
+            tracked_data: vec![],
+        }];
+    }
+
+    #[test]
+    fn test_ptree_term() {
+        let filter = Filter::new("ipv4 and tls", &CUSTOM_FILTERS_GROUPED_TERM).unwrap();
+        let patterns = filter.get_patterns_flat();
+        let mut tree = PTree::new_empty(DataLevel::L4Terminated);
+        tree.add_subscription(&patterns, &TERM_SUB_STREAM, &TERM_SUB_STREAM[0].as_str);
+        tree.collapse();
+        assert!(tree.root.deliver.len() == 1);
+        // println!("{}", tree);
+
+        let mut tree = PTree::new_empty(DataLevel::L7EndHdrs);
+        tree.add_subscription(&patterns, &TERM_SUB_STREAM, &TERM_SUB_STREAM[0].as_str);
+        tree.collapse();
+        assert!(tree
+            .actions
+            .actions
+            .get(0)
+            .unwrap()
+            .transport
+            .needs_update());
+        // println!("{}", tree);
     }
 }
