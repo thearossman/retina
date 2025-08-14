@@ -58,8 +58,24 @@ pub(crate) fn gen_state_filters(
                 StateTransition::#ident => #fn_name(conn),
             });
         }
+
+        // Ensure that datatypes and custom filters that requested updates
+        // at this state transition receive them.
+        let mut update = quote! {};
+        if !tx.is_streaming() {
+            update = update_to_tokens(sub, &tx);
+            if !update.is_empty() {
+                update = quote! {
+                    let mut ret = false; // unused in state_tx filters
+                    #update
+                };
+            }
+        }
+
         fns.push(quote! {
             fn #fn_name(conn: &mut ConnInfo<TrackedWrapper>) {
+                // Update filters, datatypes first
+                #update
                 #( #body )*
             }
         })

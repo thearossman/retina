@@ -312,6 +312,9 @@ impl DataLevelSpec {
     /// taken depend on the L7 state.
     pub(crate) fn to_actions(&self, filter_layer: StateTransition) -> NodeActions {
         let mut actions = NodeActions::new(filter_layer);
+        if filter_layer == StateTransition::L4Terminated {
+            return actions;
+        }
         let l7_idx = SupportedLayer::L7 as usize - 1;
         for level in &self.updates {
             let cmp = filter_layer.compare(level);

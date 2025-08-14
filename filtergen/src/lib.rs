@@ -11,9 +11,9 @@ mod parse;
 use parse::*;
 mod cache;
 mod codegen;
-mod subscription;
 mod packet_filter;
 mod state_filters;
+mod subscription;
 
 use subscription::SubscriptionDecoder;
 

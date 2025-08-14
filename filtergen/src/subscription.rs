@@ -238,10 +238,6 @@ impl SubscriptionDecoder {
                 levels,
                 matched: true,
             });
-            println!(
-                "Got custom predicate: {:?}",
-                self.custom_preds.last().unwrap()
-            );
         }
     }
 
@@ -443,13 +439,22 @@ impl SubscriptionDecoder {
 
     fn push_update(updates: &mut HashMap<DataLevel, Vec<ParsedInput>>, inps: &Vec<ParsedInput>) {
         for inp in inps {
-            let lvls = inp
-                .levels()
-                .into_iter()
-                .filter(|l| l.is_streaming())
-                .collect::<Vec<_>>();
-            for l in lvls {
+            let (streaming, stat): (Vec<_>, Vec<_>) =
+                inp.levels().into_iter().partition(|l| l.is_streaming());
+            for l in streaming {
                 updates.entry(l).or_insert(vec![]).push(inp.clone());
+            }
+            for l in stat {
+                match inp {
+                    // Deliver requested tx update to filter and datatype fns
+                    ParsedInput::FilterGroupFn(_)
+                    | ParsedInput::Filter(_)
+                    | ParsedInput::DatatypeFn(_) => {
+                        updates.entry(l).or_insert(vec![]).push(inp.clone());
+                    }
+                    // Callbacks invoked inline
+                    _ => {}
+                }
             }
         }
     }

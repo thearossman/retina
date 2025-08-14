@@ -1,4 +1,4 @@
-use retina_core::{subscription::FilterResult, L4Pdu, StateTxData};
+use retina_core::{subscription::FilterResult, L4Pdu};
 use retina_datatypes::{ConnRecord, TlsHandshake};
 use retina_filtergen::{callback, filter, filter_group, input_files, retina_main};
 

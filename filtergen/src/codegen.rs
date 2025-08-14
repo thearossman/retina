@@ -144,6 +144,8 @@ pub(crate) fn filter_func_to_tokens(
         _ => unreachable!(),
     };
     // Record FilterResult - update needs to return `true` if something changes
+    // Note that this may also be invoked in a static filter that doesn't return
+    // anything; the `ret` parameter is not used in that case.
     let mut invoke = quote! {
         let filter_result = #invoke;
         ret = ret ||
@@ -158,7 +160,7 @@ pub(crate) fn filter_func_to_tokens(
     }
 
     // Extract parameters for filter if needed
-    if cond_match.is_empty() {
+    if !cond_match.is_empty() {
         invoke = quote! {
             match ( #( #conditions ), * ) {
                 (#( #cond_match ), *) => {
@@ -451,13 +453,13 @@ fn tracked_to_type_tokens(tracked: &TrackedType) -> proc_macro2::TokenStream {
     }
 }
 
-/// Generates tokens for updates to all tracked datatypes, callbacks,
+/// Generates tokens for streaming updates to all tracked datatypes, callbacks,
 /// and filters that need to be invoked within each streaming state.
 /// This invokes the `update` for each.
 pub(crate) fn tracked_update_to_tokens(sub: &SubscriptionDecoder) -> proc_macro2::TokenStream {
     let mut all_updates = vec![];
     for (level, inps) in &sub.updates {
-        if inps.is_empty() {
+        if inps.is_empty() || !level.is_streaming() {
             continue;
         }
         let updates = update_to_tokens(sub, level);
