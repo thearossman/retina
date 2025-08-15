@@ -504,6 +504,9 @@ impl SubscriptionDecoder {
 
     fn push_update(updates: &mut HashMap<DataLevel, Vec<ParsedInput>>, inps: &Vec<ParsedInput>) {
         for inp in inps {
+            if inp.is_group() {
+                continue;
+            }
             let (streaming, stat): (Vec<_>, Vec<_>) =
                 inp.levels().into_iter().partition(|l| l.is_streaming());
             for l in streaming {

@@ -198,11 +198,17 @@ impl ParsedInput {
                 match self {
                     // Expecting: callback func annotated with #[callback] macro
                     // Requires filter. Can specify levels.
+                    // Streaming CBs return bool (TODO loosen this requirement in future)
                     Self::Callback(func) => {
+                        let (fil, level, expl_parsers) = InputKeys::callback(args, &spec.name)?;
                         if !matches!(spec.returns, FnReturn::Bool | FnReturn::None) {
                             bail!(ParserError::InvalidReturn(spec.name));
                         }
-                        let (fil, level, expl_parsers) = InputKeys::callback(args, &spec.name)?;
+                        if !matches!(spec.returns, FnReturn::Bool)
+                            && level.iter().any(|l| l.is_streaming())
+                        {
+                            bail!(ParserError::InvalidReturn(spec.name));
+                        }
                         func.filter = fil;
                         func.level = level;
                         func.func = spec;
@@ -210,8 +216,9 @@ impl ParsedInput {
                     }
                     // Expecting: callback group func annotated with #[callback_group] macro
                     // Requires named callback group and (optional) levels.
+                    // Must return bool (TODO loosen this requirement in future)
                     Self::CallbackGroupFn(func) => {
-                        if !matches!(spec.returns, FnReturn::Bool | FnReturn::None) {
+                        if !matches!(spec.returns, FnReturn::Bool) {
                             bail!(ParserError::InvalidReturn(spec.name));
                         }
                         let (group_name, level) = InputKeys::grouped_fn(args, &spec.name)?;
@@ -543,8 +550,10 @@ impl InputKeys {
         ret.levels.sort();
         ret.levels.dedup();
         // L7InPayload currently broken
-        assert!(!ret.levels.contains(&DataLevel::L7InPayload(false)),
-            "L7InPayload not yet supported");
+        assert!(
+            !ret.levels.contains(&DataLevel::L7InPayload(false)),
+            "L7InPayload not yet supported"
+        );
         if reassembled {
             for l in &mut ret.levels {
                 if matches!(l, DataLevel::L4InPayload(false)) {

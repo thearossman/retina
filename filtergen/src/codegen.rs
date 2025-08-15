@@ -382,7 +382,7 @@ pub(crate) fn update_to_tokens(
             ParsedInput::DatatypeFn(dt) => {
                 ret.push(datatype_func_to_tokens(dt));
             }
-            _ => panic!("Invalid input in update list"),
+            _ => panic!("Invalid input in update list: {:?}", upd),
         }
     }
     quote! {
@@ -423,7 +423,7 @@ fn tracked_to_type_tokens(tracked: &TrackedType) -> proc_macro2::TokenStream {
     match tracked.kind {
         TrackedKind::StreamCallback => {
             quote! {
-                retina_core::subscription::callback::StreamingCallbackWrapper::<#type_raw>
+                retina_core::subscription::callback::StreamCallbackWrapper::<#type_raw>
             }
         }
         TrackedKind::StatelessCallback => {
