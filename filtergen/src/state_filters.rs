@@ -24,7 +24,6 @@ pub(crate) fn gen_state_filters(
             continue;
         }
         if !sub.requires_filter(&tx) {
-            println!("{}: Skipped", tx);
             continue;
         }
         let ptree = sub.build_ptree(tx);
