@@ -65,7 +65,6 @@ pub(crate) fn gen_state_filters(
             update = update_to_tokens(sub, &tx);
             if !update.is_empty() {
                 update = quote! {
-                    let mut ret = false; // unused in state_tx filters
                     #update
                 };
             }
@@ -73,6 +72,7 @@ pub(crate) fn gen_state_filters(
 
         fns.push(quote! {
             fn #fn_name(conn: &mut ConnInfo<TrackedWrapper>) {
+                let mut ret = false; // unused in state_tx filters
                 // Update filters, datatypes first
                 #update
                 #( #body )*

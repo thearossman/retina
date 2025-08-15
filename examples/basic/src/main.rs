@@ -45,6 +45,11 @@ fn tls_cb(tls: &TlsHandshake, conn_record: &ConnRecord) {
     println!("Tls SNI: {}, conn. metrics: {:?}", tls.sni(), conn_record);
 }
 
+#[callback("tls,level=L7InPayload")]
+fn tls_cb_streaming(record: &ConnRecord) -> bool {
+    record.orig.nb_pkts < 100
+}
+
 #[input_files("$RETINA_HOME/datatypes/data.jsonl")]
 #[retina_main]
 fn main() {

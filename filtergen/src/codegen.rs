@@ -16,17 +16,6 @@ use regex::{bytes::Regex as BytesRegex, Regex};
 use std::collections::HashMap;
 use syn::LitStr;
 
-// TODO THIS IS BROKEN, including params_to_tokens
-/*
-produced
-                        match (new(conn.layers[0].last_session()),) {
-                            (Some(tlshandshake),) => {
-                                ();
-                            }
-                            _ => {}
-                        }
-
-*/
 pub(crate) fn cb_to_tokens(
     sub: &SubscriptionDecoder,
     datatypes: &Vec<String>,
@@ -519,8 +508,6 @@ pub(crate) fn fil_callback_to_tokens(
     // "try set active" will set the CB as "matched" unless it has
     // already unsubscribed
     if let Some(grp) = group {
-        let mut grp = grp.to_lowercase();
-        grp.push_str("_wrapper");
         let wrapper = Ident::new(&grp.to_lowercase(), Span::call_site());
         invoke = quote! {
             conn.tracked.#wrapper.try_set_active();
