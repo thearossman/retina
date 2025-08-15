@@ -139,6 +139,7 @@ pub fn retina_main(_args: TokenStream, input: TokenStream) -> TokenStream {
     let tracked_def = codegen::tracked_to_tokens(&decoder);
     let tracked_new = codegen::tracked_new_to_tokens(&decoder);
     let tracked_update = codegen::tracked_update_to_tokens(&decoder);
+    let parsers = codegen::parsers_to_tokens(&decoder);
 
     let packet_tree = decoder.get_packet_filter_tree();
     let packet_filter = packet_filter::gen_packet_filter(&packet_tree);
@@ -199,8 +200,7 @@ pub fn retina_main(_args: TokenStream, input: TokenStream) -> TokenStream {
             }
 
             fn parsers() -> ParserRegistry {
-                // TODO
-                ParserRegistry::from_strings(vec![])
+                ParserRegistry::from_strings(#parsers)
             }
 
             fn clear(&mut self) {

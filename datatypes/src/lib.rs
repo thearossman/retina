@@ -56,9 +56,6 @@ fn _cache_file() {}
 /// can be subscribed to. Datatypes implementing this trait are
 /// automatically Level=L7EndHdrs.
 pub trait FromSession {
-    /// The stream protocols (lower-case) required for this datatype.
-    /// See `IMPLEMENTED_PROTOCOLS` in retina_core for list of supported protocols.
-    fn stream_protocols() -> Vec<&'static str>;
     /// Build Self from a parsed session, or return None if impossible.
     /// Invoked when the session is fully matched, parsed, and ready to
     /// be delivered to a callback.

@@ -16,18 +16,22 @@ lazy_static! {
         ParsedInput::Datatype(DatatypeSpec {
             name: "L4Pdu".into(),
             level: Some(DataLevel::Packet),
+            expl_parsers: vec![],
         }),
         ParsedInput::Datatype(DatatypeSpec {
             name: "FilterStr".into(),
             level: Some(DataLevel::Packet),
+            expl_parsers: vec![],
         }),
         ParsedInput::Datatype(DatatypeSpec {
             name: "StateTxData".into(),
             level: Some(DataLevel::Packet),
+            expl_parsers: vec![], // Must be provided by application
         }),
         ParsedInput::Datatype(DatatypeSpec {
             name: "CoreId".into(),
             level: Some(DataLevel::Packet),
+            expl_parsers: vec![],
         })
     ];
 }
@@ -47,6 +51,18 @@ impl SubscriptionSpec {
                 .expect(&format!("Invalid filter: {}", self.filter));
             self.patterns = Some(filter.get_patterns_flat());
         }
+    }
+
+    fn get_parsers(&self) -> HashSet<String> {
+        let mut ret = HashSet::new();
+        for pat in self.patterns.as_ref().unwrap() {
+            for pred in &pat.predicates {
+                if pred.on_proto() {
+                    ret.insert(pred.get_protocol().clone().0);
+                }
+            }
+        }
+        ret
     }
 
     fn add_invoke_once(&mut self) {
@@ -87,6 +103,9 @@ pub(crate) struct SubscriptionDecoder {
     /// Map cb group (or name) -> Parsed Input(s)
     pub(crate) cbs_raw: HashMap<String, Vec<ParsedInput>>,
 
+    /// Required stream protocol parsers
+    pub(crate) parsers: HashSet<String>,
+
     /// Valid custom predicates passed into Filter::new()
     pub(crate) custom_preds: Vec<Predicate>,
     /// Datatype name -> Datatype Spec with all updates
@@ -108,6 +127,7 @@ impl SubscriptionDecoder {
             filters_raw: HashMap::new(),
             datatypes_raw: HashMap::new(),
             cbs_raw: HashMap::new(),
+            parsers: HashSet::new(),
             custom_preds: Vec::new(),
             datatypes: HashMap::new(),
             subscriptions: Vec::new(),
@@ -121,6 +141,7 @@ impl SubscriptionDecoder {
         ret.prune_filters_and_datatypes();
         for spec in &mut ret.subscriptions {
             spec.add_patterns(&ret.custom_preds);
+            ret.parsers.extend(spec.get_parsers());
             spec.add_invoke_once();
         }
         ret.decode_updates();
@@ -185,6 +206,11 @@ impl SubscriptionDecoder {
                 updates: inp.iter().cloned().flat_map(|l| l.levels()).collect(),
             };
             self.datatypes.insert(dt.clone(), spec);
+            self.parsers.extend(
+                inp.iter()
+                    .flat_map(|i| i.expl_parsers())
+                    .filter(|p| !p.is_empty()),
+            );
         }
     }
 
@@ -238,6 +264,11 @@ impl SubscriptionDecoder {
                 levels,
                 matched: true,
             });
+            self.parsers.extend(
+                v.iter()
+                    .flat_map(|i| i.expl_parsers())
+                    .filter(|p| !p.is_empty()),
+            );
         }
     }
 
@@ -289,6 +320,11 @@ impl SubscriptionDecoder {
                 as_str: cb_name.clone(),
                 patterns: None,
             });
+            self.parsers.extend(
+                v.iter()
+                    .flat_map(|i| i.expl_parsers())
+                    .filter(|p| !p.is_empty()),
+            );
         }
     }
 
@@ -668,6 +704,7 @@ mod tests {
             ParsedInput::FilterGroup(FilterGroupSpec {
                 level: None,
                 name: "MyGroup".into(),
+                expl_parsers: vec![],
             }),
             ParsedInput::FilterGroupFn(FilterGroupFnSpec {
                 level: vec![DataLevel::L4InPayload(false)],
@@ -690,14 +727,17 @@ mod tests {
             ParsedInput::Datatype(DatatypeSpec {
                 level: Some(DataLevel::Packet),
                 name: "L4Pdu".into(),
+                expl_parsers: vec![],
             }),
             ParsedInput::Datatype(DatatypeSpec {
                 level: Some(DataLevel::L7EndHdrs),
                 name: "TlsHandshake".into(),
+                expl_parsers: vec![],
             }),
             ParsedInput::Datatype(DatatypeSpec {
                 level: None,
                 name: "ConnRecord".into(),
+                expl_parsers: vec![],
             }),
             ParsedInput::DatatypeFn(DatatypeFnSpec {
                 group_name: "ConnRecord".into(),
@@ -716,6 +756,7 @@ mod tests {
                     datatypes: vec!["ConnRecord".into(), "TlsHandshake".into()],
                     returns: FnReturn::None,
                 },
+                expl_parsers: vec![],
             }),
         ];
         let decoder = SubscriptionDecoder::new(&inputs);

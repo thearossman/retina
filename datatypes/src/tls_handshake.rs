@@ -7,14 +7,10 @@ use retina_core::protocols::stream::{Session, SessionData};
 #[allow(unused_imports)]
 use retina_filtergen::{datatype, datatype_group};
 
-#[cfg_attr(not(feature = "skip_expand"), datatype("L7EndHdrs"))]
+#[cfg_attr(not(feature = "skip_expand"), datatype("L7EndHdrs,parsers=tls"))]
 pub type TlsHandshake = Box<Tls>;
 
 impl FromSession for TlsHandshake {
-    fn stream_protocols() -> Vec<&'static str> {
-        vec!["tls"]
-    }
-
     #[cfg_attr(
         not(feature = "skip_expand"),
         datatype_group("TlsHandshake,level=L7EndHdrs")

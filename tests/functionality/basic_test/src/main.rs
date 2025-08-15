@@ -1,7 +1,8 @@
 use clap::Parser;
 use lazy_static::lazy_static;
 use retina_core::subscription::Tracked;
-use retina_core::{config::default_config, FiveTuple, Runtime};
+use retina_core::{config::load_config, FiveTuple, Runtime};
+use retina_datatypes::conn_fts::PktCount;
 use retina_datatypes::{conn_fts::ByteCount, FromSession, StaticData, TlsHandshake};
 use retina_filtergen::{callback, input_files, retina_main};
 use std::io::Write;
@@ -22,6 +23,14 @@ struct Args {
         default_value = "basic_test_output.jsonl"
     )]
     outfile: PathBuf,
+    #[clap(
+        short,
+        long,
+        parse(from_os_str),
+        value_name = "FILE",
+        default_value = "./tests/functionality/test_config.toml"
+    )]
+    config: PathBuf,
 }
 
 #[derive(Debug, serde::Serialize)]
@@ -29,6 +38,7 @@ struct TlsResult {
     sni: Option<String>,
     five_tuple: FiveTuple,
     byte_count: usize,
+    pkt_count: usize,
 }
 
 lazy_static! {
@@ -36,13 +46,14 @@ lazy_static! {
 }
 
 #[callback("tls,level=L4Terminated")]
-fn tls_cb(tls: &TlsHandshake, bytecount: &ByteCount, five_tuple: &FiveTuple) {
+fn tls_cb(tls: &TlsHandshake, bytecount: &ByteCount, five_tuple: &FiveTuple, pktcount: &PktCount) {
     TLS_CB_COUNT.fetch_add(1, Ordering::Relaxed);
 
     let result = TlsResult {
         sni: Some(tls.sni().to_string()),
         five_tuple: five_tuple.clone(),
         byte_count: bytecount.byte_count,
+        pkt_count: pktcount.pkt_count,
     };
 
     {
@@ -56,7 +67,7 @@ fn tls_cb(tls: &TlsHandshake, bytecount: &ByteCount, five_tuple: &FiveTuple) {
 fn main() {
     env_logger::init();
     let args = Args::parse();
-    let config = default_config();
+    let config = load_config(&args.config);
     let mut runtime: Runtime<SubscribedWrapper> = Runtime::new(config, filter).unwrap();
     runtime.run();
 

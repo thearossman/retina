@@ -614,7 +614,6 @@ impl PTree {
                 .iter()
                 .any(|l| matches!(l, DataLevel::L4Terminated))
             {
-                println!("PRED IS L4TERMINATED");
                 return true;
             }
             node.children.iter().any(|c| contains_term_filters(c))

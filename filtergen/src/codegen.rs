@@ -14,6 +14,7 @@ use retina_core::filter::{
 use heck::CamelCase;
 use regex::{bytes::Regex as BytesRegex, Regex};
 use std::collections::HashMap;
+use syn::LitStr;
 
 // TODO THIS IS BROKEN, including params_to_tokens
 /*
@@ -450,6 +451,19 @@ fn tracked_to_type_tokens(tracked: &TrackedType) -> proc_macro2::TokenStream {
             }
         }
         TrackedKind::Datatype | TrackedKind::StaticData => quote! { #type_raw }, // No wrapper
+    }
+}
+
+pub(crate) fn parsers_to_tokens(sub: &SubscriptionDecoder) -> proc_macro2::TokenStream {
+    let mut parsers = vec![];
+    for parser in &sub.parsers {
+        let name = LitStr::new(parser, Span::call_site());
+        parsers.push(quote! {
+            #name
+        });
+    }
+    quote! {
+        vec![#( #parsers )*]
     }
 }
 
