@@ -53,7 +53,7 @@ pub enum DataLevel {
     /// On L6/L7 headers parsed
     L7EndHdrs,
     /// Streaming in L7 payload (after headers)
-    L7InPayload,
+    L7InPayload(bool),
     /// L7 payload end. TODO NOT YET SUPPORTED by parsers.
     L7EndPayload,
 
@@ -78,6 +78,7 @@ impl std::fmt::Display for DataLevel {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
             Self::L4InPayload(_) => write!(f, "L4InPayload"), // hide encap value
+            Self::L7InPayload(_) => write!(f, "L7InPayload"),
             _ => write!(f, "{:?}", self),
         }
     }
@@ -111,7 +112,7 @@ impl DataLevel {
             DataLevel::L7OnDisc => "L7OnDisc",
             DataLevel::L7InHdrs => "L7InHdrs",
             DataLevel::L7EndHdrs => "L7EndHdrs",
-            DataLevel::L7InPayload => "L7InPayload",
+            DataLevel::L7InPayload(_) => "L7InPayload",
             DataLevel::L7EndPayload => "L7EndPayload",
             DataLevel::Packet => "L4Pdu",
         }
@@ -248,7 +249,7 @@ impl FromStr for DataLevel {
             "L7OnDisc" => Ok(DataLevel::L7OnDisc),
             "L7InHdrs" => Ok(DataLevel::L7InHdrs),
             "L7EndHdrs" => Ok(DataLevel::L7EndHdrs),
-            "L7InPayload" => Ok(DataLevel::L7InPayload),
+            "L7InPayload" => Ok(DataLevel::L7InPayload(true)),
             "L7EndPayload" => Ok(DataLevel::L7EndPayload),
             "Packet" => Ok(DataLevel::Packet),
             _ => Err(format!("Invalid DataLevel: {}", s)),

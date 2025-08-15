@@ -950,7 +950,7 @@ mod tests {
         assert!(node.pred.get_protocol() == &protocol!("tls"));
 
         // Nothing to do
-        let mut tree = PTree::new_empty(DataLevel::L7InPayload);
+        let mut tree = PTree::new_empty(DataLevel::L7InPayload(false));
         tree.add_subscription(&patterns, &TLS_SUB, &TLS_SUB[0].as_str);
         assert!(tree.size == 1); // Just root; no actions
     }

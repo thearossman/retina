@@ -417,7 +417,7 @@ impl DataLevelSpec {
                         actions.push_action(a);
                     }
                 },
-                DataLevel::L7InPayload => {
+                DataLevel::L7InPayload(reassembled) => {
                     if matches!(cmp, StateTxOrd::Greater | StateTxOrd::Any) {
                         continue;
                     }
@@ -426,6 +426,9 @@ impl DataLevelSpec {
                     let mut in_payload = DataActions::new();
                     in_payload.transport.active |= Actions::PassThrough;
                     in_payload.layers[l7_idx].active |= Actions::Update;
+                    if *reassembled {
+                        in_payload.layers[l7_idx].active |= Actions::Parse;
+                    }
 
                     // Case 2: before end of L7 headers.
                     let mut pre_payload = DataActions::new();

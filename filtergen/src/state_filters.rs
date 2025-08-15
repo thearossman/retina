@@ -47,9 +47,10 @@ pub(crate) fn gen_state_filters(
         );
         let fn_name = Ident::new(&(format!("tx_{}", tx).to_lowercase()), Span::call_site());
 
-        if matches!(tx, StateTransition::L4InPayload(_)) {
+        let ident = Ident::new(&tx.to_string(), Span::call_site());
+        if matches!(tx, StateTransition::L4InPayload(_) | StateTransition::L7InPayload(_)) {
             main.push(quote! {
-                StateTransition::L4InPayload(_) => #fn_name(conn),
+                StateTransition::#ident(_) => #fn_name(conn),
             });
         } else {
             let ident = Ident::new(&tx.to_string(), Span::call_site());

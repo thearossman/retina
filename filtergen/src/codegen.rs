@@ -34,7 +34,7 @@ pub(crate) fn cb_to_tokens(
         &mut params,
     );
     let cb_wrapper_str = cb_name.to_lowercase();
-    let cb_name = Ident::new(&cb_name, Span::call_site());
+    let cb_name_ident = Ident::new(&cb_name, Span::call_site());
 
     let invoke = match cb_group {
         Some(grp) => {
@@ -42,9 +42,16 @@ pub(crate) fn cb_to_tokens(
             // Need to check for `is_active` in the `update` method
             // Invoke method on struct and check for unsubscribe
             let cb_wrapper_ident = Ident::new(&grp.to_lowercase(), Span::call_site());
+            let invoke = if grp != cb_name {
+                // Stateful callback; invoke on struct
+                quote! { conn.tracked.#cb_wrapper_ident.callback.#cb_name_ident(#( #params ), *) }
+            } else {
+                // Stateless streaming
+                quote! { #cb_name_ident(#( #params ), *) }
+            };
             quote! {
                 if conn.tracked.#cb_wrapper_ident.is_active() {
-                    if !conn.tracked.#cb_wrapper_ident.callback.#cb_name(#( #params ), *) {
+                    if !#invoke {
                         conn.tracked.#cb_wrapper_ident.set_inactive();
                         ret = true; // CB unsubscribed; something changed
                     }
@@ -52,7 +59,7 @@ pub(crate) fn cb_to_tokens(
             }
         }
         None => {
-            quote! { #cb_name(#( #params ), *); }
+            quote! { #cb_name_ident(#( #params ), *); }
         }
     };
 

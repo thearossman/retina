@@ -61,7 +61,7 @@ pub(crate) trait TrackableLayer {
     /// "State" that should be passed into an `update` function.
     /// May have two if the PDU includes data from, e.g., both header and payload.
     /// Should be called AFTER process_stream.
-    fn updates(&self, pdu: &L4Pdu) -> [StateTransition; 2];
+    fn needs_update_at(&self, pdu: &L4Pdu) -> [StateTransition; 2];
 
     /// Used to remove any actions that are invalid at this layer.
     /// For example: an L4 Update may trigger an L7 "parse" action, which
@@ -155,9 +155,9 @@ impl TrackableLayer for Layer {
         }
     }
 
-    fn updates(&self, pdu: &L4Pdu) -> [StateTransition; 2] {
+    fn needs_update_at(&self, pdu: &L4Pdu) -> [StateTransition; 2] {
         match self {
-            Layer::L7(session) => session.updates(pdu),
+            Layer::L7(session) => session.needs_update_at(pdu),
         }
     }
 
@@ -254,16 +254,19 @@ impl TrackableLayer for L7Session {
     }
 
     fn needs_stream(&self) -> bool {
-        self.linfo.actions.needs_parse() || self.linfo.actions.has_next_layer()
+        self.linfo.actions.needs_parse()
     }
 
-    fn updates(&self, pdu: &L4Pdu) -> [StateTransition; 2] {
+    fn needs_update_at(&self, pdu: &L4Pdu) -> [StateTransition; 2] {
         match self.linfo.state {
             LayerState::None | LayerState::Discovery => [StateTransition::Packet; 2],
             LayerState::Headers => [StateTransition::L7InHdrs, StateTransition::Packet],
             LayerState::Payload => match pdu.app_body_offset() {
-                Some(_) => [StateTransition::L7InHdrs, StateTransition::L7InPayload],
-                None => [StateTransition::L7InPayload, StateTransition::Packet],
+                Some(_) => [
+                    StateTransition::L7InHdrs,
+                    StateTransition::L7InPayload(false),
+                ],
+                None => [StateTransition::L7InPayload(false), StateTransition::Packet],
             },
         }
     }
@@ -277,7 +280,7 @@ impl TrackableLayer for L7Session {
             return None;
         }
         if matches!(self.linfo.state, LayerState::None | LayerState::Discovery) {
-            return None
+            return None;
         }
         if self.pending_sessions.is_empty() {
             self.pending_sessions = self.parser.drain_sessions();

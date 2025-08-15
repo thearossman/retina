@@ -69,12 +69,6 @@ impl TrackedActions {
     }
 
     #[inline]
-    pub fn needs_reassembly(&self) -> bool {
-        self.active
-            .intersects(Actions::Parse | Actions::PassThrough)
-    }
-
-    #[inline]
     pub fn has_next_layer(&self) -> bool {
         self.active.intersects(Actions::PassThrough)
     }

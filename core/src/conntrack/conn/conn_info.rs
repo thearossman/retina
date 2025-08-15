@@ -109,7 +109,7 @@ where
 
         // Update if needed (can be in payload)
         if self.layers[0].layer_info().actions.needs_update() {
-            for update in self.layers[0].updates(pdu) {
+            for update in self.layers[0].needs_update_at(pdu) {
                 if subscription.update(self, pdu, update) {
                     self.exec_state_tx(update, subscription);
                 }
@@ -178,6 +178,6 @@ where
     }
 
     pub(crate) fn needs_reassembly(&self) -> bool {
-        self.linfo.actions.needs_reassembly() || self.layers.iter().any(|l| l.needs_stream())
+        self.linfo.actions.needs_parse() || self.layers.iter().any(|l| l.needs_stream())
     }
 }

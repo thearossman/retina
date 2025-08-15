@@ -546,7 +546,9 @@ impl InputKeys {
             for l in &mut ret.levels {
                 if matches!(l, DataLevel::L4InPayload(false)) {
                     *l = DataLevel::L4InPayload(true);
-                    break;
+                }
+                if matches!(l, DataLevel::L7InPayload(false)) {
+                    *l = DataLevel::L7InPayload(true);
                 }
             }
         }
