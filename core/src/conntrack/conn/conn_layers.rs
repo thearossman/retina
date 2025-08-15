@@ -67,6 +67,10 @@ pub(crate) trait TrackableLayer {
     /// For example: an L4 Update may trigger an L7 "parse" action, which
     /// would be invalid once in payload if another session is not expected.
     fn end_state_tx(&mut self);
+
+    /// Indicate that the connection has terminated.
+    /// Should be invoked repeatedly until it returns None
+    fn handle_terminate(&mut self) -> Option<StateTransition>;
 }
 
 impl Layer {
@@ -95,6 +99,12 @@ impl Layer {
                 Some(s) => s,
                 None => &DEFAULT_SESSION,
             },
+        }
+    }
+
+    pub fn drain_sessions(&mut self) -> Vec<Session> {
+        match self {
+            Layer::L7(session) => session.parser.drain_sessions(),
         }
     }
 
@@ -156,6 +166,12 @@ impl TrackableLayer for Layer {
             Layer::L7(session) => session.end_state_tx(),
         }
     }
+
+    fn handle_terminate(&mut self) -> Option<StateTransition> {
+        match self {
+            Layer::L7(session) => session.handle_terminate(),
+        }
+    }
 }
 
 /// Stored for each Layer
@@ -187,6 +203,8 @@ pub struct L7Session {
     pub parser: ConnParser,
     /// Parsed sessions, if applicable
     pub sessions: Vec<Session>,
+    /// Sessions seen on terminate that are not fully parsed
+    pub pending_sessions: Vec<Session>,
     // Further encapsulated layers could go here.
 }
 
@@ -199,12 +217,8 @@ impl L7Session {
             linfo: LayerInfo::new(),
             parser: ConnParser::Unknown,
             sessions: Vec::new(),
+            pending_sessions: Vec::new(),
         }
-    }
-
-    /// Drain remaining (not yet fully parsed) sessions
-    pub fn drain_sessions(&mut self) -> Vec<Session> {
-        self.parser.drain_sessions()
     }
 
     /// Accessor for Protocol
@@ -252,6 +266,28 @@ impl TrackableLayer for L7Session {
                 None => [StateTransition::L7InPayload, StateTransition::Packet],
             },
         }
+    }
+
+    /// If some subscription is waiting for sessions, drain
+    /// pending (not yet fully parsed) sessions from the parser.
+    /// Move these sessions one-by-one to `self.sessions` until
+    /// none are left. This should be invoked until it returns None.
+    fn handle_terminate(&mut self) -> Option<StateTransition> {
+        if !self.linfo.actions.needs_parse() {
+            return None;
+        }
+        if matches!(self.linfo.state, LayerState::None | LayerState::Discovery) {
+            return None
+        }
+        if self.pending_sessions.is_empty() {
+            self.pending_sessions = self.parser.drain_sessions();
+        }
+        if self.pending_sessions.is_empty() {
+            return None;
+        }
+        self.sessions.push(self.pending_sessions.pop().unwrap());
+        Some(StateTransition::L7EndHdrs)
+        // L7EndPayload not yet supported
     }
 
     fn process_stream(&mut self, pdu: &mut L4Pdu, registry: &ParserRegistry) -> StateTransition {

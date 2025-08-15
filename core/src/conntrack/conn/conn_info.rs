@@ -130,6 +130,9 @@ where
     /// Invoked when the connection has terminated (by timeout or TCP FIN/ACK sequence)
     /// Delivers any "end of connection" data.
     pub(crate) fn handle_terminate(&mut self, subscription: &Subscription<T::Subscribed>) {
+        while let Some(tx) = self.layers[0].handle_terminate() {
+            self.exec_state_tx(tx, subscription);
+        }
         self.exec_state_tx(StateTransition::L4Terminated, subscription);
     }
 
