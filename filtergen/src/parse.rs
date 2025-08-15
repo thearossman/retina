@@ -542,6 +542,9 @@ impl InputKeys {
         }
         ret.levels.sort();
         ret.levels.dedup();
+        // L7InPayload currently broken
+        assert!(!ret.levels.contains(&DataLevel::L7InPayload(false)),
+            "L7InPayload not yet supported");
         if reassembled {
             for l in &mut ret.levels {
                 if matches!(l, DataLevel::L4InPayload(false)) {

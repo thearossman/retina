@@ -53,6 +53,7 @@ pub enum DataLevel {
     /// On L6/L7 headers parsed
     L7EndHdrs,
     /// Streaming in L7 payload (after headers)
+    /// TODO NOT YET SUPPORTED as level for filters, CBs, datatypes.
     L7InPayload(bool),
     /// L7 payload end. TODO NOT YET SUPPORTED by parsers.
     L7EndPayload,
