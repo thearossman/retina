@@ -34,6 +34,12 @@ pub(crate) fn cb_to_tokens(
         &mut params,
     );
     let cb_wrapper_str = cb_name.to_lowercase();
+    let cb_name = match cb_name.contains("::") {
+        // TODO this is a tmp workaround for weird formatting of CallbackSpec
+        // in PNodes
+        true => cb_name.split("::").last().unwrap(),
+        false => cb_name,
+    };
     let cb_name_ident = Ident::new(&cb_name, Span::call_site());
 
     let invoke = match cb_group {
@@ -305,12 +311,14 @@ pub(crate) fn constr_to_tokens(
 }
 
 pub(crate) fn builtin_to_tokens(name: &String) -> proc_macro2::TokenStream {
-    if name == "L4Pdu" {
-        return quote! { pdu };
-    } else if name == "FilterStr" {
-        unimplemented!(); // TODO
+    match name.as_str() {
+        "L4Pdu" => quote! { pdu },
+        "FilterStr" => unimplemented!(),
+        "StateTxData" => quote! { &tx },
+        "Session" => quote! { conn.layers[0].last_session() },
+        "CoreId" => quote! { &conn.tracked.core_id },
+        _ => panic!("Unknown builtin datatype: {}", name),
     }
-    panic!("Unknown builtin datatype: {}", name);
 }
 
 pub(crate) fn data_actions_to_tokens(actions: &DataActions) -> proc_macro2::TokenStream {
@@ -502,15 +510,17 @@ pub(crate) fn fil_callback_to_tokens(
     let mut group = None;
     if &spec.subscription_id != name {
         group = Some(&spec.subscription_id);
-    } else if let Some(l) = spec.expl_level {
-        if l.is_streaming() {
-            group = Some(&spec.subscription_id);
-        }
     }
 
-    // Actual CB invocation, including checking for unsubscribe and
-    // constructing parameters, if applicable.
-    let mut invoke = cb_to_tokens(sub, &dts, name, group, spec.invoke_once);
+    // Streaming CBs invoked in "update" methods only.
+    // TODO logic for caching past data and streaming it on first match
+    let mut invoke = quote! {};
+    if match spec.expl_level {
+        Some(l) => !l.is_streaming(),
+        None => true,
+    } {
+        invoke = cb_to_tokens(sub, &dts, name, group, spec.invoke_once);
+    }
 
     // "try set active" will set the CB as "matched" unless it has
     // already unsubscribed

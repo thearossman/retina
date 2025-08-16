@@ -53,12 +53,12 @@ pub(crate) fn gen_state_filters(
             StateTransition::L4InPayload(_) | StateTransition::L7InPayload(_)
         ) {
             main.push(quote! {
-                StateTransition::#ident(_) => #fn_name(conn),
+                StateTransition::#ident(_) => #fn_name(conn, &tx),
             });
         } else {
             let ident = Ident::new(&tx.to_string(), Span::call_site());
             main.push(quote! {
-                StateTransition::#ident => #fn_name(conn),
+                StateTransition::#ident => #fn_name(conn, &tx),
             });
         }
 
@@ -75,8 +75,9 @@ pub(crate) fn gen_state_filters(
         }
 
         fns.push(quote! {
-            fn #fn_name(conn: &mut ConnInfo<TrackedWrapper>) {
+            fn #fn_name(conn: &mut ConnInfo<TrackedWrapper>, tx: &StateTransition) {
                 let mut ret = false; // unused in state_tx filters
+                let tx = retina_core::StateTxData::from_tx(tx, &conn.layers[0]);
                 // Update filters, datatypes first
                 #update
                 #( #body )*

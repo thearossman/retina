@@ -29,6 +29,11 @@ lazy_static! {
             expl_parsers: vec![], // Must be provided by application
         }),
         ParsedInput::Datatype(DatatypeSpec {
+            name: "Session".into(),
+            level: Some(DataLevel::L7EndHdrs),
+            expl_parsers: vec![], // Must be provided by application
+        }),
+        ParsedInput::Datatype(DatatypeSpec {
             name: "CoreId".into(),
             level: Some(DataLevel::Packet),
             expl_parsers: vec![],
@@ -515,10 +520,13 @@ impl SubscriptionDecoder {
             for l in stat {
                 match inp {
                     // Deliver requested tx update to filter and datatype fns
-                    ParsedInput::FilterGroupFn(_)
-                    | ParsedInput::Filter(_)
-                    | ParsedInput::DatatypeFn(_) => {
+                    ParsedInput::FilterGroupFn(_) | ParsedInput::Filter(_) => {
                         updates.entry(l).or_insert(vec![]).push(inp.clone());
+                    }
+                    ParsedInput::DatatypeFn(f) => {
+                        if !matches!(f.func.returns, FnReturn::Constructor(_)) {
+                            updates.entry(l).or_insert(vec![]).push(inp.clone());
+                        }
                     }
                     // Callbacks invoked inline
                     _ => {}

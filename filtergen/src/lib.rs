@@ -221,7 +221,6 @@ pub fn retina_main(_args: TokenStream, input: TokenStream) -> TokenStream {
 
             fn state_tx(conn: &mut ConnInfo<TrackedWrapper>,
                     tx: &retina_core::StateTransition) {
-                let tx_data = retina_core::StateTxData::from_tx(&tx, &conn.layers[0]);
                 #state_tx_main
             }
 

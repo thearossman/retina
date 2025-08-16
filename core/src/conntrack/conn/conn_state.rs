@@ -207,26 +207,27 @@ pub enum StateTxData<'a> {
     L7OnDisc(SessionProto),
     L7EndHdrs(&'a Session),
     L4Terminated,
+    Null,
 }
 
 impl<'a> StateTxData<'a> {
-    pub fn from_tx(state: &StateTransition, layer: &'a Layer) -> Option<Self> {
+    pub fn from_tx(state: &StateTransition, layer: &'a Layer) -> Self {
         match layer {
             Layer::L7(layer) => {
                 return match state {
-                    DataLevel::L4EndHshk => Some(Self::L4EndHshk),
-                    DataLevel::L7OnDisc => Some(Self::L7OnDisc(layer.get_protocol())),
-                    DataLevel::L7EndHdrs => Some(Self::L7EndHdrs(
-                        layer.sessions.last().expect("L7EndHdrs without session"),
-                    )),
-                    DataLevel::L4Terminated => Some(Self::L4Terminated),
-                    _ => None,
+                    DataLevel::L4EndHshk => Self::L4EndHshk,
+                    DataLevel::L7OnDisc => Self::L7OnDisc(layer.get_protocol()),
+                    DataLevel::L7EndHdrs => {
+                        Self::L7EndHdrs(layer.sessions.last().expect("L7EndHdrs without session"))
+                    }
+                    DataLevel::L4Terminated => Self::L4Terminated,
+                    _ => Self::Null,
                 };
             }
         }
     }
 
-    // Should be the same as the corresponding StateTransition
+    // Should be the same as the corresponding StateTransition. For testing only.
     #[allow(dead_code)]
     pub(crate) fn as_usize(&self) -> usize {
         match self {
@@ -234,6 +235,7 @@ impl<'a> StateTxData<'a> {
             StateTxData::L7OnDisc(_) => StateTransition::L7OnDisc.as_usize(),
             StateTxData::L7EndHdrs(_) => StateTransition::L7EndHdrs.as_usize(),
             StateTxData::L4Terminated => StateTransition::L4Terminated.as_usize(),
+            StateTxData::Null => panic!("Invalid StateTxData"),
         }
     }
 }

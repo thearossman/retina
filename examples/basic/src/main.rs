@@ -66,11 +66,11 @@ impl ShortConnLen {
 
 #[callback("tls and ShortConnLen,level=L4Terminated")]
 fn tls_cb(tls: &TlsHandshake, conn_record: &ConnRecord) {
-    println!("Tls SNI: {}, conn. metrics: {:?}", tls.sni(), conn_record);
+    // println!("Tls SNI: {}, conn. metrics: {:?}", tls.sni(), conn_record);
 }
 
 #[derive(Debug)]
-#[callback("tls,reassembled=true")]
+#[callback("tls")]
 struct TlsCbStreaming {
     in_payload: bool,
 }
@@ -83,13 +83,16 @@ impl StreamingCallback for TlsCbStreaming {
 }
 
 impl TlsCbStreaming {
-    #[callback_group("TlsCbStreaming,level=L4InPayload,reassembled=true")]
+    #[callback_group("TlsCbStreaming,level=L4InPayload")]
     fn update(&mut self, _: &L4Pdu) -> bool {
+        println!("Got update");
         true
     }
 
     #[callback_group("TlsCbStreaming,level=L7EndHdrs")]
     fn state_tx(&mut self, tx: &StateTxData) -> bool {
+        assert!(matches!(tx, StateTxData::L7EndHdrs(_)));
+        println!("Starting payload");
         self.in_payload = true;
         true
     }
@@ -97,7 +100,7 @@ impl TlsCbStreaming {
 
 #[callback("tls,level=L4InPayload")]
 fn tls_cb_streaming(tls: &TlsHandshake, record: &ConnRecord) -> bool {
-    println!("Received update in L7InPayload: {:?} {:?}", tls, record);
+    // println!("Received update in L7InPayload: {:?} {:?}", tls, record);
     record.orig.nb_pkts < 100
 }
 
