@@ -7,7 +7,7 @@ use crate::conntrack::{DataLevel, StateTransition};
 use crate::filter::subscription::DataActions;
 
 use super::{
-    ast::Predicate,
+    ast::{Predicate, ProtocolName},
     pattern::FlatPattern,
     subscription::{CallbackSpec, NodeActions, SubscriptionLevel},
 };
@@ -302,11 +302,22 @@ impl Ord for PNode {
             }
         }
 
-        // Sort by protocol name
-        self.pred
-            .get_protocol()
-            .name()
-            .cmp(other.pred.get_protocol().name())
+        // If either has a protocol name, sort by that
+        // This also will put all ProtocolName::none predicates
+        // (i.e., LayerState or user-defined) next to each other
+        if self.pred.get_protocol() != ProtocolName::none()
+            || other.pred.get_protocol() != ProtocolName::none()
+        {
+            return self
+                .pred
+                .get_protocol()
+                .name()
+                .cmp(other.pred.get_protocol().name());
+        }
+
+        // Both predicates are custom filters, callbacks, or state checks;
+        // compare their string representations
+        format!("{}", self.pred).cmp(&format!("{}", other.pred))
     }
 }
 
