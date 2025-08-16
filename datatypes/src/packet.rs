@@ -24,7 +24,7 @@ impl FromMbuf for Payload {
     #[cfg_attr(not(feature = "skip_expand"), datatype_group("ZcFrame,level=Packet"))]
     fn new(mbuf: &Mbuf) -> Option<&Self> {
         if let Ok(ctxt) = L4Context::new(mbuf) {
-            let offset = ctxt.offset.unwrap();
+            let offset = ctxt.offset;
             let payload_len = ctxt.length;
             if let Ok(data) = mbuf.get_data_slice(offset, payload_len) {
                 return Some(data);

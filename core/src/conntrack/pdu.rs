@@ -62,12 +62,18 @@ impl L4Pdu {
 
     #[inline]
     pub fn offset(&self) -> usize {
-        self.ctxt.offset.unwrap()
+        self.ctxt.offset
     }
 
     #[inline]
     pub fn app_body_offset(&self) -> Option<usize> {
         self.ctxt.app_offset
+    }
+
+    #[inline]
+    pub(crate) fn mark_no_payload(&mut self) {
+        self.ctxt.offset = self.mbuf.data_len();
+        self.ctxt.length = 0;
     }
 
     #[inline]
@@ -105,7 +111,7 @@ pub struct L4Context {
     /// *new* payload begins. None indicates that no new data.
     /// If segment has not been reassembled, this is offset after
     /// TCP header.
-    pub offset: Option<usize>,
+    pub offset: usize,
     /// Length of the payload in bytes.
     pub length: usize,
     /// Raw sequence number of segment.
@@ -135,7 +141,7 @@ impl L4Context {
                             src: SocketAddr::new(IpAddr::V4(ipv4.src_addr()), tcp.src_port()),
                             dst: SocketAddr::new(IpAddr::V4(ipv4.dst_addr()), tcp.dst_port()),
                             proto: TCP_PROTOCOL,
-                            offset: Some(tcp.next_header_offset()),
+                            offset: tcp.next_header_offset(),
                             length: payload_size,
                             seq_no: tcp.seq_no(),
                             ack_no: tcp.ack_no(),
@@ -154,7 +160,7 @@ impl L4Context {
                             src: SocketAddr::new(IpAddr::V4(ipv4.src_addr()), udp.src_port()),
                             dst: SocketAddr::new(IpAddr::V4(ipv4.dst_addr()), udp.dst_port()),
                             proto: UDP_PROTOCOL,
-                            offset: Some(udp.next_header_offset()),
+                            offset: udp.next_header_offset(),
                             length: payload_size,
                             seq_no: 0,
                             ack_no: 0,
@@ -177,7 +183,7 @@ impl L4Context {
                             src: SocketAddr::new(IpAddr::V6(ipv6.src_addr()), tcp.src_port()),
                             dst: SocketAddr::new(IpAddr::V6(ipv6.dst_addr()), tcp.dst_port()),
                             proto: TCP_PROTOCOL,
-                            offset: Some(tcp.next_header_offset()),
+                            offset: tcp.next_header_offset(),
                             length: payload_size,
                             seq_no: tcp.seq_no(),
                             ack_no: tcp.ack_no(),
@@ -196,7 +202,7 @@ impl L4Context {
                             src: SocketAddr::new(IpAddr::V6(ipv6.src_addr()), udp.src_port()),
                             dst: SocketAddr::new(IpAddr::V6(ipv6.dst_addr()), udp.dst_port()),
                             proto: UDP_PROTOCOL,
-                            offset: Some(udp.next_header_offset()),
+                            offset: udp.next_header_offset(),
                             length: payload_size,
                             seq_no: 0,
                             ack_no: 0,

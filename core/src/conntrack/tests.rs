@@ -96,7 +96,7 @@ fn init_ctxt() -> L4Context {
         src,
         dst,
         proto: TCP_PROTOCOL,
-        offset: Some(0),
+        offset: 0,
         length: 0,
         seq_no: 0,
         ack_no: 0,

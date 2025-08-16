@@ -237,6 +237,10 @@ impl Tracked for ConnRecord {
         self.history = Vec::with_capacity(0);
     }
 
+    // TODO currently we don't guarantee reassembly order for payload
+    // packets. This either needs to be changed in the framework or
+    // handled by the datatype (if ctxt.reassembled = true, we need to
+    // handle things differently).
     #[cfg_attr(
         not(feature = "skip_expand"),
         datatype_group("ConnRecord,level=L4InPayload")

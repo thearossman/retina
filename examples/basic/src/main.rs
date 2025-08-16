@@ -85,14 +85,13 @@ impl StreamingCallback for TlsCbStreaming {
 impl TlsCbStreaming {
     #[callback_group("TlsCbStreaming,level=L4InPayload")]
     fn update(&mut self, _: &L4Pdu) -> bool {
-        println!("Got update");
         true
     }
 
     #[callback_group("TlsCbStreaming,level=L7EndHdrs")]
     fn state_tx(&mut self, tx: &StateTxData) -> bool {
         assert!(matches!(tx, StateTxData::L7EndHdrs(_)));
-        println!("Starting payload");
+        // println!("Starting payload");
         self.in_payload = true;
         true
     }

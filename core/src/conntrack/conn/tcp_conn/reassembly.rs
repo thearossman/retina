@@ -106,7 +106,7 @@ impl TcpFlow {
                     cur_seq,
                     next_seq
                 );
-                segment.ctxt.offset = None;
+                segment.mark_no_payload();
                 info.new_packet(&mut segment, subscription);
                 drop(segment);
             }
@@ -262,7 +262,7 @@ impl OutOfOrderBuffer {
                     index = 0;
                 } else {
                     log::debug!("Dropping old segment during flush.");
-                    segment.ctxt.offset = None;
+                    segment.mark_no_payload();
                     info.new_packet(&mut segment, subscription);
                     drop(segment);
                     index += 1;
@@ -300,7 +300,7 @@ fn overlap(segment: &mut L4Pdu, expected_seq: u32) -> Option<u32> {
         let overlap_data_len = expected_seq.wrapping_sub(cur_seq);
 
         log::debug!("Overlap with new data size : {:#?}", new_data_len);
-        *segment.ctxt.offset.as_mut().unwrap() += overlap_data_len as usize;
+        segment.ctxt.offset += overlap_data_len as usize;
         segment.ctxt.length = new_data_len as usize;
         Some(end_seq)
     } else {
