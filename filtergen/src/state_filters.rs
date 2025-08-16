@@ -184,16 +184,13 @@ fn gen_state_filter_util(
                 );
             }
             Predicate::Callback { name } => {
-                let pred_tokenstream = callback_pred_to_tokens(&name.0);
-                add_pred(
-                    code,
-                    child,
-                    tree,
-                    pred_tokenstream,
-                    statics,
-                    sub,
-                    extract_sessions,
+                assert!(
+                    child.children.is_empty(),
+                    "Expect callback predicate {} to terminate pattern; found children: {:?}",
+                    child.pred,
+                    child.children
                 );
+                add_callback_pred(code, &name.0, child, sub);
             }
         }
     }
@@ -295,6 +292,39 @@ fn add_pred(
             }
         });
     }
+}
+
+fn add_callback_pred(
+    code: &mut Vec<proc_macro2::TokenStream>,
+    name: &String,
+    node: &PNode,
+    sub: &SubscriptionDecoder,
+) {
+    // If we're at the callback predicate, then the CB is ready to
+    // be invoked or set as active (if it hasn't already unsubscribed).
+    for deliver in &node.deliver {
+        assert!(
+            &deliver.subscription_id == name,
+            "Found callback {} at {} callback pred node",
+            deliver.subscription_id,
+            name
+        );
+        let cb = fil_callback_to_tokens(sub, deliver);
+        code.push(quote! { #cb });
+    }
+
+    // Actions conditioned on whether callback is active
+    let pred_tokenstream = callback_pred_to_tokens(name);
+    let mut body = vec![];
+    if !node.actions.drop() {
+        let actions = data_actions_to_tokens(&node.actions);
+        body.push(quote! { #actions });
+    }
+    code.push(quote! {
+        if #pred_tokenstream {
+            #( #body )*
+        }
+    });
 }
 
 fn update_body(body: &mut Vec<proc_macro2::TokenStream>, node: &PNode, sub: &SubscriptionDecoder) {

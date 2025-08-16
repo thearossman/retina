@@ -190,6 +190,7 @@ impl FlatPattern {
     }
 
     // Inserts a Callback predicate
+    // The callback predicate MUST be the last predicate in a pattern.
     pub(super) fn with_streaming_cb(&self, name: &String) -> Self {
         let mut pat = self.clone();
         pat.predicates.push(Predicate::Callback {
