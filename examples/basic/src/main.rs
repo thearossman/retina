@@ -6,11 +6,6 @@ use retina_datatypes::{ConnRecord, TlsHandshake};
 use retina_filtergen::*;
 use std::path::PathBuf;
 
-// TODO better way to specify imports required by generated code
-// (This is req'd because ConnRecord is requested as a param)
-use retina_core::subscription::Tracked;
-use retina_datatypes::FromSession;
-
 #[derive(Parser, Debug)]
 struct Args {
     #[clap(
@@ -70,7 +65,7 @@ fn tls_cb(tls: &TlsHandshake, conn_record: &ConnRecord) {
 }
 
 #[derive(Debug)]
-#[callback("tls")]
+#[callback("tls and file=$RETINA_HOME/examples/basic/tls_snis.txt")]
 struct TlsCbStreaming {
     in_payload: bool,
 }

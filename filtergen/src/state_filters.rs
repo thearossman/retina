@@ -78,9 +78,16 @@ pub(crate) fn gen_state_filters(
             fn #fn_name(conn: &mut ConnInfo<TrackedWrapper>, tx: &StateTransition) {
                 let mut ret = false; // unused in state_tx filters
                 let tx = retina_core::StateTxData::from_tx(tx, &conn.layers[0]);
+                // Some callbacks/filters may require immutable borrow of `conn`;
+                // it's easiest to just limit the body of the function to immutable
+                // borrows and then update actions at the end.
+                let mut transport_actions = retina_core::conntrack::TrackedActions::new();
+                let mut layer0_actions = retina_core::conntrack::TrackedActions::new();
                 // Update filters, datatypes first
                 #update
                 #( #body )*
+                conn.linfo.actions.extend(&transport_actions);
+                conn.layers[0].extend_actions(&layer0_actions);
             }
         })
     }

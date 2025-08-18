@@ -88,7 +88,7 @@ impl Layer {
     }
 
     /// Push an action
-    pub fn push_action(&mut self, action: &TrackedActions) {
+    pub fn extend_actions(&mut self, action: &TrackedActions) {
         self.layer_info_mut().actions.extend(&action)
     }
 

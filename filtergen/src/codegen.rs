@@ -325,11 +325,11 @@ pub(crate) fn data_actions_to_tokens(actions: &DataActions) -> proc_macro2::Toke
     let mut ret = vec![quote! {}];
     if !actions.transport.drop() {
         let tracked = tracked_actions_to_tokens(&actions.transport);
-        ret.push(quote! { conn.linfo.actions.extend(&#tracked); });
+        ret.push(quote! { transport_actions.extend(&#tracked); });
     }
     if !actions.layers[0].drop() {
         let lyrs = tracked_actions_to_tokens(&actions.layers[0]);
-        ret.push(quote! { conn.layers[0].push_action(&#lyrs); });
+        ret.push(quote! { layer0_actions.extend(&#lyrs); });
     }
     quote! { #( #ret )* }
 }
@@ -482,8 +482,14 @@ pub(crate) fn tracked_update_to_tokens(sub: &SubscriptionDecoder) -> proc_macro2
         }
         let updates = update_to_tokens(sub, level);
         let level_ident = Ident::new(&level.to_string(), Span::call_site());
+        let level_ident = match level {
+            StateTransition::L4InPayload(_) | StateTransition::L7InPayload(_) => {
+                quote! { #level_ident(_) }
+            }
+            _ => quote! { #level_ident },
+        };
         all_updates.push(quote! {
-            #level_ident => {
+            StateTransition::#level_ident => {
                 #updates
             }
         });

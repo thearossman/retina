@@ -3,6 +3,7 @@ use quote::ToTokens;
 use retina_core::conntrack::DataLevel;
 use retina_core::protocols::stream::IMPLEMENTED_PROTOCOLS;
 use serde::{Deserialize, Serialize};
+use std::io::BufRead;
 use std::str::FromStr;
 use syn::{
     parse::{Parse, ParseStream},
@@ -200,7 +201,7 @@ impl ParsedInput {
                     // Requires filter. Can specify levels.
                     // Streaming CBs return bool (TODO loosen this requirement in future)
                     Self::Callback(func) => {
-                        let (fil, level, expl_parsers) = InputKeys::callback(args, &spec.name)?;
+                        let (mut fil, level, expl_parsers) = InputKeys::callback(args, &spec.name)?;
                         if !matches!(spec.returns, FnReturn::Bool | FnReturn::None) {
                             bail!(ParserError::InvalidReturn(spec.name));
                         }
@@ -208,6 +209,9 @@ impl ParsedInput {
                             && level.iter().any(|l| l.is_streaming())
                         {
                             bail!(ParserError::InvalidReturn(spec.name));
+                        }
+                        if fil.contains("file=") {
+                            fil = InputKeys::parse_filters_from_file(&fil)?;
                         }
                         func.filter = fil;
                         func.level = level;
@@ -329,7 +333,8 @@ impl ParsedInput {
                 let name = st.ident.to_string();
                 match self {
                     Self::Callback(_) => {
-                        let (filter, mut level, expl_parsers) = InputKeys::callback(args, &name)?;
+                        let (mut filter, mut level, expl_parsers) =
+                            InputKeys::callback(args, &name)?;
                         let level = match level.len() {
                             0 => None,
                             1 => Some(level.pop().unwrap()),
@@ -338,6 +343,9 @@ impl ParsedInput {
                                 name.clone()
                             )),
                         };
+                        if filter.contains("file=") {
+                            filter = InputKeys::parse_filters_from_file(&filter)?;
+                        }
                         *self = ParsedInput::CallbackGroup(CallbackGroupSpec {
                             filter,
                             level,
@@ -346,7 +354,8 @@ impl ParsedInput {
                         });
                     }
                     Self::CallbackGroup(cb) => {
-                        let (filter, mut level, expl_parsers) = InputKeys::callback(args, &name)?;
+                        let (mut filter, mut level, expl_parsers) =
+                            InputKeys::callback(args, &name)?;
                         cb.level = match level.len() {
                             0 => None,
                             1 => Some(level.pop().unwrap()),
@@ -355,6 +364,9 @@ impl ParsedInput {
                                 name.clone()
                             )),
                         };
+                        if filter.contains("file=") {
+                            filter = InputKeys::parse_filters_from_file(&filter)?;
+                        }
                         cb.filter = filter;
                         cb.name = name;
                         cb.expl_parsers = expl_parsers;
@@ -483,13 +495,13 @@ pub(crate) struct InputKeys {
 impl InputKeys {
     fn from_string(inp: String) -> Result<Self> {
         let parsed: Vec<(String, String)> = inp
-            .clone()
             .split(',')
             .enumerate()
             .map(|(i, pair)| {
                 let pair = pair.trim();
                 // Allow first value to not have an associated key
-                if i == 0 && !pair.contains('=') {
+                // Note that `file=` can be used in filters
+                if i == 0 && (!pair.contains('=') || pair.contains("file=")) {
                     ("".to_string(), pair.to_string())
                 } else {
                     let mut parts = pair.splitn(2, '=');
@@ -566,6 +578,45 @@ impl InputKeys {
         }
 
         Ok(ret)
+    }
+
+    fn parse_filters_from_file(filter: &String) -> Result<String> {
+        assert!(filter.contains("file="), "No file= in {}", filter);
+        let re = regex::Regex::new(r"file=([^\s]+)").unwrap();
+        let env_re = regex::Regex::new(r"\$([A-Za-z0-9_]+)").unwrap();
+        let expanded = re
+            .replace_all(&filter, |results: &regex::Captures| {
+                let mut filters = vec![];
+                // Raw file path
+                let fp = &results[1];
+                // Expand env variables
+                let fp = env_re
+                    .replace_all(fp, |env_results: &regex::Captures| {
+                        std::env::var(&env_results[1])
+                            .expect(&format!("Failed to find env variable {}", &env_results[1]))
+                    })
+                    .to_string();
+                let file =
+                    std::fs::File::open(fp.clone()).expect(&format!("Failed to open file: {}", fp));
+                let reader = std::io::BufReader::new(file);
+                for (idx, line) in reader.lines().enumerate() {
+                    let line = line
+                        .map_err(|_| {
+                            ParserError::InvalidValue(
+                                format!("fp {}, line {}", fp, idx),
+                                fp.clone(),
+                            )
+                        })
+                        .unwrap();
+                    if !line.trim().is_empty() && !line.starts_with('#') {
+                        filters.push(line);
+                    }
+                }
+                String::from("(") + &filters.join(" or ") + ")"
+            })
+            .to_string();
+        println!("Parsed filter to: {}", expanded);
+        Ok(expanded)
     }
 
     fn grouped_fn(args: Option<String>, name: &String) -> Result<(String, Vec<DataLevel>)> {

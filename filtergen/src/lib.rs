@@ -168,6 +168,8 @@ pub fn retina_main(_args: TokenStream, input: TokenStream) -> TokenStream {
         use retina_core::conntrack::{TrackedActions, ConnInfo};
         use retina_core::protocols::stream::ParserRegistry;
         use retina_core::StateTransition;
+        use retina_core::subscription::Tracked;
+        use retina_datatypes::FromSession;
 
         #lazy_statics
 
