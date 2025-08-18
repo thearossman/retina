@@ -1,7 +1,7 @@
 use retina_core::config::load_config;
 use retina_core::{CoreId, FiveTuple, Runtime};
 use retina_datatypes::*;
-use retina_filtergen::{filter, retina_main};
+use retina_filtergen::{callback, input_files, retina_main};
 
 use std::fs::File;
 use std::io::{BufRead, BufReader, BufWriter, Write};
@@ -89,7 +89,7 @@ struct QuicData {
     pub sni: String,
 }
 
-#[filter("dns and ((tcp and tcp.port != 53) or (udp and udp.port != 53))")]
+#[callback("dns and ((tcp and tcp.port != 53) or (udp and udp.port != 53))")]
 fn dns_cb(dns: &DnsTransaction, five_tuple: &FiveTuple, core_id: &CoreId) {
     let record = ProtoData::Dns(DnsData {
         server_subnet: five_tuple.dst_ip_str(),
@@ -103,7 +103,7 @@ fn dns_cb(dns: &DnsTransaction, five_tuple: &FiveTuple, core_id: &CoreId) {
     }
 }
 
-#[filter("http and tcp and tcp.port != 80 and tcp.port != 8080")]
+#[callback("http and tcp and tcp.port != 80 and tcp.port != 8080")]
 fn http_cb(http: &HttpTransaction, five_tuple: &FiveTuple, core_id: &CoreId) {
     let txn = ProtoData::Http(HttpData {
         server_subnet: five_tuple.dst_subnet_str(),
@@ -117,7 +117,7 @@ fn http_cb(http: &HttpTransaction, five_tuple: &FiveTuple, core_id: &CoreId) {
     }
 }
 
-#[filter("tls and tcp and tcp.port != 443")]
+#[callback("tls and tcp and tcp.port != 443")]
 fn tls_cb(tls: &TlsHandshake, five_tuple: &FiveTuple, core_id: &CoreId) {
     let hndshk = ProtoData::Tls(TlsData {
         server_subnet: five_tuple.dst_subnet_str(),
@@ -130,7 +130,7 @@ fn tls_cb(tls: &TlsHandshake, five_tuple: &FiveTuple, core_id: &CoreId) {
     }
 }
 
-#[filter("quic and udp.port != 443")]
+#[callback("quic and udp.port != 443")]
 fn quic_cb(quic: &QuicStream, five_tuple: &FiveTuple, core_id: &CoreId) {
     let data = ProtoData::Quic(QuicData {
         server_subnet: five_tuple.dst_subnet_str(),
@@ -163,7 +163,8 @@ fn combine_results(outfile: &PathBuf) {
     file.write_all(results.as_bytes()).unwrap();
 }
 
-#[retina_main(4)]
+#[input_files("$RETINA_HOME/datatypes/data.txt")]
+#[retina_main]
 fn main() {
     init();
     let args = Args::parse();

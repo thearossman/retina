@@ -534,7 +534,7 @@ impl InputKeys {
                 );
                 ret.first = Some(v);
             } else if k.contains("level") {
-                for l in v.split("|") {
+                for l in v.split("&") {
                     ret.levels
                         .push(DataLevel::from_str(l.trim()).expect("`level` key without values"));
                 }
@@ -549,12 +549,19 @@ impl InputKeys {
                 );
                 ret.first = Some(v);
             } else if k.contains("parsers") {
-                assert!(
-                    IMPLEMENTED_PROTOCOLS.contains(&v.as_str()),
-                    "{} parsing is not supported",
-                    v
-                );
-                ret.parsers.push(v);
+                let v = v
+                    .split("&")
+                    .map(|s| {
+                        let s = s.trim();
+                        assert!(
+                            IMPLEMENTED_PROTOCOLS.contains(&s),
+                            "{} parsing is not supported",
+                            s
+                        );
+                        s.to_string()
+                    })
+                    .collect::<Vec<_>>();
+                ret.parsers.extend(v.iter().map(|s| s.trim().to_string()));
             } else {
                 bail!(ParserError::InvalidKey(k));
             }

@@ -34,6 +34,11 @@ lazy_static! {
             expl_parsers: vec![], // Must be provided by application
         }),
         ParsedInput::Datatype(DatatypeSpec {
+            name: "SessionProto".into(),
+            level: Some(DataLevel::L7OnDisc),
+            expl_parsers: vec![], // Must be provided by application
+        }),
+        ParsedInput::Datatype(DatatypeSpec {
             name: "CoreId".into(),
             level: Some(DataLevel::Packet),
             expl_parsers: vec![],
@@ -541,7 +546,7 @@ impl SubscriptionDecoder {
             .iter()
             .any(|inp| inp.levels().iter().any(|l| l.is_streaming()));
         // Only one function and it's not streaming
-        if inps.len() == 1 && !is_streaming {
+        if inps.len() == 1 && inps[0].levels().len() == 1 && !is_streaming {
             return None;
         }
         // Multiple parsed inputs, but one is a group definition

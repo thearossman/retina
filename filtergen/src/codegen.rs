@@ -316,6 +316,7 @@ pub(crate) fn builtin_to_tokens(name: &String) -> proc_macro2::TokenStream {
         "FilterStr" => unimplemented!(),
         "StateTxData" => quote! { &tx },
         "Session" => quote! { conn.layers[0].last_session() },
+        "SessionProto" => quote! { &conn.layers[0].last_protocol() },
         "CoreId" => quote! { &conn.tracked.core_id },
         _ => panic!("Unknown builtin datatype: {}", name),
     }
