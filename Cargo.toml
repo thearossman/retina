@@ -6,10 +6,9 @@ members = [
     # "examples/websites-prometheus",
     # "examples/port_count",
     # # Exclude from compilation; many subscriptions takes a long time to compile
-    # # "examples/filter_stats",
+    "examples/filter_stats",
     # "examples/protocols",
-    # "examples/basic_file",
-    # "examples/log_ssh",
+    "examples/log_ssh",
     # "examples/streaming",
     "examples/basic",
     "tests/functionality/basic_test",

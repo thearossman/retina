@@ -61,6 +61,9 @@ impl PNode {
     // Helper for `get_descendant`, which must be invoked in an `if` block
     // due to borrow checker
     fn has_descendant(&self, pred: &Predicate, state: &Option<Predicate>) -> bool {
+        if &self.pred == pred {
+            return true;
+        }
         for n in &self.children {
             if n.pred.is_state() && Some(&n.pred) != state.as_ref() {
                 return false;
@@ -77,6 +80,9 @@ impl PNode {
 
     // See above
     fn get_descendant(&mut self, pred: &Predicate) -> Option<&mut PNode> {
+        if &self.pred == pred {
+            return Some(self);
+        }
         for n in &mut self.children {
             // found exact match
             if &n.pred == pred {
@@ -375,6 +381,17 @@ impl PTree {
             "Empty filter pattern must have default predicate."
         );
         log::trace!("{}: Adding subscription with id: {}", self.filter_layer, id);
+        if patterns.is_empty() {
+            self.add_pattern(
+                &FlatPattern {
+                    predicates: vec![Predicate::default_pred()],
+                },
+                callbacks,
+                id,
+            );
+            return;
+        }
+
         let ext_patterns = self.split_custom(patterns);
         for pattern in patterns.iter().chain(ext_patterns.iter()) {
             self.add_pattern(pattern, callbacks, id);

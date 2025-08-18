@@ -57,7 +57,10 @@ impl FlatPattern {
     // Returns a vector of fully qualified patterns from self
     // TODO can rethink ordering here
     pub(super) fn to_fully_qualified(&self) -> Result<Vec<LayeredPattern>> {
-        if self.is_empty() {
+        if self.is_empty()
+            || (self.predicates.len() == 1
+                && self.predicates[0].get_protocol() == &protocol!("ethernet"))
+        {
             return Ok(Vec::new());
         }
 

@@ -24,9 +24,6 @@ pub trait Tracked {
     /// Utility method to clear internal data.
     /// Recommended to implement for memory-intensive datatypes.
     fn clear(&mut self);
-    /// The stream protocols (lower-case) required for this datatype.
-    /// See `IMPLEMENTED_PROTOCOLS` in retina_core for list of supported protocols.
-    fn stream_protocols() -> Vec<&'static str>;
 }
 
 /// The string literal representing a matched filter.

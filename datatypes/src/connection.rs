@@ -250,10 +250,6 @@ impl Tracked for ConnRecord {
     }
 
     fn phase_tx(&mut self, _: &StateTxData) {}
-
-    fn stream_protocols() -> Vec<&'static str> {
-        vec![]
-    }
 }
 
 /// Default value for maximum chunk capacity.

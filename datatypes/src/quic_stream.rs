@@ -1,30 +1,23 @@
 //! A Quic stream.
 //! Subscribable alias for [`retina_core::protocols::stream::quic::QuicConn`]
 
+use crate::FromSession;
 use retina_core::protocols::stream::quic::QuicConn;
 use retina_core::protocols::stream::{Session, SessionData};
+#[allow(unused_imports)]
+use retina_filtergen::{datatype, datatype_group};
 
-use super::{FromSession, SessionList};
-
+#[cfg_attr(not(feature = "skip_expand"), datatype("L7EndHdrs,parsers=quic"))]
 pub type QuicStream = Box<QuicConn>;
 
 impl FromSession for QuicStream {
-    fn stream_protocols() -> Vec<&'static str> {
-        vec!["quic"]
-    }
-
+    #[cfg_attr(
+        not(feature = "skip_expand"),
+        datatype_group("QuicStream,level=L7EndHdrs")
+    )]
     fn from_session(session: &Session) -> Option<&Self> {
         if let SessionData::Quic(quic) = &session.data {
             return Some(quic);
-        }
-        None
-    }
-
-    fn from_sessionlist(session_list: &SessionList) -> Option<&Self> {
-        for session in session_list {
-            if let SessionData::Quic(quic) = &session.data {
-                return Some(quic);
-            }
         }
         None
     }

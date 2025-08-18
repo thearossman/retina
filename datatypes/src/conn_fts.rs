@@ -65,10 +65,6 @@ impl Tracked for ConnDuration {
 
     #[inline]
     fn phase_tx(&mut self, _: &StateTxData) {}
-
-    fn stream_protocols() -> Vec<&'static str> {
-        vec![]
-    }
 }
 
 /// The number of packets observed in a connection
@@ -103,10 +99,6 @@ impl Tracked for PktCount {
 
     #[inline]
     fn phase_tx(&mut self, _: &StateTxData) {}
-
-    fn stream_protocols() -> Vec<&'static str> {
-        vec![]
-    }
 }
 
 /// The number of bytes, including headers, observed in a connection
@@ -141,10 +133,6 @@ impl Tracked for ByteCount {
 
     #[inline]
     fn phase_tx(&mut self, _: &StateTxData) {}
-
-    fn stream_protocols() -> Vec<&'static str> {
-        vec![]
-    }
 }
 
 /// Tracked data for packet inter-arrival times
@@ -209,10 +197,6 @@ impl Tracked for InterArrivals {
 
     #[inline]
     fn phase_tx(&mut self, _: &StateTxData) {}
-
-    fn stream_protocols() -> Vec<&'static str> {
-        vec![]
-    }
 }
 
 struct DurationVec<'a>(&'a Vec<Duration>);
@@ -289,8 +273,4 @@ impl Tracked for ConnHistory {
 
     #[inline]
     fn phase_tx(&mut self, _: &StateTxData) {}
-
-    fn stream_protocols() -> Vec<&'static str> {
-        vec![]
-    }
 }

@@ -1,30 +1,23 @@
 //! An Http transaction.
 //! Subscribable alias for [`retina_core::protocols::stream::http::Http`]
 
+use crate::FromSession;
 use retina_core::protocols::stream::http::Http;
 use retina_core::protocols::stream::{Session, SessionData};
+#[allow(unused_imports)]
+use retina_filtergen::{datatype, datatype_group};
 
-use super::{FromSession, SessionList};
-
+#[cfg_attr(not(feature = "skip_expand"), datatype("L7EndHdrs,parsers=http"))]
 pub type HttpTransaction = Box<Http>;
 
 impl FromSession for HttpTransaction {
-    fn stream_protocols() -> Vec<&'static str> {
-        vec!["http"]
-    }
-
+    #[cfg_attr(
+        not(feature = "skip_expand"),
+        datatype_group("HttpTransaction,level=L7EndHdrs")
+    )]
     fn from_session(session: &Session) -> Option<&Self> {
         if let SessionData::Http(http) = &session.data {
             return Some(http);
-        }
-        None
-    }
-
-    fn from_sessionlist(session_list: &SessionList) -> Option<&Self> {
-        for session in session_list {
-            if let SessionData::Http(http) = &session.data {
-                return Some(http);
-            }
         }
         None
     }

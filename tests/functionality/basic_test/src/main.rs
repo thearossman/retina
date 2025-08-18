@@ -59,7 +59,7 @@ fn tls_cb(tls: &TlsHandshake, bytecount: &ByteCount, five_tuple: &FiveTuple) {
     }
 }
 
-#[input_files("$RETINA_HOME/datatypes/data.jsonl")]
+#[input_files("$RETINA_HOME/datatypes/data.txt")]
 #[retina_main]
 fn main() {
     env_logger::init();

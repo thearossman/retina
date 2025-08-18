@@ -1,6 +1,6 @@
 use retina_core::{config::load_config, Runtime};
 use retina_datatypes::SshHandshake;
-use retina_filtergen::{filter, retina_main};
+use retina_filtergen::{callback, input_files, retina_main};
 
 use clap::Parser;
 use lazy_static::lazy_static;
@@ -28,7 +28,7 @@ struct Args {
     outfile: PathBuf,
 }
 
-#[filter("ssh.protocol_version_ctos = |32 2E 30|")]
+#[callback("ssh.protocol_version_ctos = |32 2E 30|")]
 fn ssh_byte_match_cb(ssh: &SshHandshake) {
     if let Ok(serialized) = serde_json::to_string(&ssh) {
         let mut wtr = file.lock().unwrap();
@@ -37,7 +37,7 @@ fn ssh_byte_match_cb(ssh: &SshHandshake) {
     }
 }
 
-#[filter("ssh.key_exchange_cookie_stoc contains |15 1A|")]
+#[callback("ssh.key_exchange_cookie_stoc contains |15 1A|")]
 fn ssh_contains_bytes_cb(ssh: &SshHandshake) {
     if let Ok(serialized) = serde_json::to_string(&ssh) {
         let mut wtr = file.lock().unwrap();
@@ -46,7 +46,7 @@ fn ssh_contains_bytes_cb(ssh: &SshHandshake) {
     }
 }
 
-#[filter("ssh.software_version_ctos not contains 'OpenSSH'")]
+#[callback("ssh.software_version_ctos not contains 'OpenSSH'")]
 fn ssh_contains_str_cb(ssh: &SshHandshake) {
     if let Ok(serialized) = serde_json::to_string(&ssh) {
         let mut wtr = file.lock().unwrap();
@@ -55,7 +55,7 @@ fn ssh_contains_str_cb(ssh: &SshHandshake) {
     }
 }
 
-#[filter("ssh.key_exchange_cookie_stoc ~b '(?-u)^\x15\x1A.+\x78$'")]
+#[callback("ssh.key_exchange_cookie_stoc ~b '(?-u)^\x15\x1A.+\x78$'")]
 fn ssh_byte_regex_byte_cb(ssh: &SshHandshake) {
     if let Ok(serialized) = serde_json::to_string(&ssh) {
         let mut wtr = file.lock().unwrap();
@@ -64,7 +64,8 @@ fn ssh_byte_regex_byte_cb(ssh: &SshHandshake) {
     }
 }
 
-#[retina_main(4)]
+#[input_files("$RETINA_HOME/datatypes/data.txt")]
+#[retina_main]
 fn main() {
     let args = Args::parse();
     let config = load_config(&args.config);

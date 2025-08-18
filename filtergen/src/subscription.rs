@@ -58,7 +58,7 @@ impl SubscriptionSpec {
         }
     }
 
-    fn get_parsers(&self) -> HashSet<String> {
+    fn get_filter_parsers(&self) -> HashSet<String> {
         let mut ret = HashSet::new();
         for pat in self.patterns.as_ref().unwrap() {
             for pred in &pat.predicates {
@@ -144,9 +144,10 @@ impl SubscriptionDecoder {
         ret.decode_filters();
         ret.decode_subscriptions();
         ret.prune_filters_and_datatypes();
+        ret.add_parsers();
         for spec in &mut ret.subscriptions {
             spec.add_patterns(&ret.custom_preds);
-            ret.parsers.extend(spec.get_parsers());
+            ret.parsers.extend(spec.get_filter_parsers());
             spec.add_invoke_once();
         }
         ret.decode_updates();
@@ -211,11 +212,6 @@ impl SubscriptionDecoder {
                 updates: inp.iter().cloned().flat_map(|l| l.levels()).collect(),
             };
             self.datatypes.insert(dt.clone(), spec);
-            self.parsers.extend(
-                inp.iter()
-                    .flat_map(|i| i.expl_parsers())
-                    .filter(|p| !p.is_empty()),
-            );
         }
     }
 
@@ -269,11 +265,6 @@ impl SubscriptionDecoder {
                 levels,
                 matched: true,
             });
-            self.parsers.extend(
-                v.iter()
-                    .flat_map(|i| i.expl_parsers())
-                    .filter(|p| !p.is_empty()),
-            );
         }
     }
 
@@ -325,11 +316,6 @@ impl SubscriptionDecoder {
                 as_str: cb_name.clone(),
                 patterns: None,
             });
-            self.parsers.extend(
-                v.iter()
-                    .flat_map(|i| i.expl_parsers())
-                    .filter(|p| !p.is_empty()),
-            );
         }
     }
 
@@ -439,6 +425,30 @@ impl SubscriptionDecoder {
             .retain(|name, _| req_datatypes.contains(name));
     }
 
+    fn add_parsers(&mut self) {
+        for (_, v) in &self.filters_raw {
+            self.parsers.extend(
+                v.iter()
+                    .flat_map(|i| i.expl_parsers())
+                    .filter(|p| !p.is_empty()),
+            );
+        }
+        for (_, v) in &self.datatypes_raw {
+            self.parsers.extend(
+                v.iter()
+                    .flat_map(|i| i.expl_parsers())
+                    .filter(|p| !p.is_empty()),
+            );
+        }
+        for (_, v) in &self.cbs_raw {
+            self.parsers.extend(
+                v.iter()
+                    .flat_map(|i| i.expl_parsers())
+                    .filter(|p| !p.is_empty()),
+            );
+        }
+    }
+
     fn decode_updates(&mut self) {
         let mut updates = HashMap::new();
         for (_, v) in &self.filters_raw {
@@ -474,33 +484,22 @@ impl SubscriptionDecoder {
                     });
                 }
 
-                // Datatypes that are not builtin but need t
+                // Datatypes that are not builtin but need
                 // to be cached for future delivery
-                // TODO - may be other cases to cover
+                // TODO - change this to be datatypes that are ready before
+                // callbacks and shouldn't be constructed in-place.
+                // TODO - change to only do this if the subscription can't
+                // be delivered at L4FirstPacket
                 let static_dts = cb
                     .datatypes
                     .iter()
-                    .filter(|dt| {
-                        dt.updates.len() == 1 &&
-                    // TODO - other cases where a custom DT is ready before CB
-                    // but aren't covered here?
-                    dt.updates[0] == DataLevel::L4FirstPacket
-                    })
+                    .filter(|dt| dt.updates.len() == 1 && dt.updates[0] == DataLevel::L4FirstPacket)
                     .collect::<Vec<_>>();
-                if static_dts.len() > 0 {
-                    for pat in spec.patterns.as_ref().unwrap() {
-                        let sub_level =
-                            SubscriptionLevel::new(&cb.datatypes, pat, cb.expl_level.clone());
-                        if !sub_level.can_deliver(&DataLevel::L4FirstPacket) {
-                            for dt in static_dts {
-                                self.tracked.insert(TrackedType {
-                                    name: dt.name.clone(),
-                                    kind: TrackedKind::StaticData,
-                                });
-                            }
-                            break;
-                        }
-                    }
+                for dt in static_dts {
+                    self.tracked.insert(TrackedType {
+                        name: dt.name.clone(),
+                        kind: TrackedKind::StaticData,
+                    });
                 }
             }
         }

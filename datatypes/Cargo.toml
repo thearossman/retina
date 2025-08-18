@@ -16,5 +16,8 @@ pnet = "0.33.0"
 retina-filtergen = { path = "../filtergen" }
 
 [features]
-skip_expand = [] # skip applying the datatype code generation macros
+# skip applying the datatype code generation macros, which
+# cache results in the output file
+# turn off if anything in the crate changes
+skip_expand = []
 default = ["skip_expand"]

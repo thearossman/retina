@@ -14,37 +14,44 @@
 //!
 
 use retina_core::{protocols::Session, L4Pdu, Mbuf};
-pub mod conn_fts;
-pub mod tls_handshake;
 #[allow(unused_imports)]
 use retina_filtergen::cache_file;
-pub use tls_handshake::TlsHandshake;
-pub mod static_type;
-pub use static_type::*;
-// pub mod typedefs;
-// pub use conn_fts::*;
+
+pub mod conn_fts;
+pub use conn_fts::*;
+
 pub mod connection;
 pub use connection::ConnRecord;
-// pub mod http_transaction;
-// pub use http_transaction::HttpTransaction;
-// pub mod dns_transaction;
-// pub use dns_transaction::DnsTransaction;
-// pub mod quic_stream;
-// pub use quic_stream::QuicStream;
-// pub mod ssh_handshake;
-// pub use ssh_handshake::SshHandshake;
+
+pub mod dns_transaction;
+pub use dns_transaction::DnsTransaction;
+
+pub mod http_transaction;
+pub use http_transaction::HttpTransaction;
+
+pub mod packet_list;
+pub use packet_list::*;
+
 pub mod packet;
 pub use packet::{Payload, ZcFrame};
-// pub mod packet_list;
-// pub use packet_list::*;
-// pub use typedefs::*;
-// pub mod streaming;
+
+pub mod quic_stream;
+pub use quic_stream::QuicStream;
+
+pub mod ssh_handshake;
+pub use ssh_handshake::SshHandshake;
+
+pub mod static_type;
+pub use static_type::*;
+
+pub mod tls_handshake;
+pub use tls_handshake::TlsHandshake;
 
 /// No-op function to invoke macro
 /// TODO can we do this more cleanly?
 #[cfg_attr(
     not(feature = "skip_expand"),
-    cache_file("$RETINA_HOME/datatypes/data.jsonl")
+    cache_file("$RETINA_HOME/datatypes/data.txt")
 )]
 fn _cache_file() {}
 

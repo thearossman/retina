@@ -501,7 +501,7 @@ impl InputKeys {
                 let pair = pair.trim();
                 // Allow first value to not have an associated key
                 // Note that `file=` can be used in filters
-                if i == 0 && (!pair.contains('=') || pair.contains("file=")) {
+                if i == 0 && !Self::contains_valid_keys(pair) {
                     ("".to_string(), pair.to_string())
                 } else {
                     let mut parts = pair.splitn(2, '=');
@@ -578,6 +578,16 @@ impl InputKeys {
         }
 
         Ok(ret)
+    }
+
+    fn contains_valid_keys(filter: &str) -> bool {
+        filter.contains("filter=")
+            || filter.contains("group=")
+            || filter.contains("level=")
+            || filter.contains("reassembled=")
+            || filter.contains("name=")
+            || filter.contains("parsers=")
+            || filter.contains("file=")
     }
 
     fn parse_filters_from_file(filter: &String) -> Result<String> {

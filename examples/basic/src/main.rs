@@ -3,7 +3,7 @@ use retina_core::subscription::{FilterResult, StreamingCallback, StreamingFilter
 use retina_core::StateTxData;
 use retina_core::{config::load_config, L4Pdu, Runtime};
 use retina_datatypes::{ConnRecord, TlsHandshake};
-use retina_filtergen::*;
+use retina_filtergen::{callback, retina_main};
 use std::path::PathBuf;
 
 #[derive(Parser, Debug)]
@@ -98,7 +98,7 @@ fn tls_cb_streaming(tls: &TlsHandshake, record: &ConnRecord) -> bool {
     record.orig.nb_pkts < 100
 }
 
-#[input_files("$RETINA_HOME/datatypes/data.jsonl")]
+#[input_files("$RETINA_HOME/datatypes/data.txt")]
 #[retina_main]
 fn main() {
     env_logger::init();

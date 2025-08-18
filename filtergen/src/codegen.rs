@@ -227,20 +227,20 @@ pub(crate) fn params_to_tokens(
             .expect(&format!("Cannot find {} in known datatypes", dt));
         let dt_name_ident = Ident::new(&dt.to_lowercase(), Span::call_site());
 
-        // Case 1: extract directly from tracked data
+        // Extract directly from tracked data
         if sub.tracked.iter().any(|tracked| &tracked.name == dt) {
             params.push(quote! { &conn.tracked.#dt_name_ident });
             continue;
         }
 
-        // Case 2: Built-in datatype
+        // Built-in datatype
         if BUILTIN_TYPES.iter().any(|inp| inp.name() == dt) {
             let builtin = builtin_to_tokens(&dt);
             params.push(quote! { #builtin });
             continue;
         }
 
-        // Case 3: datatype constructed in-place
+        // Datatype constructed in-place
         let constructor = dt_metadata.iter().find(|inp| match inp {
             ParsedInput::DatatypeFn(spec) => {
                 matches!(spec.func.returns, FnReturn::Constructor(_))
@@ -460,14 +460,18 @@ fn tracked_to_type_tokens(tracked: &TrackedType) -> proc_macro2::TokenStream {
 
 pub(crate) fn parsers_to_tokens(sub: &SubscriptionDecoder) -> proc_macro2::TokenStream {
     let mut parsers = vec![];
+    println!(
+        "Parsers: {}",
+        sub.parsers.iter().cloned().collect::<Vec<_>>().join(", ")
+    );
     for parser in &sub.parsers {
-        let name = LitStr::new(parser, Span::call_site());
+        let name = LitStr::new(parser.trim(), Span::call_site());
         parsers.push(quote! {
             #name
         });
     }
     quote! {
-        vec![#( #parsers )*]
+        Vec::from([#( #parsers ),*])
     }
 }
 
@@ -731,14 +735,16 @@ pub(crate) fn binary_to_tokens(
             }
             BinOp::Contains => {
                 let val_lit = syn::LitStr::new(text, Span::call_site());
-                let finder_ident = static_ident_memchr(statics, text, quote! { #val_lit });
+                let finder_ident =
+                    static_ident_memchr(statics, text, quote! { #val_lit.as_bytes() });
                 quote! {
                     #finder_ident.find(#proto.#field().as_bytes()).is_some()
                 }
             }
             BinOp::NotContains => {
                 let val_lit = syn::LitStr::new(text, Span::call_site());
-                let finder_ident = static_ident_memchr(statics, text, quote! { #val_lit });
+                let finder_ident =
+                    static_ident_memchr(statics, text, quote! { #val_lit.as_bytes() });
                 quote! {
                     #finder_ident.find(#proto.#field().as_bytes()).is_none()
                 }
@@ -761,8 +767,7 @@ pub(crate) fn binary_to_tokens(
             BinOp::Contains => {
                 let bytes_lit = syn::LitByteStr::new(b, Span::call_site());
                 let debug = b.iter().map(|b| format!("{:02x}", b)).collect::<String>();
-                let finder_ident =
-                    static_ident_memchr(statics, &debug, quote! { #bytes_lit.as_bytes() });
+                let finder_ident = static_ident_memchr(statics, &debug, quote! { #bytes_lit });
                 quote! {
                     #finder_ident.find(#proto.#field().as_ref()).is_some()
                 }
@@ -770,8 +775,7 @@ pub(crate) fn binary_to_tokens(
             BinOp::NotContains => {
                 let bytes_lit = syn::LitByteStr::new(b, Span::call_site());
                 let debug = b.iter().map(|b| format!("{:02x}", b)).collect::<String>();
-                let finder_ident =
-                    static_ident_memchr(statics, &debug, quote! { #bytes_lit.as_bytes() });
+                let finder_ident = static_ident_memchr(statics, &debug, quote! { #bytes_lit });
                 quote! {
                     #finder_ident.find(#proto.#field().as_ref()).is_none()
                 }

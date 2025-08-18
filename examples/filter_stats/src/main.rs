@@ -1,9 +1,11 @@
 use array_init::array_init;
 use retina_core::config::load_config;
+use retina_core::FiveTuple;
 use retina_core::{CoreId, Runtime};
-use retina_datatypes::*;
-use retina_filtergen::subscription;
+use retina_filtergen::{callback, input_files, retina_main};
 use std::sync::atomic::{AtomicPtr, Ordering};
+
+use retina_datatypes::*;
 
 use clap::Parser;
 use lazy_static::lazy_static;
@@ -61,33 +63,44 @@ fn write_result(key: &str, value: String, core_id: &CoreId) {
     wtr.write_all(with_proto.as_bytes()).unwrap();
 }
 
-fn dns_cb(dns: &DnsTransaction, core_id: &CoreId, filter_str: &FilterStr) {
+#[callback("dns")]
+fn dns_cb(dns: &DnsTransaction, core_id: &CoreId) {
     let query_domain = (*dns).query_domain().to_string();
-    write_result(*filter_str, query_domain, core_id);
+    write_result("dns", query_domain, core_id);
 }
 
-fn http_cb(http: &HttpTransaction, core_id: &CoreId, filter_str: &FilterStr) {
+#[callback("http")]
+fn http_cb(http: &HttpTransaction, core_id: &CoreId) {
     let uri = (*http).uri().to_string();
-    write_result(*filter_str, uri, core_id);
+    write_result("http", uri, core_id);
 }
 
-fn tls_cb(tls: &TlsHandshake, core_id: &CoreId, filter_str: &FilterStr) {
+#[callback("tls")]
+fn tls_cb(tls: &TlsHandshake, core_id: &CoreId) {
     let sni = (*tls).sni().to_string();
-    write_result(*filter_str, sni, core_id);
+    write_result("tls", sni, core_id);
 }
 
 #[allow(dead_code)]
-fn quic_cb(quic: &QuicStream, core_id: &CoreId, filter_str: &FilterStr) {
+#[callback("quic")]
+fn quic_cb(quic: &QuicStream, core_id: &CoreId) {
     let sni = (*quic).tls.sni().to_string();
-    write_result(*filter_str, sni, core_id);
+    write_result("quic", sni, core_id);
 }
 
-fn packet_cb(_frame: &ZcFrame, core_id: &CoreId, filter_str: &FilterStr) {
-    write_result(*filter_str, String::from(""), core_id);
+// TODO when packets are supported //
+#[allow(dead_code)]
+fn packet_cb(_frame: &ZcFrame, core_id: &CoreId) {
+    write_result("packet", String::from(""), core_id);
 }
 
-fn conn_cb(core_id: &CoreId, filter_str: &FilterStr) {
-    write_result(*filter_str, String::from(""), core_id);
+#[callback(",level=L4FirstPacket")]
+fn conn_cb(five_tuple: &FiveTuple, core_id: &CoreId) {
+    write_result(
+        "conn",
+        format!("{}, {}", five_tuple.orig.port(), five_tuple.resp.port()),
+        core_id,
+    );
 }
 
 fn combine_results(outfile: &PathBuf) {
@@ -103,7 +116,8 @@ fn combine_results(outfile: &PathBuf) {
     file.write_all(&results).unwrap();
 }
 
-#[subscription("./examples/filter_stats/spec.toml")]
+#[input_files("$RETINA_HOME/datatypes/data.txt")]
+#[retina_main]
 fn main() {
     init();
     let args = Args::parse();
