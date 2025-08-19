@@ -2,7 +2,6 @@ use core::fmt;
 use std::cmp::{Ordering, PartialOrd};
 use std::collections::HashSet;
 
-use crate::conntrack::conn::conn_state::StateTxOrd;
 use crate::conntrack::{DataLevel, StateTransition};
 use crate::filter::subscription::DataActions;
 
@@ -426,19 +425,19 @@ impl PTree {
             pattern_tmp = pattern.with_l7_state();
             pattern = &pattern_tmp;
         }
-        // Extend with callback predicates if streaming
+        // Extend with callback predicates if this callback will be stateful
+        // (multiple functions or streaming).
         // If a subscription previously had the opportunity to unsubscribe,
         // we need to check if it did
-        if callbacks.iter().any(|c| match c.expl_level {
-            Some(l) => {
-                l.is_streaming()
-                    && matches!(
-                        l.compare(&self.filter_layer),
-                        StateTxOrd::Unknown | StateTxOrd::Less
-                    )
-            }
-            None => false,
-        }) {
+        if !matches!(
+            self.filter_layer,
+            StateTransition::L4FirstPacket | StateTransition::L4Terminated
+        ) && (callbacks.len() > 1
+            || callbacks.iter().any(|c| match c.expl_level {
+                Some(l) => l.is_streaming(),
+                None => false,
+            }))
+        {
             pattern_tmp = pattern.with_streaming_cb(cb_id);
             pattern = &pattern_tmp;
         }
@@ -792,7 +791,10 @@ impl PTree {
                 // Look for unary predicate (e.g., `ipv4`) and child with
                 // binary predicate of same protocol (e.g., `ipv4.addr = ...`)
                 let child = &mut node.children[0];
-                if child.extracts_protocol(filter_layer) || child.pred.is_state() {
+                if child.extracts_protocol(filter_layer)
+                    || child.pred.is_state()
+                    || child.pred.is_callback()
+                {
                     break;
                 }
                 node.actions.merge(&child.actions);
@@ -1204,5 +1206,36 @@ mod tests {
             .transport
             .needs_update());
         // println!("{}", tree);
+    }
+
+    lazy_static! {
+        static ref FIRST_PKT: DataLevelSpec = DataLevelSpec {
+            updates: vec![DataLevel::L4FirstPacket],
+            name: "FirstPacket".into(),
+        };
+        static ref SESSION_PROTO: DataLevelSpec = DataLevelSpec {
+            updates: vec![DataLevel::L7OnDisc],
+            name: "SessionProto".into(),
+        };
+        static ref SESSION_SUB: Vec<CallbackSpec> = vec![CallbackSpec {
+            expl_level: Some(DataLevel::L4InPayload(false)),
+            datatypes: vec![FIRST_PKT.clone(), SESSION_PROTO.clone()],
+            must_deliver: false,
+            invoke_once: false,
+            as_str: "callback".into(),
+            subscription_id: "callback".into(),
+            tracked_data: vec![],
+        }];
+    }
+
+    #[test]
+    fn test_ptree_proto_stream() {
+        let filter = Filter::new("tcp", &CUSTOM_FILTERS_GROUPED_TERM).unwrap();
+        let patterns = filter.get_patterns_flat();
+        let mut tree = PTree::new_empty(DataLevel::L4InPayload(false));
+        tree.add_subscription(&patterns, &SESSION_SUB, &SESSION_SUB[0].as_str);
+        tree.collapse();
+        // MISSING THE CALLBACK PREDICATE
+        println!("{}", tree);
     }
 }
