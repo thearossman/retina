@@ -462,7 +462,7 @@ fn tracked_to_type_tokens(tracked: &TrackedType) -> proc_macro2::TokenStream {
 pub(crate) fn parsers_to_tokens(sub: &SubscriptionDecoder) -> proc_macro2::TokenStream {
     let mut parsers = vec![];
     println!(
-        "Parsers: {}",
+        "Parsers: {}\n",
         sub.parsers.iter().cloned().collect::<Vec<_>>().join(", ")
     );
     for parser in &sub.parsers {

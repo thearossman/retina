@@ -3,7 +3,7 @@ use retina_core::subscription::{FilterResult, StreamingCallback, StreamingFilter
 use retina_core::StateTxData;
 use retina_core::{config::load_config, L4Pdu, Runtime};
 use retina_datatypes::{ConnRecord, TlsHandshake};
-use retina_filtergen::{callback, retina_main};
+use retina_filtergen::*;
 use std::path::PathBuf;
 
 #[derive(Parser, Debug)]

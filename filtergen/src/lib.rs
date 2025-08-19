@@ -128,7 +128,7 @@ pub fn input_files(args: TokenStream, input: TokenStream) -> TokenStream {
 pub fn retina_main(_args: TokenStream, input: TokenStream) -> TokenStream {
     env_logger::init();
     // TODO - backup option that lets you specify num expected invocations?
-    println!("Done with macros - beginning code generation");
+    println!("Done with macros - beginning code generation\n");
 
     // TODO - allow this to be any input
     let input = parse_macro_input!(input as syn::ItemFn);

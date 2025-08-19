@@ -594,7 +594,6 @@ impl InputKeys {
             || filter.contains("reassembled=")
             || filter.contains("name=")
             || filter.contains("parsers=")
-            || filter.contains("file=")
     }
 
     fn parse_filters_from_file(filter: &String) -> Result<String> {
