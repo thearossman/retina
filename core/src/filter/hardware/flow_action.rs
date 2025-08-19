@@ -89,4 +89,25 @@ impl FlowAction {
         a_drop.type_ = dpdk::rte_flow_action_type_RTE_FLOW_ACTION_TYPE_DROP;
         self.rules.push(a_drop);
     }
+
+    // @ALIYA - pseudocode for masked redirects
+    #[allow(dead_code)]
+    pub(super) fn append_masked_redirects(&mut self) {
+        // Option 1 (preferred) would be to figure out how to do an RSS key
+        // and chain that into a jump rule.
+
+        // A simpler approach would be to create multiple jump rules
+        // that match on bits on the IP addresses or ports. We can't directly
+        // use a dynamic key in the jump rule, so we need something static that
+        // will still have some entropy.
+
+        // For example: mask on LS 4 bits of the src port = 4 bits = 16 values
+        // (14 tables (16 - table 0 - table 1) => wrap last two around)
+        // You'll append 16 rules here:
+        // - value: src port, mask: 0x0F, matches: [0x0000, 0x0001, ..., 0x000F]
+        // - action: jump to table [2, 3, ..., 15, 2, 3]
+
+        // Note - this won't be symmetric, so in software to pick a table
+        // we'll need to install each rule on two different tables.
+    }
 }

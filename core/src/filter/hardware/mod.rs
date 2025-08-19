@@ -28,7 +28,13 @@ const LOW_PRIORITY: u32 = 3;
 
 #[derive(Debug)]
 pub(crate) struct HardwareFilter<'a> {
+    // Patterns that will retain traffic, as layered patterns,
+    // with only predicates supported by the NIC retained.
+    // Any traffic not matching a pattern will be dropped
+    // by the NIC.
     patterns: Vec<LayeredPattern>,
+    // Port to install filter on.
+    // We expect each port to install the HW filter at startup.
     port: &'a Port,
 }
 
@@ -82,8 +88,18 @@ impl<'a> HardwareFilter<'a> {
 
         info!("Applying hardware filter rules on Port {}...", self.port.id);
         for pattern in self.patterns.iter() {
+            // Traffic matching installed patterns will be redirected
+            // to a core via RSS.
+
+            // @ALIYA - MODIFY CODE IN INSTALL_PATTERN
+            // --> Goal is to change the result of this pattern to "redirect"
             install_pattern(pattern, self.port, 0, HIGH_PRIORITY)?;
         }
+
+        // @ALIYA - add logic here to install a default (low priority)
+        // RSS rule on each table (except table 1, which we're
+        // using to drop traffic)
+
         // Non-matching traffic will be dropped by default on table 1
         // Redirect is faster than using a default DROP rule
         add_redirect(self.port, 0, 1, LOW_PRIORITY)?;
@@ -254,6 +270,11 @@ fn install_pattern(
         let mut action = FlowAction::new(port.id);
         // action.append_mark(tag as u32);
 
+        // - Helper function: `append_masked_redirects`
+        // --> This stays on table 0 and high priority
+        // - Remove `append_rss` from here.
+        // --> At the end of installing all rules, install
+        //     your RSS rule with LOW_PRIORITY on each table
         action.append_rss();
         action.finish();
 
