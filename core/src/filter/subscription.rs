@@ -565,6 +565,12 @@ impl SubscriptionLevel {
     /// of the predicates (i.e., this may be the first state TX where the "not less than"
     /// bound is true). This must be true for all filter and datatype predicates.
     pub fn can_deliver(&self, curr: &StateTransition) -> bool {
+        // Only deliver callback at explicitly-specified level.
+        // Note that the connection tracker invokes `update` AFTER
+        // parsing and applying state transitions. For example, an `L4InPayload`
+        // update will be invoked after an `L7OnDisc` state transition, if the
+        // same PDU triggers both.
+        // - TODO this could change if we add an `update` before reassembly.
         if let Some(expl_level) = &self.callback {
             return curr == expl_level;
         }

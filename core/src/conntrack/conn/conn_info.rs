@@ -94,9 +94,6 @@ where
         subscription: &Subscription<T::Subscribed>,
         registry: &ParserRegistry,
     ) {
-        // Update tracked data
-        self.new_packet(pdu, subscription);
-
         // Pass to next layer(s) if applicable for parsing
         if self.layers[0].needs_stream() {
             let tx = self.layers[0].process_stream(pdu, registry);
@@ -115,6 +112,12 @@ where
                 }
             }
         }
+
+        // Update tracked data
+        // This should happen after after stream processing so that `update`
+        // functions see the most up-to-date connection data (e.g.,
+        // parsed sessions).
+        self.new_packet(pdu, subscription);
     }
 
     /// Drop the connection, e.g. due to timeout
