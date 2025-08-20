@@ -76,7 +76,7 @@ where
             nb_pkts += 1;
             nb_bytes += mbuf.data_len() as u64;
 
-            S::process_packet(mbuf, &self.subscription, &mut stream_table);
+            // S::process_packet(mbuf, &self.subscription, &mut stream_table);
         }
 
         // // Deliver remaining data in table

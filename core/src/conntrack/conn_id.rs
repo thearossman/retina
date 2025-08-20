@@ -24,6 +24,16 @@ pub struct FiveTuple {
     pub proto: usize,
 }
 
+impl Default for FiveTuple {
+    fn default() -> Self {
+        FiveTuple {
+            orig: SocketAddr::new([0, 0, 0, 0].into(), 0),
+            resp: SocketAddr::new([0, 0, 0, 0].into(), 0),
+            proto: 0,
+        }
+    }
+}
+
 impl FiveTuple {
     /// Creates a new 5-tuple from `ctxt`.
     pub(super) fn from_ctxt(ctxt: L4Context) -> Self {

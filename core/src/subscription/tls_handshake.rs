@@ -50,8 +50,12 @@ impl TlsHandshake {
     }
 }
 
-impl Subscribable for TlsHandshake {
+#[derive(Default)]
+pub struct TlsHandshakeWrapper;
+
+impl Subscribable for TlsHandshakeWrapper {
     type Tracked = TrackedTls;
+    type SubscribedData = TlsHandshake;
 
     fn level() -> Level {
         Level::Session
@@ -59,6 +63,10 @@ impl Subscribable for TlsHandshake {
 
     fn parsers() -> Vec<ConnParser> {
         vec![ConnParser::Tls(TlsParser::default())]
+    }
+
+    fn new_tracked(five_tuple: &FiveTuple) -> Self::Tracked {
+        TrackedTls::new(*five_tuple)
     }
 }
 
@@ -79,7 +87,7 @@ pub struct TrackedTls {
 }
 
 impl Trackable for TrackedTls {
-    type Subscribed = TlsHandshake;
+    type Subscribed = TlsHandshakeWrapper;
 
     fn new(five_tuple: FiveTuple) -> Self {
         TrackedTls { five_tuple }

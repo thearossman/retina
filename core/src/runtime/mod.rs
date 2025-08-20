@@ -57,7 +57,7 @@ where
     pub fn new(
         config: RuntimeConfig,
         factory: fn() -> FilterFactory,
-        cb: impl Fn(S) + 'a,
+        cb: impl Fn(S::SubscribedData) + 'a,
     ) -> Result<Self> {
         let factory = factory();
         let filter =

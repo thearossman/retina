@@ -35,6 +35,8 @@ pub trait WrappedSubscription<'a>: AsAny {
     fn filter_conn(&self, conn: &ConnData) -> FilterResult;
     fn filter_session(&self, session: &Session, idx: usize) -> bool;
     fn invoke_boxed(&self, obj: Box<dyn Any>);
+    fn new_subscribable(&self) -> Box<dyn WrappedSubscribable>;
+    fn new_tracked(&self, five_tuple: &FiveTuple) -> Box<dyn WrappedTrackable>;
 }
 
 impl<S> WrappedSubscribable for S
@@ -86,7 +88,7 @@ where
 
 impl<'a, S> WrappedSubscription<'a> for Subscription<'static, S>
 where
-    S: Subscribable + Any,
+    S: Subscribable + Any + Default,
 {
     fn filter_packet(&self, mbuf: &Mbuf) -> FilterResult {
         self.filter_packet(mbuf)
@@ -98,10 +100,18 @@ where
         self.filter_session(session, idx)
     }
     fn invoke_boxed(&self, obj: Box<dyn Any>) {
-        if let Ok(s) = obj.downcast::<S>() {
-            let s: S = *s;
+        if let Ok(s) = obj.downcast::<S::SubscribedData>() {
+            let s: S::SubscribedData = *s;
             Subscription::<S>::invoke(self, s);
         }
+    }
+
+    fn new_subscribable(&self) -> Box<dyn WrappedSubscribable> {
+        Box::new(S::default())
+    }
+
+    fn new_tracked(&self, five_tuple: &FiveTuple) -> Box<dyn WrappedTrackable> {
+        Box::new(S::Tracked::new(*five_tuple))
     }
 }
 
@@ -154,22 +164,47 @@ pub struct Subscriptions {
 }
 
 impl Subscriptions {
-    fn process_packet(&self, mbuf: &Mbuf, conn_tracker: &mut ConnTracker) {
-        let mut matched = false;
-        let mut pkt_results = Vec::new();
-        for subscription in &self.subscriptions {
-            match subscription.filter_packet(&mbuf) {
-                FilterResult::MatchTerminal(idx) | FilterResult::MatchNonTerminal(idx) => {
-                    matched = true;
-                    pkt_results.push(Some(idx));
-                }
-                _ => pkt_results.push(None),
-            }
+    // fn process_packet(&self, mbuf: &Mbuf, conn_tracker: &mut ConnTracker) {
+    //     let mut matched = false;
+    //     let mut pkt_results = Vec::new();
+    //     for subscription in &self.subscriptions {
+    //         match subscription.filter_packet(&mbuf) {
+    //             FilterResult::MatchTerminal(idx) | FilterResult::MatchNonTerminal(idx) => {
+    //                 matched = true;
+    //                 pkt_results.push(Some(idx));
+    //             }
+    //             _ => pkt_results.push(None),
+    //         }
+    //     }
+    //     if matched {
+    //         if let Ok(ctxt) = L4Context::new(&mbuf, 0) {
+    //             conn_tracker.process(mbuf, ctxt, pkt_results, self);
+    //         }
+    //     }
+    // }
+
+    fn new_subscribable(&self) -> Subscribables {
+        Subscribables {
+            subscribables: self
+                .subscriptions
+                .iter()
+                .map(|s| s.new_subscribable())
+                .collect(),
         }
-        if matched {
-            if let Ok(ctxt) = L4Context::new(&mbuf, 0) {
-                conn_tracker.process(mbuf, ctxt, pkt_results, self);
-            }
+    }
+
+    fn new_tracked(
+        &self,
+        five_tuple: FiveTuple,
+        pkt_filter_results: Vec<Option<usize>>,
+    ) -> TrackedData {
+        TrackedData {
+            tracked: self
+                .subscriptions
+                .iter()
+                .map(|s| s.new_tracked(&five_tuple))
+                .collect(),
+            filter_results: pkt_filter_results,
         }
     }
 }
@@ -209,5 +244,41 @@ impl TrackedData {
         for tracked in &mut self.tracked {
             tracked.on_terminate_wrapped(subscription);
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::protocols::stream::{Session, SessionData};
+    use crate::subscription::tls_handshake::*;
+
+    #[test]
+    fn core_test_wrappers() {
+        let subscriptions = Subscriptions {
+            subscriptions: vec![Box::new(Subscription::<TlsHandshakeWrapper>::new(
+                FilterFactory::default(),
+                |tls: TlsHandshake| {
+                    println!("{:?}", tls);
+                },
+            )) as Box<dyn WrappedSubscription<'static>>],
+        };
+        let mut tracked = subscriptions.new_tracked(FiveTuple::default(), Vec::new());
+        assert_eq!(tracked.tracked.len(), 1);
+        for t in &mut tracked.tracked {
+            t.on_match_wrapped(
+                Session {
+                    data: SessionData::Null,
+                    id: 0,
+                },
+                &*subscriptions.subscriptions[0],
+            );
+        }
+
+        let subscribables = subscriptions.new_subscribable();
+        let level = subscribables.level();
+        let parsers = subscribables.parsers();
+        assert_eq!(level, Level::Session);
+        assert!(matches!(parsers.get(0).unwrap(), ConnParser::Tls(_)));
     }
 }

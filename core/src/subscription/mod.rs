@@ -5,26 +5,26 @@
 //! parameter and immutably borrows values from the environment. Built-in subscribable types can
 //! be customized within the framework to provide additional data to the callback if needed.
 
-pub mod connection;
-pub mod connection_frame;
-pub mod dns_transaction;
-pub mod frame;
-pub mod http_transaction;
-pub mod quic_stream;
+//pub mod connection;
+//pub mod connection_frame;
+//pub mod dns_transaction;
+//pub mod frame;
+//pub mod http_transaction;
+//pub mod quic_stream;
 pub mod tls_handshake;
-pub mod zc_frame;
+//pub mod zc_frame;
 
 pub mod wrappers;
 
 // Re-export subscribable types for more convenient usage.
-pub use self::connection::Connection;
-pub use self::connection_frame::ConnectionFrame;
-pub use self::dns_transaction::DnsTransaction;
-pub use self::frame::Frame;
-pub use self::http_transaction::HttpTransaction;
-pub use self::quic_stream::QuicStream;
+// pub use self::connection::Connection;
+// pub use self::connection_frame::ConnectionFrame;
+// pub use self::dns_transaction::DnsTransaction;
+// pub use self::frame::Frame;
+// pub use self::http_transaction::HttpTransaction;
+// pub use self::quic_stream::QuicStream;
 pub use self::tls_handshake::TlsHandshake;
-pub use self::zc_frame::ZcFrame;
+// pub use self::zc_frame::ZcFrame;
 
 use crate::conntrack::conn_id::FiveTuple;
 use crate::conntrack::pdu::L4Pdu;
@@ -52,12 +52,16 @@ pub enum Level {
 /// Represents a generic subscribable type. All subscribable types must implement this trait.
 pub trait Subscribable {
     type Tracked: Trackable<Subscribed = Self>;
+    type SubscribedData;
 
     /// Returns the subscription level.
     fn level() -> Level;
 
     /// Returns a list of protocol parsers required to parse the subscribable type.
     fn parsers() -> Vec<ConnParser>;
+
+    /// Wrapper for Self::Tracked::new
+    fn new_tracked(five_tuple: &FiveTuple) -> Self::Tracked;
 }
 
 /// Tracks subscribable types throughout the duration of a connection.
@@ -90,7 +94,7 @@ where
     packet_filter: PacketFilterFn,
     conn_filter: ConnFilterFn,
     session_filter: SessionFilterFn,
-    callback: Box<dyn Fn(S) + 'a>,
+    callback: Box<dyn Fn(S::SubscribedData) + 'a>,
     #[cfg(feature = "timing")]
     pub(crate) timers: Timers,
 }
@@ -100,7 +104,7 @@ where
     S: Subscribable,
 {
     /// Creates a new subscription from a filter and a callback.
-    pub(crate) fn new(factory: FilterFactory, cb: impl Fn(S) + 'a) -> Self {
+    pub(crate) fn new(factory: FilterFactory, cb: impl Fn(S::SubscribedData) + 'a) -> Self {
         Subscription {
             packet_filter: factory.packet_filter,
             conn_filter: factory.conn_filter,
@@ -128,7 +132,7 @@ where
     }
 
     /// Invoke the callback on `S`.
-    pub(crate) fn invoke(&self, obj: S) {
+    pub(crate) fn invoke(&self, obj: S::SubscribedData) {
         tsc_start!(t0);
         (self.callback)(obj);
         tsc_record!(self.timers, "callback", t0);

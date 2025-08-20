@@ -35,11 +35,24 @@ pub enum FilterResult {
     NoMatch,
 }
 
+use std::default::Default;
+
 pub struct FilterFactory {
     pub filter_str: String,
     pub packet_filter: PacketFilterFn,
     pub conn_filter: ConnFilterFn,
     pub session_filter: SessionFilterFn,
+}
+
+impl Default for FilterFactory {
+    fn default() -> Self {
+        FilterFactory {
+            filter_str: String::new(),
+            packet_filter: |_: &Mbuf| FilterResult::NoMatch,
+            conn_filter: |_: &ConnData| FilterResult::NoMatch,
+            session_filter: |_: &Session, _: usize| false,
+        }
+    }
 }
 
 impl FilterFactory {
