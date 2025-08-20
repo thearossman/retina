@@ -17,6 +17,8 @@ pub use filter::StreamingFilter;
 pub mod callback;
 pub use callback::StreamingCallback;
 
+pub mod timer;
+
 #[cfg(feature = "timing")]
 use crate::timing::timer::Timers;
 

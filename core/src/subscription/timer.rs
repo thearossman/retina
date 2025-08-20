@@ -1,7 +1,7 @@
 use crate::L4Pdu;
 use std::time::{Duration, Instant};
 
-// This is dead code right now.
+// TODO document, make useful as a utility?
 
 pub trait CallbackTimer {
     fn new(count: u64) -> Self;
@@ -82,7 +82,6 @@ impl CallbackTimer for Bytes {
         false
     }
 }
-
 
 /*
 

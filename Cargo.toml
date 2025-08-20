@@ -12,6 +12,7 @@ members = [
     # "examples/streaming",
     "examples/basic",
     "examples/enc_conns",
+    "examples/app_classifier",
     "tests/functionality/basic_test",
 ]
 resolver = "2"
