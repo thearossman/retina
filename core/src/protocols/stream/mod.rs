@@ -190,7 +190,7 @@ impl ConnData {
 /// a separate crate, so items that ought to be crate-private have their documentation hidden to
 /// avoid confusing users.
 #[doc(hidden)]
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub enum SessionData {
     // TODO: refactor to use trait objects.
     Tls(Box<Tls>),
@@ -208,6 +208,7 @@ pub enum SessionData {
 /// a separate crate, so items that ought to be crate-private have their documentation hidden to
 /// avoid confusing users.
 #[doc(hidden)]
+#[derive(Clone)]
 pub struct Session {
     /// Application-layer session data.
     pub data: SessionData,
@@ -244,6 +245,26 @@ pub enum ConnParser {
 }
 
 impl ConnParser {
+    pub(crate) fn name(&self) -> String {
+        match self {
+            ConnParser::Tls(_) => "tls".to_string(),
+            ConnParser::Dns(_) => "dns".to_string(),
+            ConnParser::Http(_) => "http".to_string(),
+            ConnParser::Quic(_) => "quic".to_string(),
+            ConnParser::Unknown => "unknown".to_string(),
+        }
+    }
+
+    pub(crate) fn from_name(name: &String) -> Option<Self> {
+        match name.as_str() {
+            "tls" => Some(ConnParser::Tls(TlsParser::default())),
+            "dns" => Some(ConnParser::Dns(DnsParser::default())),
+            "http" => Some(ConnParser::Http(HttpParser::default())),
+            "quic" => Some(ConnParser::Quic(QuicParser::default())),
+            _ => None,
+        }
+    }
+
     /// Returns a new connection protocol parser of the same type, but with state reset.
     pub(crate) fn reset_new(&self) -> ConnParser {
         match self {

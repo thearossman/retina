@@ -19,10 +19,7 @@
 //! }
 
 use crate::conntrack::conn_id::FiveTuple;
-use crate::conntrack::pdu::{L4Context, L4Pdu};
-use crate::conntrack::ConnTracker;
-use crate::filter::FilterResult;
-use crate::memory::mbuf::Mbuf;
+use crate::conntrack::pdu::L4Pdu;
 use crate::protocols::stream::http::{parser::HttpParser, Http};
 use crate::protocols::stream::{ConnParser, Session, SessionData};
 use crate::subscription::{Level, Subscribable, Subscription, Trackable};
@@ -61,21 +58,6 @@ impl Subscribable for HttpTransaction {
 
     fn parsers() -> Vec<ConnParser> {
         vec![ConnParser::Http(HttpParser::default())]
-    }
-
-    fn process_packet(
-        mbuf: Mbuf,
-        subscription: &Subscription<Self>,
-        conn_tracker: &mut ConnTracker<Self::Tracked>,
-    ) {
-        match subscription.filter_packet(&mbuf) {
-            FilterResult::MatchTerminal(idx) | FilterResult::MatchNonTerminal(idx) => {
-                if let Ok(ctxt) = L4Context::new(&mbuf, idx) {
-                    conn_tracker.process(mbuf, ctxt, subscription);
-                }
-            }
-            FilterResult::NoMatch => drop(mbuf),
-        }
     }
 }
 

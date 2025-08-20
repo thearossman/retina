@@ -6,7 +6,7 @@ use dns_parser::{Packet, ResponseCode};
 use serde::Serialize;
 
 /// A DNS Query.
-#[derive(Debug, Serialize)]
+#[derive(Debug, Serialize, Clone)]
 pub struct DnsQuery {
     pub num_questions: u16,
     pub recursion_desired: bool, // appears in query & answer
@@ -29,7 +29,7 @@ impl DnsQuery {
 }
 
 /// A DNS Response.
-#[derive(Debug, Serialize)]
+#[derive(Debug, Serialize, Clone)]
 pub struct DnsResponse {
     pub response_code: ResponseCode,
     pub authoritative: bool, // if the DNS server is authoritative for the queried hostname, appear in answer
@@ -87,7 +87,7 @@ impl DnsResponse {
 }
 
 /// A DNS Record.
-#[derive(Debug, Serialize)]
+#[derive(Debug, Serialize, Clone)]
 pub struct DnsRecord {
     pub name: String,
     pub data: Data,

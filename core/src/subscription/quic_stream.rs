@@ -5,10 +5,7 @@
 //!
 
 use crate::conntrack::conn_id::FiveTuple;
-use crate::conntrack::pdu::{L4Context, L4Pdu};
-use crate::conntrack::ConnTracker;
-use crate::filter::FilterResult;
-use crate::memory::mbuf::Mbuf;
+use crate::conntrack::pdu::L4Pdu;
 use crate::protocols::stream::quic::parser::QuicParser;
 use crate::protocols::stream::quic::QuicConn;
 use crate::protocols::stream::{ConnParser, Session, SessionData};
@@ -49,21 +46,6 @@ impl Subscribable for QuicStream {
 
     fn parsers() -> Vec<ConnParser> {
         vec![ConnParser::Quic(QuicParser::default())]
-    }
-
-    fn process_packet(
-        mbuf: Mbuf,
-        subscription: &Subscription<Self>,
-        conn_tracker: &mut ConnTracker<Self::Tracked>,
-    ) {
-        match subscription.filter_packet(&mbuf) {
-            FilterResult::MatchTerminal(idx) | FilterResult::MatchNonTerminal(idx) => {
-                if let Ok(ctxt) = L4Context::new(&mbuf, idx) {
-                    conn_tracker.process(mbuf, ctxt, subscription);
-                }
-            }
-            FilterResult::NoMatch => drop(mbuf),
-        }
     }
 }
 

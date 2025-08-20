@@ -14,6 +14,8 @@ pub mod quic_stream;
 pub mod tls_handshake;
 pub mod zc_frame;
 
+pub mod wrappers;
+
 // Re-export subscribable types for more convenient usage.
 pub use self::connection::Connection;
 pub use self::connection_frame::ConnectionFrame;
@@ -26,7 +28,6 @@ pub use self::zc_frame::ZcFrame;
 
 use crate::conntrack::conn_id::FiveTuple;
 use crate::conntrack::pdu::L4Pdu;
-use crate::conntrack::ConnTracker;
 use crate::filter::{ConnFilterFn, PacketFilterFn, SessionFilterFn};
 use crate::filter::{FilterFactory, FilterResult};
 use crate::memory::mbuf::Mbuf;
@@ -57,14 +58,6 @@ pub trait Subscribable {
 
     /// Returns a list of protocol parsers required to parse the subscribable type.
     fn parsers() -> Vec<ConnParser>;
-
-    /// Process a single incoming packet.
-    fn process_packet(
-        mbuf: Mbuf,
-        subscription: &Subscription<Self>,
-        conn_tracker: &mut ConnTracker<Self::Tracked>,
-    ) where
-        Self: Sized;
 }
 
 /// Tracks subscribable types throughout the duration of a connection.

@@ -80,8 +80,24 @@ pub struct QuicConn {
     pub server_buffer: Vec<u8>,
 }
 
+// Should not be used outside of testing - erases Openers,
+// because they are not `Clone`
+impl Clone for QuicConn {
+    fn clone(&self) -> Self {
+        QuicConn {
+            packets: self.packets.clone(),
+            cids: self.cids.clone(),
+            tls: self.tls.clone(),
+            client_opener: None,
+            server_opener: None,
+            client_buffer: self.client_buffer.clone(),
+            server_buffer: self.server_buffer.clone(),
+        }
+    }
+}
+
 /// Parsed Quic Packet contents
-#[derive(Debug, Serialize)]
+#[derive(Debug, Serialize, Clone)]
 pub struct QuicPacket {
     /// Quic Short header
     pub short_header: Option<QuicShortHeader>,

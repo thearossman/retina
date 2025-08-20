@@ -33,9 +33,7 @@
 //! [`ConnectionFrame`](crate::subscription::connection_frame::ConnectionFrame) instead.
 
 use crate::conntrack::conn_id::FiveTuple;
-use crate::conntrack::pdu::{L4Context, L4Pdu};
-use crate::conntrack::ConnTracker;
-use crate::filter::FilterResult;
+use crate::conntrack::pdu::L4Pdu;
 use crate::memory::mbuf::Mbuf;
 use crate::protocols::stream::{ConnParser, Session};
 use crate::subscription::{Level, Subscribable, Subscription, Trackable};
@@ -71,25 +69,6 @@ impl Subscribable for Frame {
 
     fn parsers() -> Vec<ConnParser> {
         vec![]
-    }
-
-    fn process_packet(
-        mbuf: Mbuf,
-        subscription: &Subscription<Self>,
-        conn_tracker: &mut ConnTracker<Self::Tracked>,
-    ) {
-        match subscription.filter_packet(&mbuf) {
-            FilterResult::MatchTerminal(_idx) => {
-                let frame = Frame::from_mbuf(&mbuf);
-                subscription.invoke(frame);
-            }
-            FilterResult::MatchNonTerminal(idx) => {
-                if let Ok(ctxt) = L4Context::new(&mbuf, idx) {
-                    conn_tracker.process(mbuf, ctxt, subscription);
-                }
-            }
-            FilterResult::NoMatch => drop(mbuf),
-        }
     }
 }
 

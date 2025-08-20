@@ -11,7 +11,7 @@ use anyhow::{bail, Result};
 use std::net::{IpAddr, SocketAddr};
 
 /// Transport-layer protocol data unit for stream reassembly and application-layer protocol parsing.
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct L4Pdu {
     /// Internal packet buffer containing frame data.
     pub(crate) mbuf: Mbuf,

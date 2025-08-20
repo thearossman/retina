@@ -22,10 +22,7 @@
 
 use crate::conntrack::conn::tcp_conn::reassembly::wrapping_lt;
 use crate::conntrack::conn_id::FiveTuple;
-use crate::conntrack::pdu::{L4Context, L4Pdu};
-use crate::conntrack::ConnTracker;
-use crate::filter::FilterResult;
-use crate::memory::mbuf::Mbuf;
+use crate::conntrack::pdu::L4Pdu;
 use crate::protocols::packet::tcp::{ACK, FIN, RST, SYN};
 use crate::protocols::stream::{ConnParser, Session};
 use crate::subscription::{Level, Subscribable, Subscription, Trackable};
@@ -165,21 +162,6 @@ impl Subscribable for Connection {
     // TODO: return a vector of all known parsers.
     fn parsers() -> Vec<ConnParser> {
         vec![]
-    }
-
-    fn process_packet(
-        mbuf: Mbuf,
-        subscription: &Subscription<Self>,
-        conn_tracker: &mut ConnTracker<Self::Tracked>,
-    ) {
-        match subscription.filter_packet(&mbuf) {
-            FilterResult::MatchTerminal(idx) | FilterResult::MatchNonTerminal(idx) => {
-                if let Ok(ctxt) = L4Context::new(&mbuf, idx) {
-                    conn_tracker.process(mbuf, ctxt, subscription);
-                }
-            }
-            FilterResult::NoMatch => drop(mbuf),
-        }
     }
 }
 
