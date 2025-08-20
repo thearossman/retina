@@ -18,6 +18,10 @@ pub struct Features {
 }
 
 impl Features {
+    pub fn feature_vec(&self) -> Vec<f64> {
+        Vec::new() // TODO
+    }
+
     pub fn from_tracked(tracked: &TrackedFeatures) -> Option<Self> {
         if tracked.ack_ts.is_none() || tracked.syn_ack_ts.is_none() || tracked.syn_ts.is_none() {
             return None;
@@ -47,28 +51,28 @@ impl Features {
 // TODO - temp; should define more elegantly
 #[datatype]
 pub struct TrackedFeatures {
-    cnt: u64,
+    pub cnt: u64,
 
-    syn_ts: Option<Instant>,
-    syn_ack_ts: Option<Instant>,
-    ack_ts: Option<Instant>,
+    pub syn_ts: Option<Instant>,
+    pub syn_ack_ts: Option<Instant>,
+    pub ack_ts: Option<Instant>,
 
-    s_last_ts: Option<Instant>,
-    d_last_ts: Option<Instant>,
+    pub s_last_ts: Option<Instant>,
+    pub d_last_ts: Option<Instant>,
 
-    s_pkt_cnt: f64,
-    d_pkt_cnt: f64,
+    pub s_pkt_cnt: f64,
+    pub d_pkt_cnt: f64,
 
-    proto: f64,
-    s_port: f64,
-    d_port: f64,
+    pub proto: f64,
+    pub s_port: f64,
+    pub d_port: f64,
 
-    s_bytes_sum: f64,
-    d_bytes_sum: f64,
-    s_bytes_min: f64,
-    d_bytes_min: f64,
-    s_bytes_max: f64,
-    d_bytes_max: f64,
+    pub s_bytes_sum: f64,
+    pub d_bytes_sum: f64,
+    pub s_bytes_min: f64,
+    pub d_bytes_min: f64,
+    pub s_bytes_max: f64,
+    pub d_bytes_max: f64,
 }
 
 impl Tracked for TrackedFeatures {
