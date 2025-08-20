@@ -192,7 +192,20 @@ fn gen_state_filter_util(
             }
             Predicate::Callback { name } => {
                 assert!(
-                    child.children.is_empty(),
+                    child.children.is_empty()
+                        || (
+                            // TODO - temporary workaround
+                            // It may be okay to have a State predicate here that controls actions
+                            // in cases where (1) a filter has already terminated, but (2) the
+                            // callback is still waiting for a datatype to be constructed.
+                            // In this case, the callback is "active" but hasn't yet been invoked.
+                            // However, there should either be a different approach for this case
+                            // in general (e.g., distinguish between "matched" and "active" callbacks).
+                            child.children.len() == 1
+                                && child.children[0].pred.is_state()
+                                && child.children[0].children.is_empty()
+                                && !child.children[0].actions.drop()
+                        ),
                     "Expect callback predicate {} to terminate pattern; found children: {:?}",
                     child.pred,
                     child.children
@@ -341,6 +354,10 @@ fn update_body(body: &mut Vec<proc_macro2::TokenStream>, node: &PNode, sub: &Sub
     }
     for deliver in &node.deliver {
         let cb = fil_callback_to_tokens(sub, deliver);
+        body.push(quote! { #cb });
+    }
+    for matched in &node.matched {
+        let cb = cb_set_active_to_tokens(matched);
         body.push(quote! { #cb });
     }
     // TODO datatypes

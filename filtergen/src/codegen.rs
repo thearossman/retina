@@ -546,6 +546,15 @@ pub(crate) fn fil_callback_to_tokens(
     invoke
 }
 
+pub(crate) fn cb_set_active_to_tokens(spec: &CallbackSpec) -> proc_macro2::TokenStream {
+    assert!(
+        spec.is_streaming() || &spec.subscription_id != &spec.as_str,
+        "Setting CB as matched should only happen for streaming or multi-function CBs"
+    );
+    let wrapper = Ident::new(&spec.subscription_id.to_lowercase(), Span::call_site());
+    quote! { conn.tracked.#wrapper.try_set_active(); }
+}
+
 /// Custom streaming (stateful or stateless) predicate to tokens
 /// in a filter PTree. This checks for a filter result, but it does not
 /// invoke the filter.

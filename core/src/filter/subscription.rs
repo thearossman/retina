@@ -499,6 +499,8 @@ pub struct CallbackSpec {
     /// Also excludes the struct for stateful callbacks, if applicable.
     pub as_str: String,
     /// Subscription string representation
+    /// This should be the name of the callback struct (for stateful CBs)
+    /// or the name of the callback function for ungrouped CBs.
     pub subscription_id: String,
     /// "Expensive" tracked datatypes (by name)
     /// Used to indicate that a tree should track the match state of the
@@ -526,6 +528,17 @@ impl CallbackSpec {
             });
         }
         datatypes
+    }
+
+    pub fn is_streaming(&self) -> bool {
+        match self.expl_level {
+            Some(l) => l.is_streaming(),
+            None => false,
+        }
+    }
+
+    pub fn is_grouped(&self) -> bool {
+        self.as_str != self.subscription_id
     }
 }
 
@@ -572,7 +585,13 @@ impl SubscriptionLevel {
         // same PDU triggers both.
         // - TODO this could change if we add an `update` before reassembly.
         if let Some(expl_level) = &self.callback {
-            return curr == expl_level;
+            // E.g., L4OnTerminated, L4FirstPacket
+            if !expl_level.is_streaming() {
+                return curr == expl_level;
+            }
+            // Streaming callbacks will be delivered in `update` and only
+            // need to be delivered here if this is the first time they CAN
+            // be delivered (the corresponding `update` would have already passed).
         }
         // Create iterator over all filter and datatype predicates
         let mut iter = self.datatypes.iter().chain(self.filter_preds.iter());

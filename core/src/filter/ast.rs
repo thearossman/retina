@@ -209,7 +209,7 @@ impl Predicate {
         match self {
             Predicate::Custom { levels, .. } => levels.into_iter().flatten().cloned().collect(),
             Predicate::Callback { .. } => vec![],
-            // can be checked anytime
+            // can be checked anytime [TODO could refine this later]
             Predicate::LayerState { .. } => vec![DataLevel::L4FirstPacket],
             _ => {
                 if self.on_packet() {
@@ -1038,10 +1038,10 @@ impl fmt::Display for Predicate {
             } => write!(f, "{}.{} {} {}", protocol, field, op, value),
             Predicate::Custom { name, matched, .. } => {
                 let state = if *matched { "matched" } else { "matching" };
-                write!(f, "{name} ({state})")
+                write!(f, "{name}.{state}")
             }
             Predicate::Callback { name, .. } => {
-                write!(f, "{name}")
+                write!(f, "{name}.active")
             }
             Predicate::LayerState { layer, state, op } => {
                 write!(f, "{:?}{}{:?}", layer, op, state)

@@ -116,6 +116,9 @@ impl TrackedActions {
 
 impl std::fmt::Display for TrackedActions {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        if self.active.is_none() {
+            return write!(f, "None");
+        }
         write!(f, "{:?}", self.active)?;
         let mut refresh_at = vec![];
         for i in 0..NUM_STATE_TRANSITIONS {

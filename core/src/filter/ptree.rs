@@ -27,10 +27,21 @@ pub struct PNode {
     // `Actions` struct for this node.
     pub actions: DataActions,
 
-    // Subscriptions that can be invoked (or CB timer started)
-    // at this node. That is, all for which `can_deliver`
-    // on its `SubscriptionLevel`` returned true.
+    // Subscriptions that can be invoked at this node.
+    // That is, all for which `can_deliver` on its `SubscriptionLevel``
+    // returned true.
     pub deliver: HashSet<CallbackSpec>,
+
+    // Extra tracker of subscriptions that need timers started
+    // (i.e., set_active) at this node, but cannot yet be invoked.
+    // That is, a pattern has terminally matched for a streaming
+    // subscription.
+    // TODO this is a temporary workaround. In the future, we should
+    // have a different method for CBs in this state
+    // vs. just "try_set_active" (e.g., "try_set_matched"?).
+    // We should only set_active (and the accompanying actions)
+    // for callbacks that are actually ready to be delivered
+    pub matched: HashSet<CallbackSpec>,
 
     // Datatypes that remain "in scope" at this node
     // Only tracked for "expensive" datatypes
@@ -49,6 +60,7 @@ impl PNode {
             if_else: false,
             actions: DataActions::new(),
             deliver: HashSet::new(),
+            matched: HashSet::new(),
             datatypes: HashSet::new(),
             id,
         }
@@ -65,6 +77,10 @@ impl PNode {
         }
         for n in &self.children {
             if n.pred.is_state() && Some(&n.pred) != state.as_ref() {
+                return false;
+            }
+            if n.pred.is_callback() && &n.pred != pred {
+                // Stop at callbacks
                 return false;
             }
             if &n.pred == pred {
@@ -201,6 +217,13 @@ impl PNode {
                 .any(|n| self.pred.get_protocol() == n.pred.get_protocol() && n.pred.is_binary())
     }
 
+    fn has_op(&self) -> bool {
+        !self.actions.drop()
+            || !self.deliver.is_empty()
+            || !self.matched.is_empty()
+            || !self.datatypes.is_empty()
+    }
+
     // Populates `paths` with all root-to-leaf paths originating
     // at node `self`.
     fn get_paths(&self, curr_path: &mut Vec<String>, paths: &mut Vec<String>) {
@@ -237,14 +260,21 @@ impl fmt::Display for PNode {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         write!(f, "{}", self.pred)?;
         if !self.actions.drop() {
-            // TODO implement Display for Actions!
-            write!(f, " -- A: {}", self.actions)?;
+            write!(f, " -- Actions: {}", self.actions)?;
         }
         if !self.deliver.is_empty() {
-            write!(f, " D: ")?;
+            write!(f, " Invoke: ")?;
             write!(f, "( ")?;
             for d in &self.deliver {
                 write!(f, "{}, ", d.as_str)?;
+            }
+            write!(f, ")")?;
+        }
+        if !self.matched.is_empty() {
+            write!(f, " Active: ")?;
+            write!(f, "( ")?;
+            for m in &self.matched {
+                write!(f, "{}, ", m.as_str)?;
             }
             write!(f, ")")?;
         }
@@ -270,6 +300,7 @@ impl PartialEq for PNode {
         self.pred == other.pred
             && self.actions == other.actions
             && self.deliver == other.deliver
+            && self.matched == other.matched
             && self.datatypes == other.datatypes
     }
 }
@@ -347,6 +378,7 @@ pub struct PTree {
     // All actions, callbacks, tracked datatypes across all nodes in the tree
     pub actions: NodeActions,
     pub deliver: HashSet<CallbackSpec>,
+    pub matched: HashSet<CallbackSpec>,
     pub datatypes: HashSet<String>,
 }
 
@@ -359,6 +391,7 @@ impl PTree {
             collapsed: false,
             actions: NodeActions::new(filter_layer),
             deliver: HashSet::new(),
+            matched: HashSet::new(),
             datatypes: HashSet::new(),
         }
     }
@@ -480,12 +513,13 @@ impl PTree {
             // Need to insert this as a unique pattern with the relevant L7 state checks
             if let Some(if_matches) = action.if_matches {
                 subpattern = pattern.get_subpattern(if_matches.0, if_matches.1);
-                truncated = truncated || subpattern.predicates.len() <= pattern.predicates.len();
+                // Subpattern should have added a predicate (L7 state check)
+                truncated = truncated || subpattern.predicates.len() < pattern.predicates.len() + 1;
                 pattern_ref = &subpattern;
             }
 
             // If all patterns get (retroactively) truncated, we'll need to
-            // make sure (at the end) that callbacks are delivered.
+            // make sure (at the end) that callbacks are delivered if possible.
             full_pattern_added |= !truncated;
 
             // Add pattern for each callback
@@ -515,7 +549,7 @@ impl PTree {
         actions: &DataActions,
         callback: &CallbackSpec,
         // `full_pattern` was truncated
-        truncated: bool,
+        mut truncated: bool,
     ) {
         let level = SubscriptionLevel::new(&callback.datatypes, full_pattern, callback.expl_level);
         if level.can_skip(&self.filter_layer) {
@@ -534,6 +568,7 @@ impl PTree {
         assert!(pattern.predicates.len() <= full_pattern.predicates.len());
         if pattern.predicates.len() < full_pattern.predicates.len() {
             assert!(!level.can_deliver(&self.filter_layer));
+            truncated = true;
         }
 
         log::trace!(
@@ -594,6 +629,14 @@ impl PTree {
         if !truncated && level.can_deliver(&self.filter_layer) {
             node.deliver.insert(callback.clone());
             self.deliver.insert(callback.clone());
+        } else if !truncated
+            && (callback.is_streaming() || callback.is_grouped())
+            && pattern.is_first_match(&self.filter_layer)
+        {
+            // Can't deliver, but this might be the first time this pattern
+            // has matched, so we need to mark the callback as active
+            node.matched.insert(callback.clone());
+            self.matched.insert(callback.clone());
         }
         node.actions.merge(actions);
         node.datatypes.extend(callback.tracked_data.iter().cloned());
@@ -720,6 +763,7 @@ impl PTree {
             node: &mut PNode,
             on_path_actions: &DataActions,
             on_path_deliver: &HashSet<String>,
+            on_path_matched: &HashSet<String>,
         ) {
             // 1. Remove callbacks that would have already been invoked on this path
             let mut my_deliver = on_path_deliver.clone();
@@ -734,31 +778,46 @@ impl PTree {
             }
             node.deliver = new_ids;
 
-            // 2. Remove actions that would have already been invoked on this path
+            // 2. Do the same for actions
             let mut my_actions = on_path_actions.clone();
             if !node.actions.drop() {
                 node.actions.clear_intersection(&my_actions);
                 my_actions.merge(&node.actions);
             }
 
+            // 3. Do the same for callbacks that need to be marked `matched`
+            let mut my_matched = on_path_matched.clone();
+            let mut new_ids = HashSet::new();
+            for i in &node.matched {
+                if !my_matched.contains(&i.as_str) {
+                    my_matched.insert(i.as_str.clone());
+                    new_ids.insert(i.clone());
+                }
+            }
+            node.matched = new_ids;
+
             // 4. Repeat for each child
             node.children
                 .iter_mut()
-                .for_each(|child| prune(child, &my_actions, &my_deliver));
+                .for_each(|child| prune(child, &my_actions, &my_deliver, &my_matched));
 
             // 5. Remove empty children
             let children = std::mem::take(&mut node.children);
             node.children = children
                 .into_iter()
-                .filter(|child| {
-                    !child.actions.drop() || !child.children.is_empty() || !child.deliver.is_empty()
-                })
+                .filter(|child| child.has_op() || !child.children.is_empty())
                 .collect();
         }
 
         let on_path_actions = DataActions::new();
         let on_path_deliver = HashSet::new();
-        prune(&mut self.root, &on_path_actions, &on_path_deliver);
+        let on_path_matched = HashSet::new();
+        prune(
+            &mut self.root,
+            &on_path_actions,
+            &on_path_deliver,
+            &on_path_matched,
+        );
     }
 
     // Avoid re-checking packet-level conditions that, on the basis of previous
@@ -799,6 +858,7 @@ impl PTree {
                 }
                 node.actions.merge(&child.actions);
                 node.deliver.extend(child.deliver.iter().cloned());
+                node.matched.extend(child.matched.iter().cloned());
                 node.children = std::mem::take(&mut child.children);
             }
         }
@@ -838,8 +898,7 @@ impl PTree {
 
             let (must_keep, could_drop): (Vec<PNode>, Vec<PNode>) =
                 node.children.iter().cloned().partition(|child| {
-                    !child.actions.drop()
-                        || !child.deliver.is_empty()
+                    child.has_op()
                         || !child.pred.is_prev_layer(filter_layer)
                         || child.extracts_protocol(filter_layer)
                         || child.pred.is_state()
@@ -1073,6 +1132,7 @@ mod tests {
         let mut tree = PTree::new_empty(DataLevel::L4FirstPacket);
         tree.add_subscription(&patterns_1, &TLS_SUB, &TLS_SUB[0].as_str);
         tree.add_subscription(&patterns_2, &STREAMING_SUB, &STREAMING_SUB[0].as_str);
+        println!("{}", tree);
         assert!(tree.size == 5);
         let mut collapsed_tree = tree.clone();
         collapsed_tree.collapse();
@@ -1217,7 +1277,7 @@ mod tests {
             updates: vec![DataLevel::L7OnDisc],
             name: "SessionProto".into(),
         };
-        static ref SESSION_SUB: Vec<CallbackSpec> = vec![CallbackSpec {
+        static ref SESSION_PROTO_SUB: Vec<CallbackSpec> = vec![CallbackSpec {
             expl_level: Some(DataLevel::L4InPayload(false)),
             datatypes: vec![FIRST_PKT.clone(), SESSION_PROTO.clone()],
             must_deliver: false,
@@ -1230,12 +1290,22 @@ mod tests {
 
     #[test]
     fn test_ptree_proto_stream() {
-        let filter = Filter::new("tcp", &CUSTOM_FILTERS_GROUPED_TERM).unwrap();
+        let filter = Filter::new("ipv4 and tcp", &CUSTOM_FILTERS_GROUPED_TERM).unwrap();
         let patterns = filter.get_patterns_flat();
         let mut tree = PTree::new_empty(DataLevel::L4InPayload(false));
-        tree.add_subscription(&patterns, &SESSION_SUB, &SESSION_SUB[0].as_str);
+        tree.add_subscription(&patterns, &SESSION_PROTO_SUB, &SESSION_PROTO_SUB[0].as_str);
         tree.collapse();
-        // MISSING THE CALLBACK PREDICATE
-        println!("{}", tree);
+        let node = tree.get_subtree(1).unwrap(); // checks if CB is active
+        assert!(node.pred.is_callback() && !node.actions.drop());
+
+        // TODO - CB not being set as active
+        // - Also make a helper for PNode "is no-op" to centralize that logic
+        let mut tree = PTree::new_empty(DataLevel::L4FirstPacket);
+        tree.add_subscription(&patterns, &SESSION_PROTO_SUB, &SESSION_PROTO_SUB[0].as_str);
+        tree.collapse();
+        // Note that in collapse, we expect `ipv4 -> tcp` to get taken away, since any traffic
+        // that's not ipv4 -> tcp would have been filtered out at the previous stage.
+        assert!(tree.size == 1);
+        assert!(tree.root.matched.len() == 1);
     }
 }

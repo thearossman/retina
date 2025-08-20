@@ -269,6 +269,29 @@ impl FlatPattern {
             .any(|p| p.is_custom() && p.is_matching())
     }
 
+    // This layer is the first time that this could match
+    pub(super) fn is_first_match(&self, filter_layer: &StateTransition) -> bool {
+        for pred in self.predicates.iter().rev() {
+            let levels = pred.levels();
+            if pred.is_state() {
+                continue;
+            }
+            for level in &levels {
+                // Predicates are ordered. This indicates that we hit a
+                // predicate that could have been applied at an earlier layer
+                // BEFORE hitting a predicate that must be applied at this layer.
+                if level.compare(filter_layer) == StateTxOrd::Less {
+                    return false;
+                }
+                // Return true if any predicate must be applied at this layer.
+                if level.compare(filter_layer) == StateTxOrd::Equal {
+                    return true;
+                }
+            }
+        }
+        false
+    }
+
     // Get datatypes from the pattern in order to build up `actions`
     // Note: this skips filter predicates that have already matched
     pub(super) fn get_datatypes(&self) -> Vec<DataLevelSpec> {

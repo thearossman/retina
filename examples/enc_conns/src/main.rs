@@ -72,7 +72,6 @@ fn count_contiguous(data: &Vec<u8>, bytes: &[u8]) -> usize {
         .0
 }
 
-
 /* Datatype to extract first TCP packet with data */
 #[datatype]
 struct FirstPayloadPkt {
@@ -162,6 +161,8 @@ fn main() {
     let blocked = BLOCKED_TCP.load(std::sync::atomic::Ordering::Relaxed);
     println!(
         "Total TCP conns: {}, Blocked TCP conns: {} ({:.4}% blocked)",
-        total, blocked, (blocked as f64 / total as f64) * 100.0
+        total,
+        blocked,
+        (blocked as f64 / total as f64) * 100.0
     );
 }
