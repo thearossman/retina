@@ -220,7 +220,8 @@ pub enum SessionProto {
     Ipv6,
     Tcp,
     Udp,
-    Null,
+    Null,    // All protocol identification has failed
+    Probing, // Protocol identification ongoing
 }
 
 /// An application-layer protocol session.

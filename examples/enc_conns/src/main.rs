@@ -2,6 +2,7 @@ use clap::Parser;
 use retina_core::protocols::packet::tcp::TCP_PROTOCOL;
 use retina_core::protocols::stream::SessionProto;
 use retina_core::subscription::Tracked;
+use retina_core::StateTxData;
 use retina_core::{config::load_config, L4Pdu, Runtime};
 use retina_filtergen::{callback, datatype, datatype_group, input_files, retina_main};
 use std::path::PathBuf;
@@ -104,7 +105,7 @@ impl Tracked for FirstPayloadPkt {
         }
     }
 
-    fn phase_tx(&mut self, _tx: &retina_core::StateTxData) {}
+    fn phase_tx(&mut self, _tx: &StateTxData) {}
 
     fn clear(&mut self) {
         self.payload = None;
@@ -114,6 +115,9 @@ impl Tracked for FirstPayloadPkt {
 /* Callback to apply exemption rules */
 #[callback("tcp,level=L4InPayload,parsers=http&tls")]
 fn exempt(pkt: &FirstPayloadPkt, proto: &SessionProto) -> bool {
+    if pkt.payload.is_none() || matches!(proto, SessionProto::Probing) {
+        return true; // Continue
+    }
     TOTAL_TCP.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
     // Ex5: exempt if protocol match
     if matches!(proto, SessionProto::Tls | SessionProto::Http) {

@@ -223,7 +223,10 @@ impl L7Session {
 
     /// Accessor for Protocol
     pub fn get_protocol(&self) -> SessionProto {
-        self.parser.protocol()
+        match self.linfo.state {
+            LayerState::Discovery => SessionProto::Probing,
+            _ => self.parser.protocol(),
+        }
     }
 }
 

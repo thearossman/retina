@@ -201,14 +201,18 @@ fn gen_state_filter_util(
                             // In this case, the callback is "active" but hasn't yet been invoked.
                             // However, there should either be a different approach for this case
                             // in general (e.g., distinguish between "matched" and "active" callbacks).
-                            child.children.len() == 1
-                                && child.children[0].pred.is_state()
-                                && child.children[0].children.is_empty()
-                                && !child.children[0].actions.drop()
+                            child.children.iter().all(|c| c.pred.is_state()
+                                && c.children.is_empty()
+                                && !c.actions.drop())
                         ),
-                    "Expect callback predicate {} to terminate pattern; found children: {:?}",
+                    "Expect callback predicate {} to terminate pattern; found children: {}",
                     child.pred,
-                    child.children
+                    child
+                        .children
+                        .iter()
+                        .map(|c| c.pred.to_string())
+                        .collect::<Vec<_>>()
+                        .join("\n")
                 );
                 add_callback_pred(code, &name.0, child, sub);
             }

@@ -284,6 +284,8 @@ pub(crate) fn constr_to_tokens(
             quote! { conn.layers[0].last_session() }
         } else if dt == "Mbuf" {
             quote! { &pdu.mbuf }
+        } else if dt == "SessionProto" {
+            quote! { &conn.layers[0].last_protocol() }
         } else {
             panic!(
                 "Invalid input for datatype constructor: {}",
