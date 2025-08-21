@@ -1,7 +1,6 @@
 use crate::config::{ConnTrackConfig, OfflineConfig};
 use crate::conntrack::{ConnTracker, TrackerConfig};
 use crate::dpdk;
-use crate::filter::Filter;
 use crate::lcore::{CoreId, SocketId};
 use crate::memory::mbuf::Mbuf;
 use crate::memory::mempool::Mempool;
@@ -71,11 +70,11 @@ impl OfflineRuntime {
             nb_pkts += 1;
             nb_bytes += mbuf.data_len() as u64;
 
-            // S::process_packet(mbuf, &self.subscription, &mut stream_table);
+            self.subscriptions.process_packet(mbuf, &mut stream_table);
         }
 
         // // Deliver remaining data in table
-        stream_table.drain(&self.subscriptions, &self.callbacks);
+        stream_table.drain(&self.subscriptions);
         let cpu_time = start.elapsed();
         println!("Processed: {} pkts, {} bytes", nb_pkts, nb_bytes);
         println!("CPU time: {:?}ms", cpu_time.as_millis());

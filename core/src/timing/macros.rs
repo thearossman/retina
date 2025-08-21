@@ -1,3 +1,4 @@
+#[allow(unused_macros)]
 macro_rules! tsc_start {
     ( $start:ident ) => {
         #[cfg(feature = "timing")]
@@ -5,6 +6,7 @@ macro_rules! tsc_start {
     };
 }
 
+#[allow(unused_macros)]
 macro_rules! tsc_record {
     ( $timers:expr, $timer:expr, $start:ident ) => {
         #[cfg(feature = "timing")]

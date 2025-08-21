@@ -2,7 +2,6 @@ use super::CoreId;
 use crate::config::ConnTrackConfig;
 use crate::conntrack::{ConnTracker, TrackerConfig};
 use crate::dpdk;
-use crate::filter::Filter;
 use crate::memory::mbuf::Mbuf;
 use crate::port::{RxQueue, RxQueueType};
 use crate::protocols::stream::ParserRegistry;
@@ -15,36 +14,27 @@ use itertools::Itertools;
 
 /// A RxCore polls from `rxqueues` and reduces the stream of packets into
 /// a stream of higher-level network events to be processed by the user.
-pub(crate) struct RxCore<'a, S>
-where
-    S: Subscribable,
-{
+pub(crate) struct RxCore {
     pub(crate) id: CoreId,
     pub(crate) rxqueues: Vec<RxQueue>,
-    pub(crate) filter: Filter,
     pub(crate) conntrack: ConnTrackConfig,
-    pub(crate) subscription: Arc<Subscription<'a, S>>,
+    pub(crate) subscriptions: Arc<SubscriptionData>,
     pub(crate) is_running: Arc<AtomicBool>,
 }
 
-impl<'a, S> RxCore<'a, S>
-where
-    S: Subscribable,
-{
+impl RxCore {
     pub(crate) fn new(
         core_id: CoreId,
         rxqueues: Vec<RxQueue>,
-        filter: Filter,
         conntrack: ConnTrackConfig,
-        subscription: Arc<Subscription<'a, S>>,
+        subscriptions: Arc<SubscriptionData>,
         is_running: Arc<AtomicBool>,
     ) -> Self {
         RxCore {
             id: core_id,
             rxqueues,
-            filter,
             conntrack,
-            subscription,
+            subscriptions,
             is_running,
         }
     }
@@ -87,9 +77,13 @@ where
         let mut nb_bytes = 0;
 
         let config = TrackerConfig::from(&self.conntrack);
-        let registry = ParserRegistry::build::<S>(&self.filter).expect("Unable to build registry");
+        let registry = ParserRegistry::build_all(
+            &self.subscriptions.filters,
+            &self.subscriptions.subscribable,
+        )
+        .expect("Unable to build registry");
         log::debug!("{:#?}", registry);
-        let mut conn_table = ConnTracker::<S::Tracked>::new(config, registry);
+        let mut conn_table = ConnTracker::new(config, registry);
 
         while self.is_running.load(Ordering::Relaxed) {
             for rxqueue in self.rxqueues.iter() {
@@ -106,14 +100,14 @@ where
                     // );
                     nb_pkts += 1;
                     nb_bytes += mbuf.data_len() as u64;
-                    // S::process_packet(mbuf, &self.subscription, &mut conn_table);
+                    self.subscriptions.process_packet(mbuf, &mut conn_table);
                 }
             }
-            conn_table.check_inactive(&self.subscription);
+            conn_table.check_inactive(&self.subscriptions);
         }
 
         // // Deliver remaining data in table from unfinished connections
-        conn_table.drain(&self.subscription);
+        conn_table.drain(&self.subscriptions);
 
         log::info!(
             "Core {} total recv from {}: {} pkts, {} bytes",

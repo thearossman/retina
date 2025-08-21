@@ -129,6 +129,7 @@ impl Filter {
         todo!();
     }
 
+    #[allow(dead_code)]
     pub(crate) fn set_hardware_filter(&self, port: &Port) -> Result<()> {
         let hw_filter = HardwareFilter::new(self, port);
         match hw_filter.install() {

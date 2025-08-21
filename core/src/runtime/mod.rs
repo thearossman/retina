@@ -24,10 +24,7 @@ use anyhow::{bail, Result};
 ///
 /// The runtime initializes the DPDK environment abstraction layer, creates memory pools, launches
 /// the packet processing cores, and manages logging and display output.
-pub struct Runtime<'a, S>
-where
-    S: Subscribable,
-{
+pub struct Runtime {
     #[allow(dead_code)]
     mempools: BTreeMap<SocketId, Mempool>,
     online: Option<OnlineRuntime>,
@@ -110,15 +107,12 @@ impl Runtime {
                 online: cfg.clone(),
                 conntrack: config.conntrack.clone(),
             };
-            unimplemented!();
-            // OnlineRuntime::new(
-            //     &config,
-            //     online_opts,
-            //     &mut mempools,
-            //     Arc::clone(subscriptions),
-            //     Arc::clone(filters),
-            //     Arc::clone(callbacks),
-            // )
+            OnlineRuntime::new(
+                &config,
+                online_opts,
+                &mut mempools,
+                Arc::clone(&subscriptions),
+            )
         });
 
         let offline = config.offline.as_ref().map(|cfg| {

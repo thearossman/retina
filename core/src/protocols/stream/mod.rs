@@ -96,33 +96,6 @@ impl ParserRegistry {
         Ok(ParserRegistry(parsers))
     }
 
-    /// Builds a new `ParserRegistry` from the `filter` and tracked subscribable type `T`.
-    pub(crate) fn build<T: Subscribable>(filter: &Filter) -> Result<ParserRegistry> {
-        let parsers = T::parsers();
-        if !parsers.is_empty() {
-            return Ok(ParserRegistry(parsers));
-        }
-
-        let mut stream_protocols = hashset! {};
-        for pattern in filter.get_patterns_flat().iter() {
-            for predicate in pattern.predicates.iter() {
-                if predicate.on_connection() {
-                    stream_protocols.insert(predicate.get_protocol().to_owned());
-                }
-            }
-        }
-
-        let mut parsers = vec![];
-        for stream_protocol in stream_protocols.iter() {
-            if let Ok(parser) = ConnParser::from_str(stream_protocol.name()) {
-                parsers.push(parser);
-            } else {
-                bail!("Unknown application-layer protocol");
-            }
-        }
-        Ok(ParserRegistry(parsers))
-    }
-
     /// Probe the packet `pdu` with all registered protocol parsers.
     pub(crate) fn probe_all(&self, pdu: &L4Pdu) -> ProbeRegistryResult {
         if self.0.is_empty() {

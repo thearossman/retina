@@ -1,6 +1,5 @@
 use crate::config::{ConnTrackConfig, OnlineConfig, RuntimeConfig};
 use crate::dpdk;
-use crate::filter::Filter;
 use crate::lcore::monitor::Monitor;
 use crate::lcore::rx_core::RxCore;
 use crate::lcore::{CoreId, SocketId};
@@ -14,27 +13,19 @@ use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
 use std::time::Instant;
 
-pub(crate) struct OnlineRuntime<'a, S>
-where
-    S: Subscribable,
-{
+pub(crate) struct OnlineRuntime {
     ports: BTreeMap<PortId, Port>,
-    rx_cores: BTreeMap<CoreId, RxCore<'a, S>>,
+    rx_cores: BTreeMap<CoreId, RxCore>,
     monitor: Monitor,
-    filter: Filter,
     options: OnlineOptions,
 }
 
-impl<'a, S> OnlineRuntime<'a, S>
-where
-    S: Subscribable,
-{
+impl OnlineRuntime {
     pub(crate) fn new(
         config: &RuntimeConfig,
         options: OnlineOptions,
         mempools: &mut BTreeMap<SocketId, Mempool>,
-        filter: Filter,
-        subscription: Arc<Subscription<'a, S>>,
+        subscription: Arc<SubscriptionData>,
     ) -> Self {
         // Set up signal handler
         let is_running = Arc::new(AtomicBool::new(true));
@@ -71,7 +62,7 @@ where
         }
 
         log::info!("Initializing RX Cores...");
-        let mut rx_cores: BTreeMap<CoreId, RxCore<S>> = BTreeMap::new();
+        let mut rx_cores: BTreeMap<CoreId, RxCore> = BTreeMap::new();
         let mut core_map: BTreeMap<CoreId, Vec<RxQueue>> = BTreeMap::new();
         for (_port_id, port) in ports.iter() {
             for (rxqueue, core_id) in port.queue_map.iter() {
@@ -82,7 +73,6 @@ where
             let rx_core = RxCore::new(
                 core_id,
                 rxqueues,
-                filter.clone(),
                 options.conntrack.clone(),
                 Arc::clone(&subscription),
                 Arc::clone(&is_running),
@@ -96,7 +86,6 @@ where
             ports,
             rx_cores,
             monitor,
-            filter,
             options,
         }
     }
@@ -114,7 +103,7 @@ where
 
             let arg = &self.rx_cores as *const _ as *mut c_void;
             let ret = unsafe {
-                dpdk::rte_eal_remote_launch(Some(launch_rx::<S>), arg, core_id.raw() as c_uint)
+                dpdk::rte_eal_remote_launch(Some(launch_rx), arg, core_id.raw() as c_uint)
             };
             if ret != 0 {
                 log::error!("RX Core {} busy, launch failed.", core_id);
@@ -144,16 +133,7 @@ where
             port.start();
 
             if self.options.online.hardware_assist {
-                log::info!("Applying hardware filters...");
-                let res = self.filter.set_hardware_filter(port);
-                match res {
-                    Ok(_) => (),
-                    Err(error) => {
-                        log::warn!("Failed to apply some patterns, passing all traffic through Port {}. Reason: {}", port.id, error);
-                    }
-                }
-            } else {
-                log::info!("No hardware assist configured for port {}, passing all traffic through device.", port.id);
+                panic!("HW assist not supported");
             }
         }
     }
@@ -173,13 +153,10 @@ pub(crate) struct OnlineOptions {
     pub(crate) conntrack: ConnTrackConfig,
 }
 
-extern "C" fn launch_rx<S>(arg: *mut c_void) -> i32
-where
-    S: Subscribable,
-{
+extern "C" fn launch_rx(arg: *mut c_void) -> i32 {
     // enforce that workers cores cannot mutate runtime
     // TODO: make this *const and use Mutex for interior mutability
-    let rx_cores = arg as *const BTreeMap<CoreId, RxCore<S>>;
+    let rx_cores = arg as *const BTreeMap<CoreId, RxCore>;
     let rx_cores = unsafe { &*rx_cores };
 
     let core_id = CoreId(unsafe { dpdk::rte_lcore_id() } as u32);

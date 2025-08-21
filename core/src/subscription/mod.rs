@@ -27,7 +27,8 @@ pub use self::tls_handshake::TlsHandshake;
 // pub use self::zc_frame::ZcFrame;
 
 use crate::conntrack::conn_id::FiveTuple;
-use crate::conntrack::pdu::L4Pdu;
+use crate::conntrack::pdu::{L4Context, L4Pdu};
+use crate::conntrack::ConnTracker;
 use crate::filter::{FilterFactory, FilterResult};
 use crate::memory::mbuf::Mbuf;
 use crate::protocols::stream::{ConnData, ConnParser, Session};
@@ -87,6 +88,24 @@ pub struct SubscriptionData {
     pub callbacks: SubscribedCallbacks,
     pub subscribable: SubscribableTypes,
     pub filters: Filters,
+}
+
+impl SubscriptionData {
+    pub(crate) fn process_packet(&self, mbuf: Mbuf, conn_tracker: &mut ConnTracker) {
+        let results = self.filters.packet_filter(&mbuf);
+        if results.iter().any(|r| {
+            matches!(
+                r,
+                FilterResult::MatchNonTerminal(_) | FilterResult::MatchTerminal(_)
+            )
+        }) {
+            if let Ok(ctxt) = L4Context::new(&mbuf) {
+                conn_tracker.process(mbuf, ctxt, self, results);
+            } else {
+                drop(mbuf);
+            }
+        }
+    }
 }
 
 pub struct SubscribedCallbacks {
@@ -154,7 +173,7 @@ impl Filters {
                     FilterResult::NoMatch => false,
                 }
             })
-            .collect()
+            .collect::<Vec<_>>()
             .iter()
             .any(|r| *r)
     }
