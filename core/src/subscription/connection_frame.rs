@@ -28,9 +28,11 @@ use crate::conntrack::conn_id::FiveTuple;
 use crate::conntrack::pdu::L4Pdu;
 use crate::memory::mbuf::Mbuf;
 use crate::protocols::stream::{ConnParser, Session};
-use crate::subscription::{Level, Subscribable, Subscription, Trackable};
+use crate::subscription::{Level, Subscribable, Trackable};
 
 use std::net::SocketAddr;
+
+use super::SubscribedData;
 
 /// Ethernet frames in a TCP or UDP connection.
 #[derive(Debug, Clone)]
@@ -61,8 +63,13 @@ impl ConnectionFrame {
     }
 }
 
-impl Subscribable for ConnectionFrame {
+impl SubscribedData for ConnectionFrame {}
+
+pub struct ConnectionFrameWrapper {}
+
+impl Subscribable for ConnectionFrameWrapper {
     type Tracked = TrackedConnectionFrame;
+    type SubscribedData = ConnectionFrame;
 
     fn level() -> Level {
         Level::Connection
@@ -87,7 +94,7 @@ pub struct TrackedConnectionFrame {
 }
 
 impl Trackable for TrackedConnectionFrame {
-    type Subscribed = ConnectionFrame;
+    type Subscribed = ConnectionFrameWrapper;
 
     fn new(five_tuple: FiveTuple) -> Self {
         TrackedConnectionFrame {
@@ -101,19 +108,19 @@ impl Trackable for TrackedConnectionFrame {
             .push(ConnectionFrame::new(self.five_tuple, pdu.mbuf_ref()));
     }
 
-    fn on_match(&mut self, _session: Session, subscription: &Subscription<Self::Subscribed>) {
+    fn on_match(&mut self, _session: Session, callback: &Box<dyn Fn(&dyn SubscribedData)>) {
         self.buf.drain(..).for_each(|frame| {
-            subscription.invoke(frame);
+            callback(&frame);
         });
     }
 
-    fn post_match(&mut self, pdu: L4Pdu, subscription: &Subscription<Self::Subscribed>) {
-        subscription.invoke(ConnectionFrame::new(self.five_tuple, pdu.mbuf_ref()));
+    fn post_match(&mut self, pdu: L4Pdu, callback: &Box<dyn Fn(&dyn SubscribedData)>) {
+        callback(&ConnectionFrame::new(self.five_tuple, pdu.mbuf_ref()));
     }
 
-    fn on_terminate(&mut self, subscription: &Subscription<Self::Subscribed>) {
+    fn on_terminate(&mut self, callback: &Box<dyn Fn(&dyn SubscribedData)>) {
         self.buf.drain(..).for_each(|frame| {
-            subscription.invoke(frame);
+            callback(&frame);
         });
     }
 }

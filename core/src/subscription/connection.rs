@@ -25,7 +25,7 @@ use crate::conntrack::conn_id::FiveTuple;
 use crate::conntrack::pdu::L4Pdu;
 use crate::protocols::packet::tcp::{ACK, FIN, RST, SYN};
 use crate::protocols::stream::{ConnParser, Session};
-use crate::subscription::{Level, Subscribable, Subscription, Trackable};
+use crate::subscription::{Level, Subscribable, Trackable};
 
 use serde::ser::{SerializeStruct, Serializer};
 use serde::Serialize;
@@ -34,6 +34,8 @@ use std::collections::HashMap;
 use std::fmt;
 use std::net::SocketAddr;
 use std::time::{Duration, Instant};
+
+use super::SubscribedData;
 
 /// Pure SYN
 const HIST_SYN: u8 = b'S';
@@ -152,8 +154,13 @@ impl fmt::Display for Connection {
     }
 }
 
-impl Subscribable for Connection {
+impl SubscribedData for Connection {}
+
+pub struct ConnectionWrapper {}
+
+impl Subscribable for ConnectionWrapper {
     type Tracked = TrackedConnection;
+    type SubscribedData = Connection;
 
     fn level() -> Level {
         Level::Connection
@@ -233,7 +240,7 @@ impl TrackedConnection {
 }
 
 impl Trackable for TrackedConnection {
-    type Subscribed = Connection;
+    type Subscribed = ConnectionWrapper;
 
     fn new(five_tuple: FiveTuple) -> Self {
         let now = Instant::now();
@@ -253,15 +260,15 @@ impl Trackable for TrackedConnection {
         self.update(pdu);
     }
 
-    fn on_match(&mut self, _session: Session, _subscription: &Subscription<Self::Subscribed>) {
+    fn on_match(&mut self, _session: Session, _callback: &Box<dyn Fn(&dyn SubscribedData)>) {
         // do nothing, should stay tracked
     }
 
-    fn post_match(&mut self, pdu: L4Pdu, _subscription: &Subscription<Self::Subscribed>) {
+    fn post_match(&mut self, pdu: L4Pdu, _callback: &Box<dyn Fn(&dyn SubscribedData)>) {
         self.update(pdu)
     }
 
-    fn on_terminate(&mut self, subscription: &Subscription<Self::Subscribed>) {
+    fn on_terminate(&mut self, callback: &Box<dyn Fn(&dyn SubscribedData)>) {
         let (duration, max_inactivity, time_to_second_packet) =
             if self.ctos.nb_pkts + self.stoc.nb_pkts == 1 {
                 (
@@ -287,7 +294,7 @@ impl Trackable for TrackedConnection {
             orig: self.ctos.clone(),
             resp: self.stoc.clone(),
         };
-        subscription.invoke(conn);
+        callback(&conn);
     }
 }
 

@@ -22,11 +22,13 @@ use crate::conntrack::conn_id::FiveTuple;
 use crate::conntrack::pdu::L4Pdu;
 use crate::protocols::stream::http::{parser::HttpParser, Http};
 use crate::protocols::stream::{ConnParser, Session, SessionData};
-use crate::subscription::{Level, Subscribable, Subscription, Trackable};
+use crate::subscription::{Level, Subscribable, Trackable};
 
 use serde::Serialize;
 
 use std::net::SocketAddr;
+
+use super::SubscribedData;
 
 /// A parsed HTTP transaction and connection metadata.
 #[derive(Debug, Serialize)]
@@ -49,8 +51,13 @@ impl HttpTransaction {
     }
 }
 
-impl Subscribable for HttpTransaction {
+impl SubscribedData for HttpTransaction {}
+
+pub struct HttpTransactionWrapper;
+
+impl Subscribable for HttpTransactionWrapper {
     type Tracked = TrackedHttp;
+    type SubscribedData = HttpTransaction;
 
     fn level() -> Level {
         Level::Session
@@ -79,7 +86,7 @@ pub struct TrackedHttp {
 }
 
 impl Trackable for TrackedHttp {
-    type Subscribed = HttpTransaction;
+    type Subscribed = HttpTransactionWrapper;
 
     fn new(five_tuple: FiveTuple) -> Self {
         TrackedHttp { five_tuple }
@@ -87,16 +94,16 @@ impl Trackable for TrackedHttp {
 
     fn pre_match(&mut self, _pdu: L4Pdu, _session_id: Option<usize>) {}
 
-    fn on_match(&mut self, session: Session, subscription: &Subscription<Self::Subscribed>) {
+    fn on_match(&mut self, session: Session, callback: &Box<dyn Fn(&dyn SubscribedData)>) {
         if let SessionData::Http(http) = session.data {
-            subscription.invoke(HttpTransaction {
+            callback(&HttpTransaction {
                 five_tuple: self.five_tuple,
                 data: *http,
             });
         }
     }
 
-    fn post_match(&mut self, _pdu: L4Pdu, _subscription: &Subscription<Self::Subscribed>) {}
+    fn post_match(&mut self, _pdu: L4Pdu, _callback: &Box<dyn Fn(&dyn SubscribedData)>) {}
 
-    fn on_terminate(&mut self, _subscription: &Subscription<Self::Subscribed>) {}
+    fn on_terminate(&mut self, _callback: &Box<dyn Fn(&dyn SubscribedData)>) {}
 }

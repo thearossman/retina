@@ -9,12 +9,14 @@ use crate::conntrack::pdu::L4Pdu;
 use crate::protocols::stream::quic::parser::QuicParser;
 use crate::protocols::stream::quic::QuicConn;
 use crate::protocols::stream::{ConnParser, Session, SessionData};
-use crate::subscription::{Level, Subscribable, Subscription, Trackable};
+use crate::subscription::{Level, Subscribable, Trackable};
 use std::collections::HashSet;
 
 use serde::Serialize;
 
 use std::net::SocketAddr;
+
+use super::SubscribedData;
 
 /// A parsed QUIC stream and connection metadata.
 #[derive(Debug, Serialize)]
@@ -37,8 +39,13 @@ impl QuicStream {
     }
 }
 
-impl Subscribable for QuicStream {
+impl SubscribedData for QuicStream {}
+
+pub struct QuicStreamWrapper;
+
+impl Subscribable for QuicStreamWrapper {
     type Tracked = TrackedQuic;
+    type SubscribedData = QuicStream;
 
     fn level() -> Level {
         Level::Session
@@ -67,7 +74,7 @@ pub struct TrackedQuic {
 }
 
 impl Trackable for TrackedQuic {
-    type Subscribed = QuicStream;
+    type Subscribed = QuicStreamWrapper;
 
     fn new(five_tuple: FiveTuple) -> Self {
         TrackedQuic {
@@ -78,23 +85,23 @@ impl Trackable for TrackedQuic {
 
     fn pre_match(&mut self, _pdu: L4Pdu, _session_id: Option<usize>) {}
 
-    fn on_match(&mut self, session: Session, subscription: &Subscription<Self::Subscribed>) {
+    fn on_match(&mut self, session: Session, callback: &Box<dyn Fn(&dyn SubscribedData)>) {
         if let SessionData::Quic(quic) = session.data {
             let quic_clone = *quic;
             for cid in &quic_clone.cids {
                 self.connection_id.insert(cid.to_string());
             }
 
-            subscription.invoke(QuicStream {
+            callback(&QuicStream {
                 five_tuple: self.five_tuple,
                 data: quic_clone,
             });
         }
     }
 
-    fn post_match(&mut self, _pdu: L4Pdu, _subscription: &Subscription<Self::Subscribed>) {}
+    fn post_match(&mut self, _pdu: L4Pdu, _callback: &Box<dyn Fn(&dyn SubscribedData)>) {}
 
-    fn on_terminate(&mut self, _subscription: &Subscription<Self::Subscribed>) {
+    fn on_terminate(&mut self, _callback: &Box<dyn Fn(&dyn SubscribedData)>) {
         self.connection_id.clear();
     }
 }

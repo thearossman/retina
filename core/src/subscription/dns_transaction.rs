@@ -20,11 +20,13 @@ use crate::conntrack::conn_id::FiveTuple;
 use crate::conntrack::pdu::L4Pdu;
 use crate::protocols::stream::dns::{parser::DnsParser, Dns};
 use crate::protocols::stream::{ConnParser, Session, SessionData};
-use crate::subscription::{Level, Subscribable, Subscription, Trackable};
+use crate::subscription::{Level, Subscribable, Trackable};
 
 use serde::Serialize;
 
 use std::net::SocketAddr;
+
+use super::SubscribedData;
 
 /// A parsed DNS transaction and connection metadata.
 #[derive(Debug, Serialize)]
@@ -47,8 +49,13 @@ impl DnsTransaction {
     }
 }
 
-impl Subscribable for DnsTransaction {
+impl SubscribedData for DnsTransaction {}
+
+pub struct DnsTransactionWrapper;
+
+impl Subscribable for DnsTransactionWrapper {
     type Tracked = TrackedDns;
+    type SubscribedData = DnsTransaction;
 
     fn level() -> Level {
         Level::Session
@@ -78,7 +85,7 @@ pub struct TrackedDns {
 impl TrackedDns {}
 
 impl Trackable for TrackedDns {
-    type Subscribed = DnsTransaction;
+    type Subscribed = DnsTransactionWrapper;
 
     fn new(five_tuple: FiveTuple) -> Self {
         TrackedDns { five_tuple }
@@ -86,16 +93,16 @@ impl Trackable for TrackedDns {
 
     fn pre_match(&mut self, _pdu: L4Pdu, _session_id: Option<usize>) {}
 
-    fn on_match(&mut self, session: Session, subscription: &Subscription<Self::Subscribed>) {
+    fn on_match(&mut self, session: Session, callback: &Box<dyn Fn(&dyn SubscribedData)>) {
         if let SessionData::Dns(dns) = session.data {
-            subscription.invoke(DnsTransaction {
+            callback(&DnsTransaction {
                 five_tuple: self.five_tuple,
                 data: *dns,
             });
         }
     }
 
-    fn post_match(&mut self, _pdu: L4Pdu, _subscription: &Subscription<Self::Subscribed>) {}
+    fn post_match(&mut self, _pdu: L4Pdu, _callback: &Box<dyn Fn(&dyn SubscribedData)>) {}
 
-    fn on_terminate(&mut self, _subscription: &Subscription<Self::Subscribed>) {}
+    fn on_terminate(&mut self, _callback: &Box<dyn Fn(&dyn SubscribedData)>) {}
 }
