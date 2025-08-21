@@ -12,6 +12,7 @@ use super::ptree_flat::FlatPTree;
 use super::Filter;
 
 use crate::dpdk;
+use crate::filter::pattern;
 use crate::port::*;
 
 use std::ffi::{c_void, CStr};
@@ -102,7 +103,11 @@ impl<'a> HardwareFilter<'a> {
 
         // Non-matching traffic will be dropped by default on table 1
         // Redirect is faster than using a default DROP rule
-        add_redirect(self.port, 0, 1, LOW_PRIORITY)?;
+        // Add rule to drop all Ethernet traffic with low priority
+        let mut pattern_rules = vec![];
+        flow_item::append_eth(&mut pattern_rules); // All Eth traffic
+        flow_item::append_end(&mut pattern_rules);
+        add_redirect(self.port, 0, 1, LOW_PRIORITY, pattern_rules)?;
         // drop_eth_traffic(self.port, 0, LOW_PRIORITY)?;
 
         Ok(())
@@ -205,7 +210,7 @@ fn pattern_supported(lpattern: &LayeredPattern, port: &Port, group: u32, priorit
     match pattern {
         Ok(mut pattern) => {
             let mut action = FlowAction::new(port.id);
-
+            // @ALIYA we should change this later
             action.append_rss();
             action.finish();
 
@@ -267,18 +272,40 @@ fn install_pattern(
 ) -> Result<()> {
     let attr = FlowAttribute::new(group, priority);
     if let Ok(mut pattern) = FlowPattern::from_layered_pattern(lpattern) {
-        let mut action = FlowAction::new(port.id);
-        // action.append_mark(tag as u32);
+        // Create Actions: this is all possible jump rules
+        // I think that you have to add each separately
+        let actions: Vec<FlowAction> = Vec::new();
+        for group in 2..NUM_TABLES {
+            let mut action = FlowAction::new(port.id);
+            action.append_jump(group);
+            action.finish();
+            actions.push(action);
+        }
 
-        // - Helper function: `append_masked_redirects`
-        // --> This stays on table 0 and high priority
-        // - Remove `append_rss` from here.
-        // --> At the end of installing all rules, install
-        //     your RSS rule with LOW_PRIORITY on each table
-        action.append_rss();
-        action.finish();
+        // If TCP: only need to check tcp port
+        let is_tcp = lpattern
+            .get_header_predicates()
+            .keys()
+            .any(|k| *k == protocol!("tcp"));
+        // If UDP: only need to check UDP port
+        let is_udp = lpattern
+            .get_header_predicates()
+            .keys()
+            .any(|k| *k == protocol!("udp"));
 
-        create_rule(lpattern, port, attr, &mut pattern, &mut action)
+        if is_tcp {
+            // Need to add a separate for each
+            for (i, a) in actions.iter().enumerate() {
+                let mut subpattern = pattern.clone();
+                // Append an extra pattern to `pattern` here with your mask
+                create_rule(lpattern, port, attr, &mut pattern, actions[i]);
+            }
+        } else if is_udp {
+            // Same here, but UDP
+        } else {
+            // Add two patterns -- one for TCP and one for UDP.
+        }
+        Ok(())
     } else {
         bail!(HardwareFilterError::InvalidRule(lpattern.to_owned()));
     }
@@ -289,7 +316,7 @@ fn create_rule(
     port: &Port,
     attr: FlowAttribute,
     pattern: &mut FlowPattern,
-    action: &mut FlowAction,
+    action: &FlowAction,
 ) -> Result<()> {
     let mut pattern_rules: PatternRules = vec![];
     flow_item::append_eth(&mut pattern_rules);
@@ -300,18 +327,8 @@ fn create_rule(
         p_item.mask = item.mask();
         pattern_rules.push(p_item);
     }
-    flow_item::append_end(&mut pattern_rules);
 
-    // Need to update flow_action_rss here
-    // reta_raw needs to stay in scope until after rte_flow_create() succeeds
-    let reta_raw = port.reta.iter().map(|q| q.raw()).collect::<Vec<_>>();
-    for a in action.rules.iter_mut() {
-        if let dpdk::rte_flow_action_type_RTE_FLOW_ACTION_TYPE_RSS = a.type_ {
-            action.rss[0].queue_num = port.queue_map.len() as u32;
-            action.rss[0].queue = reta_raw.as_ptr();
-            a.conf = &action.rss[0] as *const _ as *const c_void;
-        }
-    }
+    flow_item::append_end(&mut pattern_rules);
 
     let mut error: dpdk::rte_flow_error = unsafe { mem::zeroed() };
     unsafe {
@@ -350,13 +367,75 @@ fn create_rule(
     }
 }
 
-fn add_redirect(port: &Port, from_group: u32, to_group: u32, priority: u32) -> Result<()> {
-    let attr = FlowAttribute::new(from_group, priority);
 
-    // Pattern matches all Ethernet traffic
-    let mut pattern_rules: PatternRules = vec![];
-    flow_item::append_eth(&mut pattern_rules);
+// @ALIYA - I think we need something like this to install a "default" (low priority)
+// RSS rule for all traffic on every table EXCEPT tables 0 (jumps) and 1 (drops).
+// I don't know if this is exactly the right code.
+fn install_default_rss(
+    port: &Port,
+    group: u32,
+    priority: u32,
+) -> Result<()> {
+    let mut action = FlowAction::new(port.id);
+    action.append_rss();
+    action.finish();
+
+    let attr = FlowAttribute::new(group, priority);
+
+    // Need to update flow_action_rss here
+    // reta_raw needs to stay in scope until after rte_flow_create() succeeds
+    let reta_raw = port.reta.iter().map(|q| q.raw()).collect::<Vec<_>>();
+    for a in action.rules.iter_mut() {
+        if let dpdk::rte_flow_action_type_RTE_FLOW_ACTION_TYPE_RSS = a.type_ {
+            action.rss[0].queue_num = port.queue_map.len() as u32;
+            action.rss[0].queue = reta_raw.as_ptr();
+            a.conf = &action.rss[0] as *const _ as *const c_void;
+        }
+    }
+
+    let mut pattern_rules = vec![];
+    flow_item::append_eth(&mut pattern_rules); // All Eth traffic
     flow_item::append_end(&mut pattern_rules);
+
+    let mut error: dpdk::rte_flow_error = unsafe { mem::zeroed() };
+    unsafe {
+        let ret = dpdk::rte_flow_validate(
+            port.id.raw(),
+            attr.raw() as *const _,
+            pattern_rules.as_ptr(),
+            action.rules.as_ptr(),
+            &mut error as *mut _,
+        );
+        if ret != 0 {
+            // let msg: &CStr = CStr::from_ptr(error.message);
+            // bail! with error
+        } else {
+            let ret = dpdk::rte_flow_create(
+                port.id.raw(),
+                attr.raw() as *const _,
+                pattern_rules.as_ptr(),
+                action.rules.as_ptr(),
+                &mut error as *mut _,
+            );
+            if ret.is_null() {
+                let msg: &CStr = CStr::from_ptr(error.message);
+                // bail! with error
+            } else {
+                // Info log info!("Default RSS flow rule created");
+                Ok(())
+            }
+        }
+    }
+}
+
+fn add_redirect(
+    port: &Port,
+    from_group: u32,
+    to_group: u32,
+    priority: u32,
+    pattern_rules: PatternRules,
+) -> Result<()> {
+    let attr = FlowAttribute::new(from_group, priority);
 
     // Set action to redirect
     let mut action = FlowAction::new(port.id);
