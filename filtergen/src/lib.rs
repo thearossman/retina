@@ -123,6 +123,7 @@ mod session_filter;
 mod util;
 
 use proc_macro::TokenStream;
+use proc_macro2::{Ident, Span};
 use quote::quote;
 use syn::parse_macro_input;
 
@@ -156,23 +157,29 @@ use crate::session_filter::gen_session_filter;
 /// ```
 #[proc_macro_attribute]
 pub fn filter(args: TokenStream, input: TokenStream) -> TokenStream {
-    let filter_str = parse_macro_input!(args as syn::LitStr).value();
+    let all_filter_strs = parse_macro_input!(args as syn::LitStr).value();
     let input = parse_macro_input!(input as syn::ItemFn);
     // let input_sig = &input.sig.ident;
 
-    let filter = Filter::from_str(&filter_str, false).unwrap();
-
-    let mut ptree = filter.to_ptree();
-    ptree.prune_branches();
-    // Displays the predicate trie during compilation.
-    println!("{}", ptree);
+    let all_filter_strs = all_filter_strs
+        .split("\n")
+        .collect::<Vec<_>>()
+        .into_iter()
+        .map(|s| s.trim())
+        .collect::<Vec<_>>();
 
     // store lazily evaluated statics like pre-compiled Regex
     let mut statics: Vec<proc_macro2::TokenStream> = vec![];
+    let mut filters: Vec<proc_macro2::TokenStream> = vec![];
+    let mut filter_ids: Vec<proc_macro2::Ident> = vec![];
 
-    let (packet_filter_body, pt_nodes) = gen_packet_filter(&ptree, &mut statics);
-    let (connection_filter_body, ct_nodes) = gen_connection_filter(&ptree, &mut statics, pt_nodes);
-    let session_filter_body = gen_session_filter(&ptree, &mut statics, ct_nodes);
+    for (subscription_idx, filter) in all_filter_strs.into_iter().enumerate() {
+        filters.push(gen_single_filter(subscription_idx, filter, &mut statics));
+        filter_ids.push(Ident::new(
+            &format!("filter_{}", subscription_idx),
+            Span::call_site(),
+        ));
+    }
 
     let lazy_statics = if statics.is_empty() {
         quote! {}
@@ -184,33 +191,15 @@ pub fn filter(args: TokenStream, input: TokenStream) -> TokenStream {
         }
     };
 
-    let packet_filter_fn = quote! {
-        #[inline]
-        fn packet_filter(mbuf: &retina_core::Mbuf) -> retina_core::filter::FilterResult {
-            #packet_filter_body
-        }
-    };
-
-    let connection_filter_fn = quote! {
-        #[inline]
-        fn connection_filter(conn: &retina_core::protocols::stream::ConnData) -> retina_core::filter::FilterResult {
-            #connection_filter_body
-        }
-    };
-
-    let session_filter_fn = quote! {
-        #[inline]
-        fn session_filter(session: &retina_core::protocols::stream::Session, idx: usize) -> bool {
-            #session_filter_body
-        }
-    };
-
     let filtergen = quote! {
-        fn filter() -> retina_core::filter::FilterFactory {
-            #packet_filter_fn
-            #connection_filter_fn
-            #session_filter_fn
-            retina_core::filter::FilterFactory::new(#filter_str, packet_filter, connection_filter, session_filter)
+        fn filter() -> retina_core::subscription::Filters {
+            #( #filters )*
+
+            retina_core::subscription::Filters {
+                filters: Vec::from([#(
+                    #filter_ids()
+                ),*]),
+            }
         }
 
         #lazy_statics
@@ -218,4 +207,61 @@ pub fn filter(args: TokenStream, input: TokenStream) -> TokenStream {
 
     };
     filtergen.into()
+}
+
+fn gen_single_filter(
+    idx: usize,
+    filter_str: &str,
+    statics: &mut Vec<proc_macro2::TokenStream>,
+) -> proc_macro2::TokenStream {
+    let filter = Filter::from_str(&filter_str, false).unwrap();
+
+    let mut ptree = filter.to_ptree();
+    ptree.prune_branches();
+    // Displays the predicate trie during compilation.
+    println!("[{}] {}", idx, ptree);
+
+    let (packet_filter_body, pt_nodes) = gen_packet_filter(&ptree, statics);
+    let (connection_filter_body, ct_nodes) = gen_connection_filter(&ptree, statics, pt_nodes);
+    let session_filter_body = gen_session_filter(&ptree, statics, ct_nodes);
+
+    let packet_fn_name = Ident::new(&format!("packet_filter_{}", idx), Span::call_site());
+
+    let packet_filter_fn = quote! {
+        #[inline]
+        fn #packet_fn_name(mbuf: &retina_core::Mbuf) -> retina_core::filter::FilterResult {
+            #packet_filter_body
+        }
+    };
+
+    let conn_fn_name = Ident::new(&format!("connection_filter_{}", idx), Span::call_site());
+
+    let connection_filter_fn = quote! {
+        #[inline]
+        fn #conn_fn_name(conn: &retina_core::protocols::stream::ConnData, idx: usize) -> retina_core::filter::FilterResult {
+            #connection_filter_body
+        }
+    };
+
+    let session_fn_name = Ident::new(&format!("session_filter_{}", idx), Span::call_site());
+
+    let session_filter_fn = quote! {
+        #[inline]
+        fn #session_fn_name(session: &retina_core::protocols::stream::Session, idx: usize) -> bool {
+            #session_filter_body
+        }
+    };
+
+    let fil_fn_name = Ident::new(&format!("filter_{}", idx), Span::call_site());
+
+    let filter_str = syn::LitStr::new(filter_str, Span::call_site());
+
+    quote! {
+        fn #fil_fn_name() -> retina_core::filter::FilterFactory {
+            #packet_filter_fn
+            #connection_filter_fn
+            #session_filter_fn
+            retina_core::filter::FilterFactory::new(#filter_str, packet_filter, connection_filter, session_filter)
+        }
+    }
 }
