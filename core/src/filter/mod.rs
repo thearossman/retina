@@ -162,6 +162,12 @@ impl Filter {
         todo!();
     }
 
+    pub(crate) fn set_dynamic_hardware_filters(&self, port: &Port) -> Result<()> {
+        // Call a new API that JUST installs jump rules on table 0
+        // and RSS rules (low priority) on table N>=2
+        unimplemented!()
+    }
+
     pub(crate) fn set_hardware_filter(&self, port: &Port) -> Result<()> {
         let hw_filter = HardwareFilter::new(self, port);
         match hw_filter.install() {
