@@ -51,17 +51,10 @@ impl HttpTransaction {
     }
 }
 
-use std::any::Any;
-impl SubscribedData for HttpTransaction {
-    fn as_any(&self) -> &dyn Any {
-        self
-    }
-}
 pub struct HttpTransactionWrapper;
 
 impl Subscribable for HttpTransactionWrapper {
     type Tracked = TrackedHttp;
-    type SubscribedData = HttpTransaction;
 
     fn level() -> Level {
         Level::Session
@@ -98,16 +91,16 @@ impl Trackable for TrackedHttp {
 
     fn pre_match(&mut self, _pdu: L4Pdu, _session_id: Option<usize>) {}
 
-    fn on_match(&mut self, session: Session, callback: &Box<dyn Fn(&dyn SubscribedData)>) {
+    fn on_match(&mut self, session: Session, callback: &Box<dyn Fn(SubscribedData)>) {
         if let SessionData::Http(http) = session.data {
-            callback(&HttpTransaction {
+            callback(SubscribedData::HttpTransaction(HttpTransaction {
                 five_tuple: self.five_tuple,
                 data: *http,
-            });
+            }));
         }
     }
 
-    fn post_match(&mut self, _pdu: L4Pdu, _callback: &Box<dyn Fn(&dyn SubscribedData)>) {}
+    fn post_match(&mut self, _pdu: L4Pdu, _callback: &Box<dyn Fn(SubscribedData)>) {}
 
-    fn on_terminate(&mut self, _callback: &Box<dyn Fn(&dyn SubscribedData)>) {}
+    fn on_terminate(&mut self, _callback: &Box<dyn Fn(SubscribedData)>) {}
 }

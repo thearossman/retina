@@ -39,18 +39,10 @@ impl QuicStream {
     }
 }
 
-use std::any::Any;
-impl SubscribedData for QuicStream {
-    fn as_any(&self) -> &dyn Any {
-        self
-    }
-}
-
 pub struct QuicStreamWrapper;
 
 impl Subscribable for QuicStreamWrapper {
     type Tracked = TrackedQuic;
-    type SubscribedData = QuicStream;
 
     fn level() -> Level {
         Level::Session
@@ -90,23 +82,23 @@ impl Trackable for TrackedQuic {
 
     fn pre_match(&mut self, _pdu: L4Pdu, _session_id: Option<usize>) {}
 
-    fn on_match(&mut self, session: Session, callback: &Box<dyn Fn(&dyn SubscribedData)>) {
+    fn on_match(&mut self, session: Session, callback: &Box<dyn Fn(SubscribedData)>) {
         if let SessionData::Quic(quic) = session.data {
             let quic_clone = *quic;
             for cid in &quic_clone.cids {
                 self.connection_id.insert(cid.to_string());
             }
 
-            callback(&QuicStream {
+            callback(SubscribedData::QuicStream(QuicStream {
                 five_tuple: self.five_tuple,
                 data: quic_clone,
-            });
+            }));
         }
     }
 
-    fn post_match(&mut self, _pdu: L4Pdu, _callback: &Box<dyn Fn(&dyn SubscribedData)>) {}
+    fn post_match(&mut self, _pdu: L4Pdu, _callback: &Box<dyn Fn(SubscribedData)>) {}
 
-    fn on_terminate(&mut self, _callback: &Box<dyn Fn(&dyn SubscribedData)>) {
+    fn on_terminate(&mut self, _callback: &Box<dyn Fn(SubscribedData)>) {
         self.connection_id.clear();
     }
 }

@@ -154,18 +154,10 @@ impl fmt::Display for Connection {
     }
 }
 
-use std::any::Any;
-impl SubscribedData for Connection {
-    fn as_any(&self) -> &dyn Any {
-        self
-    }
-}
-
 pub struct ConnectionWrapper {}
 
 impl Subscribable for ConnectionWrapper {
     type Tracked = TrackedConnection;
-    type SubscribedData = Connection;
 
     fn level() -> Level {
         Level::Connection
@@ -265,15 +257,15 @@ impl Trackable for TrackedConnection {
         self.update(pdu);
     }
 
-    fn on_match(&mut self, _session: Session, _callback: &Box<dyn Fn(&dyn SubscribedData)>) {
+    fn on_match(&mut self, _session: Session, _callback: &Box<dyn Fn(SubscribedData)>) {
         // do nothing, should stay tracked
     }
 
-    fn post_match(&mut self, pdu: L4Pdu, _callback: &Box<dyn Fn(&dyn SubscribedData)>) {
+    fn post_match(&mut self, pdu: L4Pdu, _callback: &Box<dyn Fn(SubscribedData)>) {
         self.update(pdu)
     }
 
-    fn on_terminate(&mut self, callback: &Box<dyn Fn(&dyn SubscribedData)>) {
+    fn on_terminate(&mut self, callback: &Box<dyn Fn(SubscribedData)>) {
         let (duration, max_inactivity, time_to_second_packet) =
             if self.ctos.nb_pkts + self.stoc.nb_pkts == 1 {
                 (
@@ -299,7 +291,7 @@ impl Trackable for TrackedConnection {
             orig: self.ctos.clone(),
             resp: self.stoc.clone(),
         };
-        callback(&conn);
+        callback(SubscribedData::Connection(conn));
     }
 }
 

@@ -14,8 +14,6 @@ pub mod quic_stream;
 pub mod tls_handshake;
 // pub mod zc_frame;
 
-use std::any::Any;
-
 // pub mod wrappers;
 
 // Re-export subscribable types for more convenient usage.
@@ -51,14 +49,9 @@ pub enum Level {
     Session,
 }
 
-pub trait SubscribedData: Any {
-    fn as_any(&self) -> &dyn Any;
-}
-
 /// Represents a generic subscribable type. All subscribable types must implement this trait.
 pub trait Subscribable {
     type Tracked: Trackable<Subscribed = Self>;
-    type SubscribedData: SubscribedData;
 
     /// Returns the subscription level.
     fn level() -> Level;
@@ -79,13 +72,13 @@ pub trait Trackable {
     fn pre_match(&mut self, pdu: L4Pdu, session_id: Option<usize>);
 
     /// Update tracked subscription data on a full filter match.
-    fn on_match(&mut self, session: Session, callback: &Box<dyn Fn(&dyn SubscribedData)>);
+    fn on_match(&mut self, session: Session, callback: &Box<dyn Fn(SubscribedData)>);
 
     /// Update tracked subscription data after a full filter match.
-    fn post_match(&mut self, pdu: L4Pdu, callback: &Box<dyn Fn(&dyn SubscribedData)>);
+    fn post_match(&mut self, pdu: L4Pdu, callback: &Box<dyn Fn(SubscribedData)>);
 
     /// Update tracked subscription data on connection termination.
-    fn on_terminate(&mut self, callback: &Box<dyn Fn(&dyn SubscribedData)>);
+    fn on_terminate(&mut self, callback: &Box<dyn Fn(SubscribedData)>);
 }
 
 pub struct SubscriptionData {
@@ -113,7 +106,7 @@ impl SubscriptionData {
 }
 
 pub struct SubscribedCallbacks {
-    pub callbacks: Vec<Box<dyn Fn(&dyn SubscribedData)>>,
+    pub callbacks: Vec<Box<dyn Fn(SubscribedData)>>,
 }
 
 pub struct SubscribableTypes {
@@ -386,7 +379,7 @@ impl TrackableType {
         }
     }
 
-    pub fn on_match(&mut self, session: Session, callback: &Box<dyn Fn(&dyn SubscribedData)>) {
+    pub fn on_match(&mut self, session: Session, callback: &Box<dyn Fn(SubscribedData)>) {
         match self {
             TrackableType::Connection(tracked) => tracked.on_match(session, callback),
             TrackableType::ConnectionFrame(tracked) => tracked.on_match(session, callback),
@@ -399,7 +392,7 @@ impl TrackableType {
         }
     }
 
-    pub fn post_match(&mut self, pdu: L4Pdu, callback: &Box<dyn Fn(&dyn SubscribedData)>) {
+    pub fn post_match(&mut self, pdu: L4Pdu, callback: &Box<dyn Fn(SubscribedData)>) {
         match self {
             TrackableType::Connection(tracked) => tracked.post_match(pdu, callback),
             TrackableType::ConnectionFrame(tracked) => tracked.post_match(pdu, callback),
@@ -412,7 +405,7 @@ impl TrackableType {
         }
     }
 
-    pub fn on_terminate(&mut self, callback: &Box<dyn Fn(&dyn SubscribedData)>) {
+    pub fn on_terminate(&mut self, callback: &Box<dyn Fn(SubscribedData)>) {
         match self {
             TrackableType::Connection(tracked) => tracked.on_terminate(callback),
             TrackableType::ConnectionFrame(tracked) => tracked.on_terminate(callback),
@@ -424,4 +417,15 @@ impl TrackableType {
             // TrackableType::ZcFrame(tracked) => tracked.on_terminate(callback),
         }
     }
+}
+
+pub enum SubscribedData {
+    Connection(Connection),
+    ConnectionFrame(ConnectionFrame),
+    DnsTransaction(DnsTransaction),
+    // Frame(Frame),
+    HttpTransaction(HttpTransaction),
+    QuicStream(QuicStream),
+    TlsHandshake(TlsHandshake),
+    // ZcFrame(ZcFrame),
 }

@@ -63,18 +63,10 @@ impl ConnectionFrame {
     }
 }
 
-use std::any::Any;
-impl SubscribedData for ConnectionFrame {
-    fn as_any(&self) -> &dyn Any {
-        self
-    }
-}
-
 pub struct ConnectionFrameWrapper {}
 
 impl Subscribable for ConnectionFrameWrapper {
     type Tracked = TrackedConnectionFrame;
-    type SubscribedData = ConnectionFrame;
 
     fn level() -> Level {
         Level::Connection
@@ -113,19 +105,22 @@ impl Trackable for TrackedConnectionFrame {
             .push(ConnectionFrame::new(self.five_tuple, pdu.mbuf_ref()));
     }
 
-    fn on_match(&mut self, _session: Session, callback: &Box<dyn Fn(&dyn SubscribedData)>) {
+    fn on_match(&mut self, _session: Session, callback: &Box<dyn Fn(SubscribedData)>) {
         self.buf.drain(..).for_each(|frame| {
-            callback(&frame);
+            callback(SubscribedData::ConnectionFrame(frame));
         });
     }
 
-    fn post_match(&mut self, pdu: L4Pdu, callback: &Box<dyn Fn(&dyn SubscribedData)>) {
-        callback(&ConnectionFrame::new(self.five_tuple, pdu.mbuf_ref()));
+    fn post_match(&mut self, pdu: L4Pdu, callback: &Box<dyn Fn(SubscribedData)>) {
+        callback(SubscribedData::ConnectionFrame(ConnectionFrame::new(
+            self.five_tuple,
+            pdu.mbuf_ref(),
+        )));
     }
 
-    fn on_terminate(&mut self, callback: &Box<dyn Fn(&dyn SubscribedData)>) {
+    fn on_terminate(&mut self, callback: &Box<dyn Fn(SubscribedData)>) {
         self.buf.drain(..).for_each(|frame| {
-            callback(&frame);
+            callback(SubscribedData::ConnectionFrame(frame));
         });
     }
 }

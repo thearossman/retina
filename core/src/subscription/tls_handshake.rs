@@ -52,18 +52,10 @@ impl TlsHandshake {
     }
 }
 
-use std::any::Any;
-impl SubscribedData for TlsHandshake {
-    fn as_any(&self) -> &dyn Any {
-        self
-    }
-}
-
 pub struct TlsHandshakeWrapper;
 
 impl Subscribable for TlsHandshakeWrapper {
     type Tracked = TrackedTls;
-    type SubscribedData = TlsHandshake;
 
     fn level() -> Level {
         Level::Session
@@ -99,17 +91,17 @@ impl Trackable for TrackedTls {
 
     fn pre_match(&mut self, _pdu: L4Pdu, _session_id: Option<usize>) {}
 
-    fn on_match(&mut self, session: Session, callback: &Box<dyn Fn(&dyn SubscribedData)>) {
+    fn on_match(&mut self, session: Session, callback: &Box<dyn Fn(SubscribedData)>) {
         if let SessionData::Tls(tls) = session.data {
             let tls = TlsHandshake {
                 five_tuple: self.five_tuple.clone(),
                 data: *tls,
             };
-            callback(&tls);
+            callback(SubscribedData::TlsHandshake(tls));
         }
     }
 
-    fn post_match(&mut self, _pdu: L4Pdu, _callback: &Box<dyn Fn(&dyn SubscribedData)>) {}
+    fn post_match(&mut self, _pdu: L4Pdu, _callback: &Box<dyn Fn(SubscribedData)>) {}
 
-    fn on_terminate(&mut self, _callback: &Box<dyn Fn(&dyn SubscribedData)>) {}
+    fn on_terminate(&mut self, _callback: &Box<dyn Fn(SubscribedData)>) {}
 }

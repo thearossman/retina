@@ -14,19 +14,19 @@ struct Args {
     config: PathBuf,
 }
 
-fn callback1(tls: &TlsHandshake) {
+fn callback1(tls: TlsHandshake) {
     // println!("{:?}", tls);
 }
 
-fn callback2(tls: &TlsHandshake) {
+fn callback2(tls: TlsHandshake) {
     // println!("{:?}", tls);
 }
 
-fn callback3(http: &HttpTransaction) {
+fn callback3(http: HttpTransaction) {
     // println!("{:?}", http);
 }
 
-fn callback4(conn: &Connection) {
+fn callback4(conn: Connection) {
     // println!("{:?}", conn);
 }
 
@@ -45,22 +45,22 @@ fn all_callbacks() -> SubscribedCallbacks {
     SubscribedCallbacks {
         callbacks: vec![
             Box::new(|d| {
-                if let Some(tls) = d.as_any().downcast_ref::<TlsHandshake>() {
+                if let SubscribedData::TlsHandshake(tls) = d {
                     callback1(tls);
                 }
             }),
             Box::new(|d| {
-                if let Some(tls) = d.as_any().downcast_ref::<TlsHandshake>() {
+                if let SubscribedData::TlsHandshake(tls) = d {
                     callback2(tls);
                 }
             }),
             Box::new(|d| {
-                if let Some(http) = d.as_any().downcast_ref::<HttpTransaction>() {
+                if let SubscribedData::HttpTransaction(http) = d {
                     callback3(http);
                 }
             }),
             Box::new(|d| {
-                if let Some(conn) = d.as_any().downcast_ref::<Connection>() {
+                if let SubscribedData::Connection(conn) = d {
                     callback4(conn);
                 }
             }),
