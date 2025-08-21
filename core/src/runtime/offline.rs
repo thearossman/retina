@@ -15,25 +15,17 @@ use std::sync::Arc;
 use cpu_time::ProcessTime;
 use pcap::Capture;
 
-pub(crate) struct OfflineRuntime<'a, S>
-where
-    S: Subscribable,
-{
+pub(crate) struct OfflineRuntime {
     pub(crate) mempool_name: String,
-    pub(crate) filter: Filter,
-    pub(crate) subscription: Arc<Subscription<'a, S>>,
     pub(crate) options: OfflineOptions,
+    pub(crate) subscriptions: Arc<SubscriptionData>,
 }
 
-impl<'a, S> OfflineRuntime<'a, S>
-where
-    S: Subscribable,
-{
+impl OfflineRuntime {
     pub(crate) fn new(
         options: OfflineOptions,
         mempools: &BTreeMap<SocketId, Mempool>,
-        filter: Filter,
-        subscription: Arc<Subscription<'a, S>>,
+        subscriptions: Arc<SubscriptionData>,
     ) -> Self {
         let core_id = CoreId(unsafe { dpdk::rte_lcore_id() } as u32);
         let mempool_name = mempools
@@ -43,9 +35,8 @@ where
             .to_string();
         OfflineRuntime {
             mempool_name,
-            filter,
-            subscription,
             options,
+            subscriptions,
         }
     }
 
@@ -59,9 +50,13 @@ where
         let mut nb_bytes = 0;
 
         let config = TrackerConfig::from(&self.options.conntrack);
-        let registry = ParserRegistry::build::<S>(&self.filter).expect("Unable to build registry");
+        let registry = ParserRegistry::build_all(
+            &self.subscriptions.filters,
+            &self.subscriptions.subscribable,
+        )
+        .expect("Unable to build registry");
         log::debug!("{:#?}", registry);
-        let mut stream_table = ConnTracker::<S::Tracked>::new(config, registry);
+        let mut stream_table = ConnTracker::new(config, registry);
 
         let mempool_raw = self.get_mempool_raw();
         let pcap = self.options.offline.pcap.as_str();
@@ -80,7 +75,7 @@ where
         }
 
         // // Deliver remaining data in table
-        stream_table.drain(&self.subscription);
+        stream_table.drain(&self.subscriptions, &self.callbacks);
         let cpu_time = start.elapsed();
         println!("Processed: {} pkts, {} bytes", nb_pkts, nb_bytes);
         println!("CPU time: {:?}ms", cpu_time.as_millis());

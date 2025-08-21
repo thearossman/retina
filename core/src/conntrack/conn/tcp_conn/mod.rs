@@ -5,7 +5,7 @@ use crate::conntrack::conn::conn_info::ConnInfo;
 use crate::conntrack::pdu::{L4Context, L4Pdu};
 use crate::protocols::packet::tcp::{FIN, RST};
 use crate::protocols::stream::ParserRegistry;
-use crate::subscription::{Subscription, Trackable};
+use crate::subscription::*;
 
 pub(crate) struct TcpConn {
     pub(crate) ctos: TcpFlow,
@@ -24,19 +24,19 @@ impl TcpConn {
 
     /// Insert TCP segment ordered into ctos or stoc flow
     #[inline]
-    pub(crate) fn reassemble<T: Trackable>(
+    pub(crate) fn reassemble(
         &mut self,
         segment: L4Pdu,
-        info: &mut ConnInfo<T>,
-        subscription: &Subscription<T::Subscribed>,
+        info: &mut ConnInfo,
+        subscription: &SubscriptionData,
         registry: &ParserRegistry,
     ) {
         if segment.dir {
             self.ctos
-                .insert_segment::<T>(segment, info, subscription, registry);
+                .insert_segment(segment, info, subscription, registry);
         } else {
             self.stoc
-                .insert_segment::<T>(segment, info, subscription, registry);
+                .insert_segment(segment, info, subscription, registry);
         }
     }
 

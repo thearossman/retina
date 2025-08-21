@@ -21,11 +21,11 @@ use anyhow::{bail, Result};
 use thiserror::Error;
 
 pub type PacketFilterFn = fn(&Mbuf) -> FilterResult;
-pub type ConnFilterFn = fn(&ConnData) -> FilterResult;
+pub type ConnFilterFn = fn(&ConnData, usize) -> FilterResult;
 pub type SessionFilterFn = fn(&Session, usize) -> bool;
 
 /// Represents the result of an intermediate filter.
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub enum FilterResult {
     /// Matches a terminal pattern in the filter.
     MatchTerminal(usize),
@@ -49,7 +49,7 @@ impl Default for FilterFactory {
         FilterFactory {
             filter_str: String::new(),
             packet_filter: |_: &Mbuf| FilterResult::NoMatch,
-            conn_filter: |_: &ConnData| FilterResult::NoMatch,
+            conn_filter: |_: &ConnData, _: usize| FilterResult::NoMatch,
             session_filter: |_: &Session, _: usize| false,
         }
     }

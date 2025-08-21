@@ -2,7 +2,7 @@ use crate::conntrack::conn::conn_info::{ConnInfo, ConnState};
 use crate::conntrack::pdu::L4Pdu;
 use crate::protocols::packet::tcp::{ACK, FIN, RST, SYN};
 use crate::protocols::stream::ParserRegistry;
-use crate::subscription::{Subscription, Trackable};
+use crate::subscription::*;
 
 use anyhow::{bail, Result};
 use std::collections::VecDeque;
@@ -45,11 +45,11 @@ impl TcpFlow {
     /// Buffer future segments and drop old segments.
     /// Shunts TcpStream if the incoming segment causes out-of-order buffer overflow
     #[inline]
-    pub(super) fn insert_segment<T: Trackable>(
+    pub(super) fn insert_segment(
         &mut self,
         mut segment: L4Pdu,
-        info: &mut ConnInfo<T>,
-        subscription: &Subscription<T::Subscribed>,
+        info: &mut ConnInfo,
+        subscription: &SubscriptionData,
         registry: &ParserRegistry,
     ) {
         let length = segment.length() as u32;
@@ -68,7 +68,7 @@ impl TcpFlow {
                     expected_seq = cur_seq.wrapping_add(1);
                 }
                 info.consume_pdu(segment, subscription, registry);
-                self.flush_ooo_buffer::<T>(expected_seq, info, subscription, registry);
+                self.flush_ooo_buffer(expected_seq, info, subscription, registry);
             } else if wrapping_lt(next_seq, cur_seq) {
                 // Segment comes after the next expected segment
                 self.buffer_ooo_seg(segment, info);
@@ -76,7 +76,7 @@ impl TcpFlow {
                 // Segment starts before the next expected segment but has new data
                 self.consumed_flags |= segment.flags();
                 info.consume_pdu(segment, subscription, registry);
-                self.flush_ooo_buffer::<T>(expected_seq, info, subscription, registry);
+                self.flush_ooo_buffer(expected_seq, info, subscription, registry);
             } else {
                 // Segment contains old data
                 log::debug!(
@@ -93,7 +93,7 @@ impl TcpFlow {
                 self.next_seq = Some(expected_seq);
                 self.consumed_flags |= segment.flags();
                 info.consume_pdu(segment, subscription, registry);
-                self.flush_ooo_buffer::<T>(expected_seq, info, subscription, registry);
+                self.flush_ooo_buffer(expected_seq, info, subscription, registry);
             } else {
                 // Buffer out-of-order non-SYNACK packets
                 self.buffer_ooo_seg(segment, info);
@@ -103,7 +103,7 @@ impl TcpFlow {
 
     /// Insert packet into ooo buffer and handle overflow
     #[inline]
-    fn buffer_ooo_seg<T: Trackable>(&mut self, segment: L4Pdu, info: &mut ConnInfo<T>) {
+    fn buffer_ooo_seg(&mut self, segment: L4Pdu, info: &mut ConnInfo) {
         if self.ooo_buf.insert_back(segment).is_err() {
             log::warn!("Out-of-order buffer overflow");
             info.state = ConnState::Remove;
@@ -114,17 +114,17 @@ impl TcpFlow {
     /// sequence number and updates the flow's new next expected
     /// sequence number and status after the flush.
     #[inline]
-    pub(super) fn flush_ooo_buffer<T: Trackable>(
+    pub(super) fn flush_ooo_buffer(
         &mut self,
         expected_seq: u32,
-        info: &mut ConnInfo<T>,
-        subscription: &Subscription<T::Subscribed>,
+        info: &mut ConnInfo,
+        subscription: &SubscriptionData,
         registry: &ParserRegistry,
     ) {
         if info.state == ConnState::Remove {
             return;
         }
-        let next_seq = self.ooo_buf.flush_ordered::<T>(
+        let next_seq = self.ooo_buf.flush_ordered(
             expected_seq,
             &mut self.consumed_flags,
             info,
@@ -172,12 +172,12 @@ impl OutOfOrderBuffer {
     /// and drops segments with old data.
     /// Returns the next expected sequence number and control flags of consumed segments.
     #[inline]
-    fn flush_ordered<T: Trackable>(
+    fn flush_ordered(
         &mut self,
         expected_seq: u32,
         consumed_flags: &mut u8,
-        info: &mut ConnInfo<T>,
-        subscription: &Subscription<T::Subscribed>,
+        info: &mut ConnInfo,
+        subscription: &SubscriptionData,
         registry: &ParserRegistry,
     ) -> u32 {
         let mut next_seq = expected_seq;

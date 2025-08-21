@@ -1,5 +1,5 @@
 use crate::conntrack::{Conn, ConnId};
-use crate::subscription::{Subscription, Trackable};
+use crate::subscription::SubscriptionData;
 
 use crossbeam_channel::{tick, Receiver};
 use hashlink::linked_hash_map::LinkedHashMap;
@@ -55,10 +55,10 @@ impl TimerWheel {
 
     /// Checks for and remove inactive connections.
     #[inline]
-    pub(super) fn check_inactive<T: Trackable>(
+    pub(super) fn check_inactive(
         &mut self,
-        table: &mut LinkedHashMap<ConnId, Conn<T>>,
-        subscription: &Subscription<T::Subscribed>,
+        table: &mut LinkedHashMap<ConnId, Conn>,
+        subscription: &SubscriptionData,
     ) {
         let table_len = table.len();
         if let Ok(now) = self.ticker.try_recv() {
@@ -77,11 +77,11 @@ impl TimerWheel {
     ///
     /// Returns the number of connections removed.
     #[inline]
-    pub(super) fn remove_inactive<T: Trackable>(
+    pub(super) fn remove_inactive(
         &mut self,
         now: Instant,
-        table: &mut LinkedHashMap<ConnId, Conn<T>>,
-        subscription: &Subscription<T::Subscribed>,
+        table: &mut LinkedHashMap<ConnId, Conn>,
+        subscription: &SubscriptionData,
     ) -> usize {
         let period = self.period;
         let nb_buckets = self.timers.len();

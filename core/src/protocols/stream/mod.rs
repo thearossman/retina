@@ -66,6 +66,36 @@ pub(crate) enum ProbeRegistryResult {
 pub(crate) struct ParserRegistry(Vec<ConnParser>);
 
 impl ParserRegistry {
+    pub(crate) fn build_all(
+        filters: &Filters,
+        subscriptions: &SubscribableTypes,
+    ) -> Result<ParserRegistry> {
+        let mut stream_protocols = subscriptions
+            .parsers()
+            .iter()
+            .map(|p| p.name())
+            .collect::<std::collections::HashSet<_>>();
+        for filter in &filters.filters {
+            let filter = Filter::from_str(&filter.filter_str, false).unwrap();
+            for pattern in filter.get_patterns_flat().iter() {
+                for predicate in pattern.predicates.iter() {
+                    if predicate.on_connection() {
+                        stream_protocols.insert(predicate.get_protocol().name().into());
+                    }
+                }
+            }
+        }
+        let mut parsers = vec![];
+        for stream_protocol in stream_protocols.iter() {
+            if let Ok(parser) = ConnParser::from_str(stream_protocol) {
+                parsers.push(parser);
+            } else {
+                bail!("Unknown application-layer protocol");
+            }
+        }
+        Ok(ParserRegistry(parsers))
+    }
+
     /// Builds a new `ParserRegistry` from the `filter` and tracked subscribable type `T`.
     pub(crate) fn build<T: Subscribable>(filter: &Filter) -> Result<ParserRegistry> {
         let parsers = T::parsers();

@@ -15,7 +15,7 @@ use crate::conntrack::pdu::{L4Context, L4Pdu};
 use crate::filter::FilterResult;
 use crate::protocols::packet::tcp::{ACK, RST, SYN};
 use crate::protocols::stream::ParserRegistry;
-use crate::subscription::{Subscription, Trackable};
+use crate::subscription::*;
 
 use anyhow::{bail, Result};
 use std::time::Instant;
@@ -29,10 +29,7 @@ pub(crate) enum L4Conn {
 }
 
 /// Connection state.
-pub(crate) struct Conn<T>
-where
-    T: Trackable,
-{
+pub(crate) struct Conn {
     /// Timestamp of the last observed packet in the connection.
     pub(crate) last_seen_ts: Instant,
     /// Amount of time (in milliseconds) before the connection should be expired for inactivity.
@@ -40,18 +37,21 @@ where
     /// Layer-4 connection tracking.
     pub(crate) l4conn: L4Conn,
     /// Connection information for filtering and parsing.
-    pub(crate) info: ConnInfo<T>,
+    pub(crate) info: ConnInfo,
 }
 
-impl<T> Conn<T>
-where
-    T: Trackable,
-{
+impl Conn {
     /// Creates a new TCP connection from `ctxt` with an initial inactivity window of
     /// `initial_timeout` and a maximum out-or-order tolerance of `max_ooo`. This means that there
     /// can be at most `max_ooo` packets buffered out of sequence before Retina chooses to discard
     /// the connection.
-    pub(super) fn new_tcp(ctxt: L4Context, initial_timeout: usize, max_ooo: usize) -> Result<Self> {
+    pub(super) fn new_tcp(
+        ctxt: L4Context,
+        initial_timeout: usize,
+        max_ooo: usize,
+        pkt_filter_results: Vec<FilterResult>,
+        subscriptions: &SubscriptionData,
+    ) -> Result<Self> {
         let five_tuple = FiveTuple::from_ctxt(ctxt);
         let tcp_conn = if ctxt.flags & SYN != 0 && ctxt.flags & ACK == 0 && ctxt.flags & RST == 0 {
             TcpConn::new_on_syn(ctxt, max_ooo)
@@ -62,21 +62,26 @@ where
             last_seen_ts: Instant::now(),
             inactivity_window: initial_timeout,
             l4conn: L4Conn::Tcp(tcp_conn),
-            info: ConnInfo::new(five_tuple, ctxt.idx),
+            info: ConnInfo::new(five_tuple, subscriptions, pkt_filter_results),
         })
     }
 
     /// Creates a new UDP connection from `ctxt` with an initial inactivity window of
     /// `initial_timeout`.
     #[allow(clippy::unnecessary_wraps)]
-    pub(super) fn new_udp(ctxt: L4Context, initial_timeout: usize) -> Result<Self> {
+    pub(super) fn new_udp(
+        ctxt: L4Context,
+        initial_timeout: usize,
+        pkt_filter_results: Vec<FilterResult>,
+        subscriptions: &SubscriptionData,
+    ) -> Result<Self> {
         let five_tuple = FiveTuple::from_ctxt(ctxt);
         let udp_conn = UdpConn;
         Ok(Conn {
             last_seen_ts: Instant::now(),
             inactivity_window: initial_timeout,
             l4conn: L4Conn::Udp(udp_conn),
-            info: ConnInfo::new(five_tuple, ctxt.idx),
+            info: ConnInfo::new(five_tuple, subscriptions, pkt_filter_results),
         })
     }
 
@@ -84,7 +89,7 @@ where
     pub(super) fn update(
         &mut self,
         pdu: L4Pdu,
-        subscription: &Subscription<T::Subscribed>,
+        subscriptions: &SubscriptionData,
         registry: &ParserRegistry,
     ) {
         match &mut self.l4conn {
@@ -97,12 +102,12 @@ where
                         tcp_conn.stoc.ooo_buf.buf.clear();
                     }
                     tcp_conn.update_term_condition(pdu.flags(), pdu.dir);
-                    self.info.sdata.post_match(pdu, subscription);
+                    self.info.sdata.post_match(pdu, &subscriptions.callbacks);
                 } else {
-                    tcp_conn.reassemble(pdu, &mut self.info, subscription, registry);
+                    tcp_conn.reassemble(pdu, &mut self.info, subscriptions, registry);
                 }
             }
-            L4Conn::Udp(_udp_conn) => self.info.consume_pdu(pdu, subscription, registry),
+            L4Conn::Udp(_udp_conn) => self.info.consume_pdu(pdu, subscriptions, registry),
         }
     }
 
@@ -135,30 +140,36 @@ where
     /// - the connection naturally terminates (e.g., FIN/RST)
     /// - the connection expires due to inactivity
     /// - the connection is drained at the end of the run
-    pub(crate) fn terminate(&mut self, subscription: &Subscription<T::Subscribed>) {
+    pub(crate) fn terminate(&mut self, subscription: &SubscriptionData) {
         match self.info.state {
             ConnState::Probing => {
-                if let FilterResult::MatchTerminal(_) = subscription.filter_conn(&self.info.cdata) {
-                    self.info.sdata.on_terminate(subscription);
+                if subscription
+                    .filters
+                    .conn_filter(&self.info.cdata, &mut self.info.sdata)
+                {
+                    self.info.sdata.on_terminate(&subscription.callbacks);
                 }
             }
             ConnState::Parsing => {
                 // only call on_terminate() if the first session in the connection was matched
                 let mut first_session_matched = false;
                 for session in self.info.cdata.conn_parser.drain_sessions() {
-                    if subscription.filter_session(&session, self.info.cdata.conn_term_node) {
+                    if subscription
+                        .filters
+                        .session_filter(&session, &mut self.info.sdata)
+                    {
                         if session.id == 0 {
                             first_session_matched = true;
                         }
-                        self.info.sdata.on_match(session, subscription);
+                        self.info.sdata.on_match(session, &subscription.callbacks);
                     }
                 }
                 if first_session_matched {
-                    self.info.sdata.on_terminate(subscription);
+                    self.info.sdata.on_terminate(&subscription.callbacks);
                 }
             }
             ConnState::Tracking => {
-                self.info.sdata.on_terminate(subscription);
+                self.info.sdata.on_terminate(&subscription.callbacks);
             }
             ConnState::Remove | ConnState::Dropped => {
                 // do nothing

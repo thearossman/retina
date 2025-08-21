@@ -15,11 +15,12 @@ use self::conn_id::ConnId;
 use self::pdu::{L4Context, L4Pdu};
 use self::timerwheel::TimerWheel;
 use crate::config::ConnTrackConfig;
+use crate::filter::FilterResult;
 use crate::memory::mbuf::Mbuf;
 use crate::protocols::packet::tcp::TCP_PROTOCOL;
 use crate::protocols::packet::udp::UDP_PROTOCOL;
 use crate::protocols::stream::ParserRegistry;
-use crate::subscription::{Subscription, Trackable};
+use crate::subscription::*;
 
 use std::cmp;
 use std::time::Instant;
@@ -33,24 +34,18 @@ use hashlink::linked_hash_map::{LinkedHashMap, RawEntryMut};
 /// users, but can be configured at runtime with a maximum capacity, out-of-order tolerance,
 /// different timeout values, and other options. See
 /// [ConnTrackConfig](crate::config::ConnTrackConfig) for details.
-pub struct ConnTracker<T>
-where
-    T: Trackable,
-{
+pub struct ConnTracker {
     /// Configuration
     config: TrackerConfig,
     /// Contains required protocol parsers for `T`.
     registry: ParserRegistry,
-    /// Manages `ConnId` to `Conn<T>` mappings.
-    table: LinkedHashMap<ConnId, Conn<T>>,
+    /// Manages `ConnId` to `Conn` mappings.
+    table: LinkedHashMap<ConnId, Conn>,
     /// Manages connection timeouts.
     timerwheel: TimerWheel,
 }
 
-impl<T> ConnTracker<T>
-where
-    T: Trackable,
-{
+impl ConnTracker {
     /// Creates a new `ConnTracker`.
     pub(crate) fn new(config: TrackerConfig, registry: ParserRegistry) -> Self {
         let table = LinkedHashMap::with_capacity(config.max_connections);
@@ -77,7 +72,8 @@ where
         &mut self,
         mbuf: Mbuf,
         ctxt: L4Context,
-        subscription: &Subscription<T::Subscribed>,
+        subscription: &SubscriptionData,
+        pkt_filter_results: Vec<FilterResult>,
     ) {
         let conn_id = ConnId::new(ctxt.src, ctxt.dst, ctxt.proto);
         match self.table.raw_entry_mut().from_key(&conn_id) {
@@ -117,8 +113,15 @@ where
                             ctxt,
                             self.config.tcp_establish_timeout,
                             self.config.max_out_of_order,
+                            pkt_filter_results,
+                            subscription,
                         ),
-                        UDP_PROTOCOL => Conn::new_udp(ctxt, self.config.udp_inactivity_timeout),
+                        UDP_PROTOCOL => Conn::new_udp(
+                            ctxt,
+                            self.config.udp_inactivity_timeout,
+                            pkt_filter_results,
+                            subscription,
+                        ),
                         _ => Err(anyhow!("Invalid L4 Protocol")),
                     };
                     if let Ok(mut conn) = conn {
@@ -141,7 +144,7 @@ where
     }
 
     /// Drains any remaining connections that satisfy the filter on runtime termination.
-    pub(crate) fn drain(&mut self, subscription: &Subscription<T::Subscribed>) {
+    pub(crate) fn drain(&mut self, subscription: &SubscriptionData) {
         log::info!("Draining Connection table");
         for (_, mut conn) in self.table.drain() {
             conn.terminate(subscription);
@@ -149,7 +152,7 @@ where
     }
 
     /// Checks for and removes inactive connections.
-    pub(crate) fn check_inactive(&mut self, subscription: &Subscription<T::Subscribed>) {
+    pub(crate) fn check_inactive(&mut self, subscription: &SubscriptionData) {
         self.timerwheel
             .check_inactive(&mut self.table, subscription);
     }

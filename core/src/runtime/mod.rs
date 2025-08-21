@@ -10,7 +10,6 @@ use self::online::*;
 
 use crate::config::*;
 use crate::dpdk;
-use crate::filter::{Filter, FilterFactory};
 use crate::lcore::SocketId;
 use crate::memory::mempool::Mempool;
 use crate::subscription::*;
@@ -31,16 +30,13 @@ where
 {
     #[allow(dead_code)]
     mempools: BTreeMap<SocketId, Mempool>,
-    online: Option<OnlineRuntime<'a, S>>,
-    offline: Option<OfflineRuntime<'a, S>>,
+    online: Option<OnlineRuntime>,
+    offline: Option<OfflineRuntime>,
     #[cfg(feature = "timing")]
     subscription: Arc<Subscription<'a, S>>,
 }
 
-impl<'a, S> Runtime<'a, S>
-where
-    S: Subscribable,
-{
+impl Runtime {
     /// Creates a new runtime from the `config` settings, filter, and callback.
     ///
     /// # Remarks
@@ -56,13 +52,20 @@ where
     /// ```
     pub fn new(
         config: RuntimeConfig,
-        factory: fn() -> FilterFactory,
-        cb: impl Fn(S::SubscribedData) + 'a,
+        factory: fn() -> crate::subscription::Filters,
+        callbacks: crate::subscription::SubscribedCallbacks,
+        subscriptions: crate::subscription::SubscribableTypes,
     ) -> Result<Self> {
         let factory = factory();
-        let filter =
-            Filter::from_str(factory.filter_str.as_str(), true).expect("Failed to parse filter");
-        let subscription = Arc::new(Subscription::new(factory, cb));
+        // let filter =
+        // Filter::from_str(factory.filter_str.as_str(), true).expect("Failed to parse filter");
+        // let subscription = Arc::new(Subscription::new(factory, cb));
+
+        let subscriptions = Arc::new(SubscriptionData {
+            callbacks: callbacks,
+            subscribable: subscriptions,
+            filters: factory,
+        });
 
         println!("Initializing Retina runtime...");
         log::info!("Initializing EAL...");
@@ -107,13 +110,15 @@ where
                 online: cfg.clone(),
                 conntrack: config.conntrack.clone(),
             };
-            OnlineRuntime::new(
-                &config,
-                online_opts,
-                &mut mempools,
-                filter.clone(),
-                Arc::clone(&subscription),
-            )
+            unimplemented!();
+            // OnlineRuntime::new(
+            //     &config,
+            //     online_opts,
+            //     &mut mempools,
+            //     Arc::clone(subscriptions),
+            //     Arc::clone(filters),
+            //     Arc::clone(callbacks),
+            // )
         });
 
         let offline = config.offline.as_ref().map(|cfg| {
@@ -122,12 +127,7 @@ where
                 offline: cfg.clone(),
                 conntrack: config.conntrack.clone(),
             };
-            OfflineRuntime::new(
-                offline_opts,
-                &mempools,
-                filter.clone(),
-                Arc::clone(&subscription),
-            )
+            OfflineRuntime::new(offline_opts, &mempools, Arc::clone(&subscriptions))
         });
 
         log::info!("Runtime ready.");

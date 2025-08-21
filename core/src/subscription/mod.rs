@@ -28,7 +28,6 @@ pub use self::tls_handshake::TlsHandshake;
 
 use crate::conntrack::conn_id::FiveTuple;
 use crate::conntrack::pdu::L4Pdu;
-use crate::filter::{ConnFilterFn, PacketFilterFn, SessionFilterFn};
 use crate::filter::{FilterFactory, FilterResult};
 use crate::memory::mbuf::Mbuf;
 use crate::protocols::stream::{ConnData, ConnParser, Session};
@@ -84,58 +83,10 @@ pub trait Trackable {
     fn on_terminate(&mut self, callback: &Box<dyn Fn(&dyn SubscribedData)>);
 }
 
-/// A request for a callback on a subset of traffic specified by the filter.
-#[doc(hidden)]
-pub struct Subscription<'a, S>
-where
-    S: Subscribable,
-{
-    packet_filter: PacketFilterFn,
-    conn_filter: ConnFilterFn,
-    session_filter: SessionFilterFn,
-    callback: Box<dyn Fn(S) + 'a>,
-    #[cfg(feature = "timing")]
-    pub(crate) timers: Timers,
-}
-
-impl<'a, S> Subscription<'a, S>
-where
-    S: Subscribable,
-{
-    /// Creates a new subscription from a filter and a callback.
-    pub(crate) fn new(factory: FilterFactory, cb: impl Fn(S) + 'a) -> Self {
-        Subscription {
-            packet_filter: factory.packet_filter,
-            conn_filter: factory.conn_filter,
-            session_filter: factory.session_filter,
-            callback: Box::new(cb),
-            #[cfg(feature = "timing")]
-            timers: Timers::new(),
-        }
-    }
-
-    /// Invokes the software packet filter.
-    pub(crate) fn filter_packet(&self, mbuf: &Mbuf) -> FilterResult {
-        (self.packet_filter)(mbuf)
-    }
-
-    /// Invokes the connection filter.
-    pub(crate) fn filter_conn(&self, conn: &ConnData) -> FilterResult {
-        (self.conn_filter)(conn)
-    }
-
-    /// Invokes the application-layer session filter. The `idx` parameter is the numerical ID of the
-    /// session.
-    pub(crate) fn filter_session(&self, session: &Session, idx: usize) -> bool {
-        (self.session_filter)(session, idx)
-    }
-
-    /// Invoke the callback on `S`.
-    pub(crate) fn invoke(&self, obj: S) {
-        tsc_start!(t0);
-        (self.callback)(obj);
-        tsc_record!(self.timers, "callback", t0);
-    }
+pub struct SubscriptionData {
+    pub callbacks: SubscribedCallbacks,
+    pub subscribable: SubscribableTypes,
+    pub filters: Filters,
 }
 
 pub struct SubscribedCallbacks {
@@ -144,6 +95,69 @@ pub struct SubscribedCallbacks {
 
 pub struct SubscribableTypes {
     pub subscriptions: Vec<SubscribableTypeId>,
+}
+
+pub struct Filters {
+    pub filters: Vec<FilterFactory>,
+}
+
+impl Filters {
+    pub fn new(filters: Vec<FilterFactory>) -> Self {
+        Filters { filters }
+    }
+
+    pub fn packet_filter(&self, mbuf: &Mbuf) -> Vec<FilterResult> {
+        self.filters
+            .iter()
+            .map(|f| (f.packet_filter)(mbuf))
+            .collect()
+    }
+
+    pub fn conn_filter(&self, conn: &ConnData, trackable: &mut TrackableTypes) -> bool {
+        let results = self
+            .filters
+            .iter()
+            .enumerate()
+            .map(|(i, f)| {
+                let last_result = &trackable.pkt_filter_results[i];
+                match last_result {
+                    FilterResult::MatchTerminal(idx) => (f.conn_filter)(conn, *idx),
+                    FilterResult::MatchNonTerminal(idx) => (f.conn_filter)(conn, *idx),
+                    _ => FilterResult::NoMatch,
+                }
+            })
+            .collect();
+        trackable.conn_filter_results = results;
+        trackable.conn_filter_results.iter().any(|r| {
+            matches!(
+                r,
+                FilterResult::MatchTerminal(_) | FilterResult::MatchNonTerminal(_)
+            )
+        })
+    }
+
+    pub fn session_filter(&self, session: &Session, trackable: &mut TrackableTypes) -> bool {
+        self.filters
+            .iter()
+            .enumerate()
+            .map(|(i, f)| {
+                let last_result = &trackable.conn_filter_results[i];
+                match last_result {
+                    FilterResult::MatchTerminal(node) => {
+                        trackable.session_filter_results[i] = (f.session_filter)(session, *node);
+                        trackable.session_filter_results[i]
+                    }
+                    FilterResult::MatchNonTerminal(node) => {
+                        trackable.session_filter_results[i] = (f.session_filter)(session, *node);
+                        trackable.session_filter_results[i]
+                    }
+                    FilterResult::NoMatch => false,
+                }
+            })
+            .collect()
+            .iter()
+            .any(|r| *r)
+    }
 }
 
 impl SubscribableTypes {
@@ -181,7 +195,9 @@ impl SubscribableTypes {
 
 pub struct TrackableTypes {
     pub tracked: Vec<TrackableType>,
-    pub filter_results: Vec<FilterResult>,
+    pub pkt_filter_results: Vec<FilterResult>,
+    pub conn_filter_results: Vec<FilterResult>,
+    pub session_filter_results: Vec<bool>,
 }
 
 impl TrackableTypes {
@@ -196,7 +212,9 @@ impl TrackableTypes {
                 .iter()
                 .map(|s| s.new_tracked(&five_tuple))
                 .collect(),
-            filter_results: pkt_filter_results,
+            pkt_filter_results: pkt_filter_results,
+            conn_filter_results: vec![FilterResult::NoMatch; subscriptions.subscriptions.len()],
+            session_filter_results: vec![false; subscriptions.subscriptions.len()],
         }
     }
 
@@ -208,12 +226,22 @@ impl TrackableTypes {
 
     pub fn on_match(&mut self, session: Session, callbacks: &SubscribedCallbacks) {
         for (i, tracked) in self.tracked.iter_mut().enumerate() {
+            if !matches!(self.conn_filter_results[i], FilterResult::MatchTerminal(_))
+                && !self.session_filter_results[i]
+            {
+                continue;
+            }
             tracked.on_match(session.clone(), &callbacks.callbacks[i]);
         }
     }
 
     pub fn post_match(&mut self, pdu: L4Pdu, callbacks: &SubscribedCallbacks) {
         for (i, tracked) in &mut self.tracked.iter_mut().enumerate() {
+            if !matches!(self.conn_filter_results[i], FilterResult::MatchTerminal(_))
+                && !self.session_filter_results[i]
+            {
+                continue;
+            }
             tracked.post_match(pdu.clone(), &callbacks.callbacks[i]);
         }
     }
