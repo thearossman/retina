@@ -135,7 +135,7 @@ impl Filters {
             .iter()
             .enumerate()
             .map(|(i, f)| {
-                let last_result = &trackable.pkt_filter_results[i];
+                let last_result = &trackable.pkt_filter_results.get(i).unwrap();
                 match last_result {
                     FilterResult::MatchTerminal(idx) => (f.conn_filter)(conn, *idx),
                     FilterResult::MatchNonTerminal(idx) => (f.conn_filter)(conn, *idx),
@@ -157,15 +157,17 @@ impl Filters {
             .iter()
             .enumerate()
             .map(|(i, f)| {
-                let last_result = &trackable.conn_filter_results[i];
+                let last_result = &trackable.conn_filter_results.get(i).unwrap();
                 match last_result {
                     FilterResult::MatchTerminal(node) => {
-                        trackable.session_filter_results[i] = (f.session_filter)(session, *node);
-                        trackable.session_filter_results[i]
+                        *trackable.session_filter_results.get_mut(i).unwrap() =
+                            (f.session_filter)(session, *node);
+                        *trackable.session_filter_results.get(i).unwrap()
                     }
                     FilterResult::MatchNonTerminal(node) => {
-                        trackable.session_filter_results[i] = (f.session_filter)(session, *node);
-                        trackable.session_filter_results[i]
+                        *trackable.session_filter_results.get_mut(i).unwrap() =
+                            (f.session_filter)(session, *node);
+                        *trackable.session_filter_results.get(i).unwrap()
                     }
                     FilterResult::NoMatch => false,
                 }
@@ -242,29 +244,33 @@ impl TrackableTypes {
 
     pub fn on_match(&mut self, session: Session, callbacks: &SubscribedCallbacks) {
         for (i, tracked) in self.tracked.iter_mut().enumerate() {
-            if !matches!(self.conn_filter_results[i], FilterResult::MatchTerminal(_))
-                && !self.session_filter_results[i]
+            if !matches!(
+                self.conn_filter_results.get(i).unwrap(),
+                FilterResult::MatchTerminal(_)
+            ) && !self.session_filter_results.get(i).unwrap()
             {
                 continue;
             }
-            tracked.on_match(session.clone(), &callbacks.callbacks[i]);
+            tracked.on_match(session.clone(), &callbacks.callbacks.get(i).unwrap());
         }
     }
 
     pub fn post_match(&mut self, pdu: L4Pdu, callbacks: &SubscribedCallbacks) {
         for (i, tracked) in &mut self.tracked.iter_mut().enumerate() {
-            if !matches!(self.conn_filter_results[i], FilterResult::MatchTerminal(_))
-                && !self.session_filter_results[i]
+            if !matches!(
+                self.conn_filter_results.get(i).unwrap(),
+                FilterResult::MatchTerminal(_)
+            ) && !self.session_filter_results.get(i).unwrap()
             {
                 continue;
             }
-            tracked.post_match(pdu.clone(), &callbacks.callbacks[i]);
+            tracked.post_match(pdu.clone(), &callbacks.callbacks.get(i).unwrap());
         }
     }
 
     pub fn on_terminate(&mut self, callbacks: &SubscribedCallbacks) {
         for (i, tracked) in &mut self.tracked.iter_mut().enumerate() {
-            tracked.on_terminate(&callbacks.callbacks[i]);
+            tracked.on_terminate(&callbacks.callbacks.get(i).unwrap());
         }
     }
 }
