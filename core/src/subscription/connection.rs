@@ -154,7 +154,12 @@ impl fmt::Display for Connection {
     }
 }
 
-impl SubscribedData for Connection {}
+use std::any::Any;
+impl SubscribedData for Connection {
+    fn as_any(&self) -> &dyn Any {
+        self
+    }
+}
 
 pub struct ConnectionWrapper {}
 

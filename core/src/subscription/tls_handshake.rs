@@ -52,7 +52,12 @@ impl TlsHandshake {
     }
 }
 
-impl SubscribedData for TlsHandshake {}
+use std::any::Any;
+impl SubscribedData for TlsHandshake {
+    fn as_any(&self) -> &dyn Any {
+        self
+    }
+}
 
 pub struct TlsHandshakeWrapper;
 

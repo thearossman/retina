@@ -51,8 +51,12 @@ impl HttpTransaction {
     }
 }
 
-impl SubscribedData for HttpTransaction {}
-
+use std::any::Any;
+impl SubscribedData for HttpTransaction {
+    fn as_any(&self) -> &dyn Any {
+        self
+    }
+}
 pub struct HttpTransactionWrapper;
 
 impl Subscribable for HttpTransactionWrapper {

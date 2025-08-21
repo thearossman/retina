@@ -259,9 +259,17 @@ fn gen_single_filter(
     quote! {
         fn #fil_fn_name() -> retina_core::filter::FilterFactory {
             #packet_filter_fn
+
             #connection_filter_fn
+
             #session_filter_fn
-            retina_core::filter::FilterFactory::new(#filter_str, packet_filter, connection_filter, session_filter)
+
+            retina_core::filter::FilterFactory::new(
+                #filter_str,
+                #packet_fn_name,
+                #conn_fn_name,
+                #session_fn_name
+            )
         }
     }
 }

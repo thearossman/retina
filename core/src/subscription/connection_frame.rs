@@ -63,7 +63,12 @@ impl ConnectionFrame {
     }
 }
 
-impl SubscribedData for ConnectionFrame {}
+use std::any::Any;
+impl SubscribedData for ConnectionFrame {
+    fn as_any(&self) -> &dyn Any {
+        self
+    }
+}
 
 pub struct ConnectionFrameWrapper {}
 

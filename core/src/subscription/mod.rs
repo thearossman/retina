@@ -14,6 +14,8 @@ pub mod quic_stream;
 pub mod tls_handshake;
 // pub mod zc_frame;
 
+use std::any::Any;
+
 // pub mod wrappers;
 
 // Re-export subscribable types for more convenient usage.
@@ -49,7 +51,9 @@ pub enum Level {
     Session,
 }
 
-pub trait SubscribedData {}
+pub trait SubscribedData: Any {
+    fn as_any(&self) -> &dyn Any;
+}
 
 /// Represents a generic subscribable type. All subscribable types must implement this trait.
 pub trait Subscribable {

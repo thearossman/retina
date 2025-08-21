@@ -133,7 +133,7 @@ impl OnlineRuntime {
             port.start();
 
             if self.options.online.hardware_assist {
-                panic!("HW assist not supported");
+                println!("HW assist not supported; skipping");
             }
         }
     }

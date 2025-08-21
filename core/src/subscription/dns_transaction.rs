@@ -49,7 +49,12 @@ impl DnsTransaction {
     }
 }
 
-impl SubscribedData for DnsTransaction {}
+use std::any::Any;
+impl SubscribedData for DnsTransaction {
+    fn as_any(&self) -> &dyn Any {
+        self
+    }
+}
 
 pub struct DnsTransactionWrapper;
 

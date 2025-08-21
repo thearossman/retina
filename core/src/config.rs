@@ -330,7 +330,7 @@ fn default_duration() -> Option<u64> {
 }
 
 fn default_hardware_assist() -> bool {
-    true
+    false
 }
 
 fn default_dpdk_supl_args() -> Vec<String> {

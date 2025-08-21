@@ -39,7 +39,12 @@ impl QuicStream {
     }
 }
 
-impl SubscribedData for QuicStream {}
+use std::any::Any;
+impl SubscribedData for QuicStream {
+    fn as_any(&self) -> &dyn Any {
+        self
+    }
+}
 
 pub struct QuicStreamWrapper;
 
