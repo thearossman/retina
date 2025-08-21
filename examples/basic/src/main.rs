@@ -34,9 +34,9 @@ fn all_subscribable_types() -> SubscribableTypes {
     SubscribableTypes {
         subscriptions: vec![
             SubscribableTypeId::TlsHandshake,
-            // SubscribableTypeId::TlsHandshake,
-            // SubscribableTypeId::HttpTransaction,
-            // SubscribableTypeId::Connection,
+            SubscribableTypeId::TlsHandshake,
+            SubscribableTypeId::HttpTransaction,
+            SubscribableTypeId::Connection,
         ],
     }
 }
@@ -49,30 +49,31 @@ fn all_callbacks() -> SubscribedCallbacks {
                     callback1(tls);
                 }
             }),
-            // Box::new(|d| {
-            //     if let SubscribedData::TlsHandshake(tls) = d {
-            //         callback2(tls);
-            //     }
-            // }),
-            // Box::new(|d| {
-            //     if let SubscribedData::HttpTransaction(http) = d {
-            //         callback3(http);
-            //     }
-            // }),
-            // Box::new(|d| {
-            //     if let SubscribedData::Connection(conn) = d {
-            //         callback4(conn);
-            //     }
-            // }),
+            Box::new(|d| {
+                if let SubscribedData::TlsHandshake(tls) = d {
+                    callback2(tls);
+                }
+            }),
+            Box::new(|d| {
+                if let SubscribedData::HttpTransaction(http) = d {
+                    callback3(http);
+                }
+            }),
+            Box::new(|d| {
+                if let SubscribedData::Connection(conn) = d {
+                    callback4(conn);
+                }
+            }),
         ],
     }
 }
 
-#[filter("tls.sni ~ '^.*\\.com$'")]
-// tls
-// http
-// ipv4"
-// )]
+#[filter(
+    "tls.sni ~ '^.*\\.com$'
+tls
+http
+ipv4"
+)]
 fn main() {
     env_logger::init();
     let args = Args::parse();
