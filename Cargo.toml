@@ -13,6 +13,7 @@ members = [
     "examples/basic",
     "examples/enc_conns",
     "examples/app_classifier",
+    "examples/benchmark",
     "tests/functionality/basic_test",
 ]
 resolver = "2"

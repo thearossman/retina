@@ -13,14 +13,6 @@ struct Args {
         long,
         parse(from_os_str),
         value_name = "FILE",
-        default_value = "./tests/functionality/basic_test/curr_output.jsonl"
-    )]
-    outfile: PathBuf,
-    #[clap(
-        short,
-        long,
-        parse(from_os_str),
-        value_name = "FILE",
         default_value = "./configs/offline.toml"
     )]
     config: PathBuf,
