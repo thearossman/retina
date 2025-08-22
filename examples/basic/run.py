@@ -13,7 +13,9 @@ get_zlt = f"{root_dir}/examples/basic/get_zeroloss.py"
 config = f"{root_dir}/configs/online.toml"
 duration = 60
 start_buckets = 512
-mult = 8
+start_buckets_8 = 384
+start_buckets_64 = 256
+mult = 16
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(
@@ -34,6 +36,11 @@ if __name__ == "__main__":
     end_exp = math.floor(math.log2(args.end))
     for exp in range(start_exp, end_exp + 1):
         val = 2 ** exp
+
+        if val >= 8:
+            start_buckets = start_buckets_8
+        if val >= 64:
+            start_buckets = start_buckets_64
 
         # Build
         os.system(f"python3 {gen_script} -n {val}")
