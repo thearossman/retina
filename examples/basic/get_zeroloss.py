@@ -83,7 +83,7 @@ def main(args):
             print(f'Stop code {stop_code}: done')
             print(f'<{EPSILON}% Loss Throughput RESULT: {throughput}')
             with open(args.outfile, "a") as file:
-                file.write(f'{args.label}: <{EPSILON}% Loss Throughput RESULT: {throughput}')
+                file.write(f'{args.label}: <{EPSILON}% Loss Throughput RESULT: {throughput}\n')
             break
 
 def parse_args():
