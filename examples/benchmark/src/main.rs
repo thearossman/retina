@@ -9,7 +9,7 @@ use std::sync::atomic::Ordering;
 
 #[derive(Parser, Debug)]
 struct Args {
-    #[clap(short, long, default_value="0")]
+    #[clap(short, long, default_value = "0")]
     spin: u64,
     #[clap(
         short,
@@ -26,7 +26,9 @@ static SPIN: AtomicU64 = AtomicU64::new(0);
 #[allow(dead_code)]
 fn spin() {
     let cycles = SPIN.load(Ordering::Relaxed);
-    if cycles == 0 { return; }
+    if cycles == 0 {
+        return;
+    }
     let start = unsafe { rte_rdtsc() };
     loop {
         let now = unsafe { rte_rdtsc() };

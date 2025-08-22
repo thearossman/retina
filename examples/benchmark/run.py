@@ -37,6 +37,7 @@ if __name__ == "__main__":
 
         # Build
         os.system(f"python3 {gen_script} -n {val}")
+        os.system(f"rm -f ./target/release/deps/benchmark*") # force rebuild
         os.system(f"cargo build --bin {prog} --release")
 
         # Run
