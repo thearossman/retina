@@ -102,7 +102,7 @@ impl Conn {
                         tcp_conn.stoc.ooo_buf.buf.clear();
                     }
                     tcp_conn.update_term_condition(pdu.flags(), pdu.dir);
-                    self.info.sdata.post_match(pdu, &subscriptions.callbacks);
+                    self.info.sdata.post_match(&pdu, &subscriptions.callbacks);
                 } else {
                     tcp_conn.reassemble(pdu, &mut self.info, subscriptions, registry);
                 }

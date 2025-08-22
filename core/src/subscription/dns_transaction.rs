@@ -88,7 +88,7 @@ impl Trackable for TrackedDns {
         TrackedDns { five_tuple }
     }
 
-    fn pre_match(&mut self, _pdu: L4Pdu, _session_id: Option<usize>) {}
+    fn pre_match(&mut self, _pdu: &L4Pdu, _session_id: Option<usize>) {}
 
     fn on_match(&mut self, session: Session, callback: &Box<dyn Fn(SubscribedData)>) {
         if let SessionData::Dns(dns) = session.data {
@@ -99,7 +99,7 @@ impl Trackable for TrackedDns {
         }
     }
 
-    fn post_match(&mut self, _pdu: L4Pdu, _callback: &Box<dyn Fn(SubscribedData)>) {}
+    fn post_match(&mut self, _pdu: &L4Pdu, _callback: &Box<dyn Fn(SubscribedData)>) {}
 
     fn on_terminate(&mut self, _callback: &Box<dyn Fn(SubscribedData)>) {}
 }

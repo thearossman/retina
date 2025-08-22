@@ -100,7 +100,7 @@ impl Trackable for TrackedConnectionFrame {
         }
     }
 
-    fn pre_match(&mut self, pdu: L4Pdu, _session_id: Option<usize>) {
+    fn pre_match(&mut self, pdu: &L4Pdu, _session_id: Option<usize>) {
         self.buf
             .push(ConnectionFrame::new(self.five_tuple, pdu.mbuf_ref()));
     }
@@ -111,7 +111,7 @@ impl Trackable for TrackedConnectionFrame {
         });
     }
 
-    fn post_match(&mut self, pdu: L4Pdu, callback: &Box<dyn Fn(SubscribedData)>) {
+    fn post_match(&mut self, pdu: &L4Pdu, callback: &Box<dyn Fn(SubscribedData)>) {
         callback(SubscribedData::ConnectionFrame(ConnectionFrame::new(
             self.five_tuple,
             pdu.mbuf_ref(),

@@ -73,7 +73,7 @@ impl ConnInfo {
             }
             ProbeRegistryResult::None => {
                 // conn_parser remains Unknown
-                self.sdata.pre_match(pdu, None);
+                self.sdata.pre_match(&pdu, None);
                 let matches = subscriptions
                     .filters
                     .conn_filter(&self.cdata, &mut self.sdata);
@@ -95,7 +95,7 @@ impl ConnInfo {
                 }
             }
             ProbeRegistryResult::Unsure => {
-                self.sdata.pre_match(pdu, None);
+                self.sdata.pre_match(&pdu, None);
             }
         }
     }
@@ -103,7 +103,7 @@ impl ConnInfo {
     fn on_parse(&mut self, pdu: L4Pdu, subscriptions: &SubscriptionData) {
         match self.cdata.conn_parser.parse(&pdu) {
             ParseResult::Done(id) => {
-                self.sdata.pre_match(pdu, Some(id));
+                self.sdata.pre_match(&pdu, Some(id));
                 if let Some(session) = self.cdata.conn_parser.remove_session(id) {
                     let matched = subscriptions
                         .filters
@@ -120,16 +120,16 @@ impl ConnInfo {
                 }
             }
             ParseResult::Continue(id) => {
-                self.sdata.pre_match(pdu, Some(id));
+                self.sdata.pre_match(&pdu, Some(id));
             }
             ParseResult::Skipped => {
-                self.sdata.pre_match(pdu, None);
+                self.sdata.pre_match(&pdu, None);
             }
         }
     }
 
     fn on_track(&mut self, pdu: L4Pdu, subscriptions: &SubscriptionData) {
-        self.sdata.post_match(pdu, &subscriptions.callbacks);
+        self.sdata.post_match(&pdu, &subscriptions.callbacks);
     }
 
     fn get_match_state(&self, session_id: usize, subscriptions: &SubscriptionData) -> ConnState {

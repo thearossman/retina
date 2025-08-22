@@ -69,13 +69,13 @@ pub trait Trackable {
     fn new(five_tuple: FiveTuple) -> Self;
 
     /// Update tracked subscription data prior to a full filter match.
-    fn pre_match(&mut self, pdu: L4Pdu, session_id: Option<usize>);
+    fn pre_match(&mut self, pdu: &L4Pdu, session_id: Option<usize>);
 
     /// Update tracked subscription data on a full filter match.
     fn on_match(&mut self, session: Session, callback: &Box<dyn Fn(SubscribedData)>);
 
     /// Update tracked subscription data after a full filter match.
-    fn post_match(&mut self, pdu: L4Pdu, callback: &Box<dyn Fn(SubscribedData)>);
+    fn post_match(&mut self, pdu: &L4Pdu, callback: &Box<dyn Fn(SubscribedData)>);
 
     /// Update tracked subscription data on connection termination.
     fn on_terminate(&mut self, callback: &Box<dyn Fn(SubscribedData)>);
@@ -236,9 +236,9 @@ impl TrackableTypes {
         }
     }
 
-    pub fn pre_match(&mut self, pdu: L4Pdu, session_id: Option<usize>) {
+    pub fn pre_match(&mut self, pdu: &L4Pdu, session_id: Option<usize>) {
         for tracked in &mut self.tracked {
-            tracked.pre_match(pdu.clone(), session_id);
+            tracked.pre_match(pdu, session_id);
         }
     }
 
@@ -255,7 +255,7 @@ impl TrackableTypes {
         }
     }
 
-    pub fn post_match(&mut self, pdu: L4Pdu, callbacks: &SubscribedCallbacks) {
+    pub fn post_match(&mut self, pdu: &L4Pdu, callbacks: &SubscribedCallbacks) {
         for (i, tracked) in &mut self.tracked.iter_mut().enumerate() {
             if !matches!(
                 self.conn_filter_results.get(i).unwrap(),
@@ -264,7 +264,7 @@ impl TrackableTypes {
             {
                 continue;
             }
-            tracked.post_match(pdu.clone(), &callbacks.callbacks.get(i).unwrap());
+            tracked.post_match(pdu, &callbacks.callbacks.get(i).unwrap());
         }
     }
 
@@ -372,7 +372,7 @@ pub enum TrackableType {
 }
 
 impl TrackableType {
-    pub fn pre_match(&mut self, pdu: L4Pdu, session_id: Option<usize>) {
+    pub fn pre_match(&mut self, pdu: &L4Pdu, session_id: Option<usize>) {
         match self {
             TrackableType::Connection(tracked) => tracked.pre_match(pdu, session_id),
             TrackableType::ConnectionFrame(tracked) => tracked.pre_match(pdu, session_id),
@@ -398,7 +398,7 @@ impl TrackableType {
         }
     }
 
-    pub fn post_match(&mut self, pdu: L4Pdu, callback: &Box<dyn Fn(SubscribedData)>) {
+    pub fn post_match(&mut self, pdu: &L4Pdu, callback: &Box<dyn Fn(SubscribedData)>) {
         match self {
             TrackableType::Connection(tracked) => tracked.post_match(pdu, callback),
             TrackableType::ConnectionFrame(tracked) => tracked.post_match(pdu, callback),

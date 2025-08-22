@@ -188,7 +188,7 @@ pub struct TrackedConnection {
 
 impl TrackedConnection {
     #[inline]
-    fn update(&mut self, segment: L4Pdu) {
+    fn update(&mut self, segment: &L4Pdu) {
         let now = Instant::now();
         let inactivity = now - self.last_seen_ts;
         if inactivity > self.max_inactivity {
@@ -253,7 +253,7 @@ impl Trackable for TrackedConnection {
         }
     }
 
-    fn pre_match(&mut self, pdu: L4Pdu, _session_id: Option<usize>) {
+    fn pre_match(&mut self, pdu: &L4Pdu, _session_id: Option<usize>) {
         self.update(pdu);
     }
 
@@ -261,7 +261,7 @@ impl Trackable for TrackedConnection {
         // do nothing, should stay tracked
     }
 
-    fn post_match(&mut self, pdu: L4Pdu, _callback: &Box<dyn Fn(SubscribedData)>) {
+    fn post_match(&mut self, pdu: &L4Pdu, _callback: &Box<dyn Fn(SubscribedData)>) {
         self.update(pdu)
     }
 
@@ -347,7 +347,7 @@ impl Flow {
     }
 
     #[inline]
-    fn insert_segment(&mut self, segment: L4Pdu) {
+    fn insert_segment(&mut self, segment: &L4Pdu) {
         self.nb_pkts += 1;
 
         if segment.offset() > segment.mbuf.data_len()
