@@ -45,6 +45,9 @@ def execute(cmd, executable):
             elif value <= EPSILON :
                 print(f'Epsilon {value}% dropped...')
                 stop = 2
+            elif value > EPSILON:
+                print(f'Epsilon {value}% dropped, but likely due to spike at end.')
+                stop = 2
 
     popen.stdout.close()
     popen.wait()
