@@ -188,10 +188,11 @@ impl PredPTree {
 
     pub(crate) fn add_pattern(&mut self, pattern: &FlatPattern, callback: &Option<CallbackSpec>) {
         let mut node = &mut self.root;
-        let mut is_terminal = true;
+        let mut terminates_full_pattern = true;
         for predicate in pattern.predicates.iter() {
             if self.packet_only && !predicate.on_packet() {
-                is_terminal = true;
+                // More predicates that haven't been applied
+                terminates_full_pattern = false;
                 break;
             }
             if !node.has_child(predicate) {
@@ -202,8 +203,8 @@ impl PredPTree {
             node = node.get_child(predicate);
         }
 
-        node.is_terminal = is_terminal;
-        if is_terminal {
+        node.is_terminal = true;
+        if terminates_full_pattern {
             // Packet-level pattern and packet-level CB
             if let Some(cb) = callback {
                 node.deliver.insert(cb.clone());

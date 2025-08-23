@@ -87,7 +87,7 @@ fn update_body(body: &mut Vec<proc_macro2::TokenStream>, node: &PredPNode, tree:
         }
     }
     if !node.deliver.is_empty() {
-        unimplemented!(); // TODO
+        panic!("Packetlevel subscriptions not yet implemented");
     }
 }
 

@@ -567,7 +567,13 @@ impl PTree {
         };
         assert!(pattern.predicates.len() <= full_pattern.predicates.len());
         if pattern.predicates.len() < full_pattern.predicates.len() {
-            assert!(!level.can_deliver(&self.filter_layer));
+            assert!(
+                !level.can_deliver(&self.filter_layer),
+                "Ensure that {} explicit level {:?} is compatible with filter string {}",
+                callback.as_str,
+                callback.expl_level,
+                full_pattern
+            );
             truncated = true;
         }
 
