@@ -1,12 +1,12 @@
+use std::path::PathBuf;
 use std::sync::atomic::AtomicU64;
 use std::sync::atomic::Ordering;
 use std::vec;
-use std::path::PathBuf;
 
 use retina_core::config::load_config;
+use retina_core::rte_rdtsc;
 use retina_core::subscription::*;
 use retina_core::Runtime;
-use retina_core::rte_rdtsc;
 use retina_filtergen::filter;
 
 use clap::Parser;
@@ -24,7 +24,9 @@ struct Args {
 #[allow(dead_code)]
 fn spin() {
     let cycles = SPIN.load(Ordering::Relaxed);
-    if cycles == 0 { return; }
+    if cycles == 0 {
+        return;
+    }
     let start = unsafe { rte_rdtsc() };
     loop {
         let now = unsafe { rte_rdtsc() };
@@ -62,31 +64,34 @@ fn callback_conn(_conn: Connection) {
 fn all_subscribable_types() -> SubscribableTypes {
     SubscribableTypes {
         subscriptions: vec![
-			SubscribableTypeId::Connection,
-			SubscribableTypeId::Connection,
-		]
+            SubscribableTypeId::Connection,
+            SubscribableTypeId::Connection,
+        ],
     }
 }
 
 fn all_callbacks() -> SubscribedCallbacks {
     SubscribedCallbacks {
-        callbacks: vec![			Box::new(|d| {
-				if let SubscribedData::Connection(conn) = d {
-					callback_conn(conn);
-				}
-			}),
-			Box::new(|d| {
-				if let SubscribedData::Connection(conn) = d {
-					callback_conn(conn);
-				}
-			}),
-		]
+        callbacks: vec![
+            Box::new(|d| {
+                if let SubscribedData::Connection(conn) = d {
+                    callback_conn(conn);
+                }
+            }),
+            Box::new(|d| {
+                if let SubscribedData::Connection(conn) = d {
+                    callback_conn(conn);
+                }
+            }),
+        ],
     }
 }
 
-#[filter("ipv4.addr = 0.0.0.0/1 and (http or tls or dns or quic)
+#[filter(
+    "ipv4.addr = 0.0.0.0/1 and (http or tls or dns or quic)
 ipv4.addr = 128.0.0.0/1 and (http or tls or dns or quic)
-")]
+"
+)]
 fn main() {
     env_logger::init();
     let args = Args::parse();

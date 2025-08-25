@@ -30,9 +30,9 @@ impl FilterParser {
         match pairs {
             Ok(mut pairs) => {
                 let pair = pairs.next().unwrap();
-                self.parse_disjunct(pair)
+                self.parse_disjunct(pair, filter_raw)
             }
-            Err(_) => bail!(FilterError::InvalidFormat),
+            Err(_) => bail!(FilterError::InvalidFormat(filter_raw.into())),
         }
     }
 
@@ -79,33 +79,33 @@ impl FilterParser {
         flat_conjuncts
     }
 
-    fn parse_disjunct(&self, pair: Pair<Rule>) -> Result<Node> {
+    fn parse_disjunct(&self, pair: Pair<Rule>, filter_raw: &str) -> Result<Node> {
         //println!("building from expr: {:#?}", pair);
         let inner = pair.into_inner();
         let mut terms = vec![];
         for pair in inner {
             if let Rule::sub_expr = pair.as_rule() {
-                terms.push(self.parse_conjunct(pair)?);
+                terms.push(self.parse_conjunct(pair, filter_raw)?);
             }
         }
         Ok(Node::Disjunct(terms))
     }
 
-    fn parse_conjunct(&self, pair: Pair<Rule>) -> Result<Node> {
+    fn parse_conjunct(&self, pair: Pair<Rule>, filter_raw: &str) -> Result<Node> {
         //println!("building from disjunct: {:#?}", pair);
         let inner = pair.into_inner();
         let mut terms = vec![];
         for pair in inner {
             match pair.as_rule() {
-                Rule::expr => terms.push(self.parse_disjunct(pair)?),
-                Rule::predicate => terms.push(self.parse_predicate(pair)?),
+                Rule::expr => terms.push(self.parse_disjunct(pair, filter_raw)?),
+                Rule::predicate => terms.push(self.parse_predicate(pair, filter_raw)?),
                 _ => (),
             }
         }
         Ok(Node::Conjunct(terms))
     }
 
-    fn parse_predicate(&self, pair: Pair<Rule>) -> Result<Node> {
+    fn parse_predicate(&self, pair: Pair<Rule>, filter_raw: &str) -> Result<Node> {
         let mut inner = pair.into_inner();
         let protocol = inner.next().unwrap();
         match inner.next() {
@@ -154,7 +154,7 @@ impl FilterParser {
                             }))
                         }
                     }
-                    _ => bail!(FilterError::InvalidFormat),
+                    _ => bail!(FilterError::InvalidFormat(filter_raw.into())),
                 }
             }
             None => Ok(Node::Predicate(Predicate::Unary {

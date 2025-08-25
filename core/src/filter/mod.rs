@@ -157,8 +157,8 @@ pub enum FilterError {
     // Catches all filters that do not satisfy the grammar.
     // This is an umbrella error type that covers some of the
     // more specific errors below as well.
-    #[error("Invalid filter format")]
-    InvalidFormat,
+    #[error("Invalid filter format: {0}")]
+    InvalidFormat(String),
 
     #[error("Invalid pattern. Contains unsupported layer encapsulation: {0}")]
     InvalidPatternLayers(FlatPattern),
