@@ -179,7 +179,7 @@ fn gen_state_filter_util(
                 );
             }
             Predicate::Custom { name, matched, .. } => {
-                let pred_tokenstream = custom_pred_to_tokens(&name.0, *matched);
+                let pred_tokenstream = custom_pred_to_tokens(&name.0, *matched, sub);
                 add_pred(
                     code,
                     child,

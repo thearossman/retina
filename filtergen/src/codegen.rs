@@ -131,7 +131,7 @@ pub(crate) fn filter_func_to_tokens(
         ParsedInput::FilterGroupFn(fil) => {
             Ident::new(&fil.group_name.to_lowercase(), Span::call_site())
         }
-        ParsedInput::Filter(fil) => Ident::new(&fil.func.name.to_lowercase(), Span::call_site()),
+        ParsedInput::Filter(fil) => Ident::new(&fil.func.name, Span::call_site()),
         _ => unreachable!(),
     };
 
@@ -149,10 +149,14 @@ pub(crate) fn filter_func_to_tokens(
     // Record FilterResult - update needs to return `true` if something changes
     // Note that this may also be invoked in a static filter that doesn't return
     // anything; the `ret` parameter is not used in that case.
-    let mut invoke = quote! {
-        let filter_result = #invoke;
-        ret = ret ||
-            matches!(filter_result, FilterResult::Accept | FilterResult::Drop);
+    let mut invoke = if needs_track {
+        quote! {
+            let filter_result = #invoke;
+            ret = ret ||
+                matches!(filter_result, FilterResult::Accept | FilterResult::Drop);
+        }
+    } else {
+        quote! { #invoke }
     };
     // Get return value for `update` function
     if needs_track {
@@ -560,11 +564,27 @@ pub(crate) fn cb_set_active_to_tokens(spec: &CallbackSpec) -> proc_macro2::Token
 /// Custom streaming (stateful or stateless) predicate to tokens
 /// in a filter PTree. This checks for a filter result, but it does not
 /// invoke the filter.
-pub(crate) fn custom_pred_to_tokens(name: &String, matched: bool) -> proc_macro2::TokenStream {
-    let ident = Ident::new(&(name.to_lowercase()), Span::call_site());
-    match matched {
-        true => quote! { conn.tracked.#ident.matched() },
-        false => quote! { conn.tracked.#ident.is_active() },
+pub(crate) fn custom_pred_to_tokens(
+    name: &String,
+    matched: bool,
+    decoder: &SubscriptionDecoder,
+) -> proc_macro2::TokenStream {
+    let filter = decoder
+        .filters_raw
+        .get(name)
+        .expect(&format!("Can't find filter {}", name));
+
+    assert!(filter.len() > 0, "{} has no inputs", name);
+
+    if filter.len() > 1 || filter[0].levels().iter().any(|l| l.is_streaming()) {
+        let ident = Ident::new(&(name.to_lowercase()), Span::call_site());
+        match matched {
+            true => return quote! { conn.tracked.#ident.matched() },
+            false => return quote! { conn.tracked.#ident.is_active() },
+        }
+    } else {
+        let tokens = filter_func_to_tokens(decoder, &filter[0], false);
+        return quote! { matches!(#tokens, FilterResult::Accept) };
     }
 }
 
