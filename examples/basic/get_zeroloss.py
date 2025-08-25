@@ -45,6 +45,12 @@ def execute(cmd, executable):
             elif value <= EPSILON :
                 print(f'Epsilon {value}% dropped...')
                 stop = 2
+            elif value > EPSILON:
+                if grace_pd < GRACE_PD:
+                    print(f'Epsilon {value}% dropped, but likely due to spike at end.')
+                    stop = 2
+                else:
+                    stop = 0
 
     popen.stdout.close()
     popen.wait()
@@ -60,7 +66,8 @@ def main(args):
 
     executable = f'/home/tcr6/retina/target/release/{binary}'
     cmd = f'sudo env LD_LIBRARY_PATH=$LD_LIBRARY_PATH RUST_LOG=error {executable} -c {config_file}'
-    cmd += f' --spin {args.spin}'
+    if "basic" in binary or "spin" in binary:
+        cmd += f' --spin {args.spin}'
     print(cmd)
     config=toml.load(config_file)
     n_cores = len(config['online']['ports'][0]['cores'])

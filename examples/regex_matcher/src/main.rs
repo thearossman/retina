@@ -53,6 +53,7 @@ fn all_subscribable_types() -> SubscribableTypes {
             SubscribableTypeId::HttpTransaction,
             SubscribableTypeId::HttpTransaction,
             SubscribableTypeId::HttpTransaction,
+            SubscribableTypeId::HttpTransaction,
         ],
     }
 }
@@ -60,6 +61,46 @@ fn all_subscribable_types() -> SubscribableTypes {
 fn all_callbacks() -> SubscribedCallbacks {
     SubscribedCallbacks {
         callbacks: vec![
+            Box::new(|d| {
+                if let SubscribedData::HttpTransaction(http) = d {
+                    callback_http(http);
+                }
+            }),
+            Box::new(|d| {
+                if let SubscribedData::HttpTransaction(http) = d {
+                    callback_http(http);
+                }
+            }),
+            Box::new(|d| {
+                if let SubscribedData::HttpTransaction(http) = d {
+                    callback_http(http);
+                }
+            }),
+            Box::new(|d| {
+                if let SubscribedData::HttpTransaction(http) = d {
+                    callback_http(http);
+                }
+            }),
+            Box::new(|d| {
+                if let SubscribedData::HttpTransaction(http) = d {
+                    callback_http(http);
+                }
+            }),
+            Box::new(|d| {
+                if let SubscribedData::HttpTransaction(http) = d {
+                    callback_http(http);
+                }
+            }),
+            Box::new(|d| {
+                if let SubscribedData::HttpTransaction(http) = d {
+                    callback_http(http);
+                }
+            }),
+            Box::new(|d| {
+                if let SubscribedData::HttpTransaction(http) = d {
+                    callback_http(http);
+                }
+            }),
             Box::new(|d| {
                 if let SubscribedData::HttpTransaction(http) = d {
                     callback_http(http);
