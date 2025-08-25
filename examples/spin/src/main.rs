@@ -58,6 +58,11 @@ fn eth(_: Subscribed) {
     *ETH.write().unwrap() += 1;
 }
 
+#[allow(unused)]
+fn conn_cb(_: Subscribed) {
+    spin(*CYCLES.read().unwrap());
+}
+
 #[retina_main]
 fn main() -> Result<()> {
     env_logger::init();
@@ -68,12 +73,12 @@ fn main() -> Result<()> {
     }
     let mut runtime: Runtime<SubscribableWrapper> = Runtime::new(config, filter, callbacks())?;
     runtime.run();
-    println!("Called: {} - HTTP, {} - TCP-80, {} - IP-dst, {} - IP-src, {} - Eth", 
-             *HTTP.read().unwrap(),
-             *TCP80.read().unwrap(),
-             *IPDST.read().unwrap(),
-             *IPSRC.read().unwrap(),
-             *ETH.read().unwrap()); 
+    // println!("Called: {} - HTTP, {} - TCP-80, {} - IP-dst, {} - IP-src, {} - Eth",
+    //          *HTTP.read().unwrap(),
+    //          *TCP80.read().unwrap(),
+    //          *IPDST.read().unwrap(),
+    //          *IPSRC.read().unwrap(),
+    //          *ETH.read().unwrap());
     Ok(())
 }
 
