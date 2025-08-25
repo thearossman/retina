@@ -13,8 +13,8 @@ get_zlt = f"{root_dir}/exp_scripts/get_zeroloss.py"
 config = f"{root_dir}/configs/online.toml"
 duration = 60
 start_buckets = 512
-start_buckets_8 = 384
-start_buckets_64 = 256
+start_buckets_8 = 512
+start_buckets_64 = 512
 mult = 16
 
 if __name__ == "__main__":

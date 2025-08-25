@@ -26,7 +26,7 @@ lazy_static! {
     static ref IPDST: RwLock<u64> = RwLock::new(0);
     static ref IPSRC: RwLock<u64> = RwLock::new(0);
     static ref ETH: RwLock<u64> = RwLock::new(0);
-};
+}
 
 #[allow(unused)]
 fn http(_: Subscribed) {
