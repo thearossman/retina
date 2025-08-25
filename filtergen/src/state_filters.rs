@@ -89,7 +89,7 @@ pub(crate) fn gen_state_filters(
                 conn.linfo.actions.extend(&transport_actions);
                 conn.layers[0].extend_actions(&layer0_actions);
             }
-        })
+        });
     }
     (
         quote! {

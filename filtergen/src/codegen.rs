@@ -584,7 +584,7 @@ pub(crate) fn custom_pred_to_tokens(
         }
     } else {
         let tokens = filter_func_to_tokens(decoder, &filter[0], false);
-        return quote! { matches!(#tokens, FilterResult::Accept) };
+        return quote! { #tokens == FilterResult::Accept };
     }
 }
 

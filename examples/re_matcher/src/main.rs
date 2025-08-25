@@ -1,8 +1,24 @@
+use clap::Parser;
 use regex::{RegexSet, SetMatches};
+use std::path::PathBuf;
+
 use retina_core::protocols::{Session, stream::SessionData};
 use retina_core::subscription::FilterResult;
+use retina_core::{Runtime, config::load_config};
 use retina_datatypes::HttpTransaction;
 use retina_filtergen::{callback, datatype, datatype_group, filter, input_files, retina_main};
+
+#[derive(Parser, Debug)]
+struct Args {
+    #[clap(
+        short,
+        long,
+        parse(from_os_str),
+        value_name = "FILE",
+        default_value = "./configs/offline.toml"
+    )]
+    config: PathBuf,
+}
 
 lazy_static::lazy_static! {
     static ref REGEX: RegexSet = RegexSet::new(&[
@@ -81,5 +97,9 @@ fn callback(_matches: &HttpHostMatch, _txn: &HttpTransaction) {}
 #[input_files("$RETINA_HOME/datatypes/data.txt")]
 #[retina_main]
 fn main() {
-    println!("Hello, world!");
+    env_logger::init();
+    let args = Args::parse();
+    let config = load_config(&args.config);
+    let mut runtime: Runtime<SubscribedWrapper> = Runtime::new(config, filter).unwrap();
+    runtime.run();
 }

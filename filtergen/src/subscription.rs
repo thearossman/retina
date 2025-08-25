@@ -524,7 +524,7 @@ impl SubscriptionDecoder {
             for l in stat {
                 match inp {
                     // Deliver requested tx update to filter and datatype fns
-                    ParsedInput::FilterGroupFn(_) | ParsedInput::Filter(_) => {
+                    ParsedInput::FilterGroupFn(_) => {
                         updates.entry(l).or_insert(vec![]).push(inp.clone());
                     }
                     ParsedInput::DatatypeFn(f) => {
@@ -533,6 +533,7 @@ impl SubscriptionDecoder {
                         }
                     }
                     // Callbacks invoked inline
+                    // Ungrouped filter functions that aren't streaming don't need to be tracked
                     _ => {}
                 }
             }
