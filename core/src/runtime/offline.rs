@@ -36,7 +36,7 @@ where
         subscription: Arc<Subscription<'a, S>>,
     ) -> Self {
         let proto_filter = Filter::from_str(&protocol_filter, true, 0)
-                                                    .expect("Failed to parse stream protocol filter");
+            .expect("Failed to parse stream protocol filter");
         let core_id = CoreId(unsafe { dpdk::rte_lcore_id() } as u32);
         let mempool_name = mempools
             .get(&core_id.socket_id())
@@ -61,7 +61,8 @@ where
         let mut nb_bytes = 0;
 
         let config = TrackerConfig::from(&self.options.conntrack);
-        let registry = ParserRegistry::build::<S>(&self.proto_filter).expect("Unable to build registry");
+        let registry =
+            ParserRegistry::build::<S>(&self.proto_filter).expect("Unable to build registry");
         log::debug!("{:#?}", registry);
         let mut stream_table = ConnTracker::<S::Tracked>::new(config, registry);
 

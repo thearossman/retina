@@ -37,11 +37,10 @@ where
         protocol_str: String,
         subscription: Arc<Subscription<'a, S>>,
     ) -> Self {
-
-        let hw_filter = Filter::from_str(&filter_str, true, 0)
-                                               .expect("Failed to parse collapsed filter");
+        let hw_filter =
+            Filter::from_str(&filter_str, true, 0).expect("Failed to parse collapsed filter");
         let proto_filter = Filter::from_str(&protocol_str, true, 0)
-                                                   .expect("Failed to parse stream protocol filter");
+            .expect("Failed to parse stream protocol filter");
         // Set up signal handler
         let is_running = Arc::new(AtomicBool::new(true));
         let r = Arc::clone(&is_running);

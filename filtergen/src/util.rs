@@ -280,14 +280,13 @@ fn standard_field(
     }
 }
 
-
 // Codegen utils shared between packet, connection, and session filters. //
 
 pub(crate) fn terminal_match(node: &PNode) -> (proc_macro2::TokenStream, u128) {
     if node.is_terminal.is_empty() {
         return (quote! {}, 0);
     }
-    let mut bitmask = 0; 
+    let mut bitmask = 0;
     for idx in &node.is_terminal {
         bitmask |= 0b1 << idx;
     }
@@ -295,13 +294,16 @@ pub(crate) fn terminal_match(node: &PNode) -> (proc_macro2::TokenStream, u128) {
     (quote! { result.terminal_matches |= #bitmask_lit; }, bitmask)
 }
 
-pub(crate) fn nonterminal_match(node: &PNode, terminal_bitmask: u128) -> (proc_macro2::TokenStream, u128) {
+pub(crate) fn nonterminal_match(
+    node: &PNode,
+    terminal_bitmask: u128,
+) -> (proc_macro2::TokenStream, u128) {
     if node.filter_ids.is_empty() {
         return (quote! {}, 0);
     }
     // Need to build up the bitmask to cover all non-terminal matches
     let node_idx_lit = syn::LitInt::new(&node.id.to_string(), Span::call_site());
-    let mut bitmask = 0; 
+    let mut bitmask = 0;
     let mut nonterminal_nodes = vec![];
     for idx in &node.filter_ids {
         if terminal_bitmask & 0b1 << idx == 0 {
@@ -310,14 +312,19 @@ pub(crate) fn nonterminal_match(node: &PNode, terminal_bitmask: u128) -> (proc_m
     }
     // Only need to store one non-terminal node to cover the match arm for all filter IDs.
     // TODO, these should all go at beginning of arr., then stop when first invalid ID is hit.
-    let filter_idx_lit = syn::LitInt::new(&node.filter_ids.iter().next().unwrap().to_string(), 
-                                                  Span::call_site());
+    let filter_idx_lit = syn::LitInt::new(
+        &node.filter_ids.iter().next().unwrap().to_string(),
+        Span::call_site(),
+    );
     nonterminal_nodes.push(quote! {
         result.nonterminal_nodes[#filter_idx_lit] = #node_idx_lit;
     });
     let bitmask_lit = syn::LitInt::new(&bitmask.to_string(), Span::call_site());
-    (quote! { 
-        result.nonterminal_matches |= #bitmask_lit;
-        #( #nonterminal_nodes )*
-    }, bitmask)
+    (
+        quote! {
+            result.nonterminal_matches |= #bitmask_lit;
+            #( #nonterminal_nodes )*
+        },
+        bitmask,
+    )
 }

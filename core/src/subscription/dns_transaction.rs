@@ -16,15 +16,15 @@
 //!     runtime.run();
 //! }
 
+use crate::conntrack::conn::conn_info::ConnState;
 use crate::conntrack::conn_id::FiveTuple;
 use crate::conntrack::pdu::{L4Context, L4Pdu};
 use crate::conntrack::ConnTracker;
 use crate::filter::{FilterResult, FilterResultData};
 use crate::memory::mbuf::Mbuf;
 use crate::protocols::stream::dns::{parser::DnsParser, Dns};
-use crate::protocols::stream::{ConnParser, Session, SessionData, ConnData};
-use crate::conntrack::conn::conn_info::ConnState;
-use crate::subscription::{Subscribable, Subscription, Trackable, MatchData};
+use crate::protocols::stream::{ConnData, ConnParser, Session, SessionData};
+use crate::subscription::{MatchData, Subscribable, Subscription, Trackable};
 
 use serde::Serialize;
 
@@ -98,15 +98,17 @@ impl Trackable for TrackedDns {
     type Subscribed = DnsTransaction;
 
     fn new(five_tuple: FiveTuple, pkt_results: FilterResultData) -> Self {
-        TrackedDns { 
+        TrackedDns {
             five_tuple,
             match_data: MatchData::new(pkt_results),
         }
     }
 
-
-    fn deliver_session_on_match(&mut self, session: Session, 
-                                subscription: &Subscription<Self::Subscribed>) -> ConnState {
+    fn deliver_session_on_match(
+        &mut self,
+        session: Session,
+        subscription: &Subscription<Self::Subscribed>,
+    ) -> ConnState {
         if let SessionData::Dns(dns) = session.data {
             subscription.invoke(DnsTransaction {
                 five_tuple: self.five_tuple,
@@ -116,20 +118,31 @@ impl Trackable for TrackedDns {
         ConnState::Remove
     }
 
-    fn update(&mut self, 
-        _pdu: L4Pdu, 
+    fn update(
+        &mut self,
+        _pdu: L4Pdu,
         _session_id: Option<usize>,
-        _subscription: &Subscription<Self::Subscribed>) {}
+        _subscription: &Subscription<Self::Subscribed>,
+    ) {
+    }
 
     fn on_terminate(&mut self, _subscription: &Subscription<Self::Subscribed>) {}
 
     fn filter_packet(&mut self, pkt_filter_result: FilterResultData) {
         self.match_data.filter_packet(pkt_filter_result);
     }
-    fn filter_conn(&mut self, conn: &ConnData, subscription:  &Subscription<Self::Subscribed>) -> FilterResult {
+    fn filter_conn(
+        &mut self,
+        conn: &ConnData,
+        subscription: &Subscription<Self::Subscribed>,
+    ) -> FilterResult {
         return self.match_data.filter_conn(conn, subscription);
     }
-    fn filter_session(&mut self, session: &Session, subscription: &Subscription<Self::Subscribed>) -> bool {
+    fn filter_session(
+        &mut self,
+        session: &Session,
+        subscription: &Subscription<Self::Subscribed>,
+    ) -> bool {
         return self.match_data.filter_session(session, subscription);
     }
 }

@@ -1,11 +1,11 @@
 use crate::conntrack::conn_id::FiveTuple;
 use crate::conntrack::pdu::L4Pdu;
 use crate::filter::FilterResult;
+use crate::filter::FilterResultData;
 use crate::protocols::stream::{
     ConnData, ParseResult, ParserRegistry, ProbeRegistryResult, Session,
 };
 use crate::subscription::{Subscription, Trackable};
-use crate::filter::FilterResultData;
 
 #[derive(Debug)]
 pub(crate) struct ConnInfo<T>
@@ -78,7 +78,9 @@ where
                 self.sdata.update(pdu, None, subscription);
                 match self.sdata.filter_conn(&self.cdata, subscription) {
                     FilterResult::MatchTerminal(_idx) => {
-                        let subscription_state = self.sdata.deliver_session_on_match(Session::default(), subscription);
+                        let subscription_state = self
+                            .sdata
+                            .deliver_session_on_match(Session::default(), subscription);
                         self.state = self.get_match_state(subscription_state);
                     }
                     FilterResult::MatchNonTerminal(_idx) => {
@@ -103,12 +105,13 @@ where
                 if let Some(session) = self.cdata.conn_parser.remove_session(id) {
                     /* TODOTR CHECK THIS LOGIC */
                     if self.sdata.filter_session(&session, subscription) {
-                        // Does the subscription want the connection to stay tracked? 
-                        let subscription_state = self.sdata.deliver_session_on_match(session, subscription);
+                        // Does the subscription want the connection to stay tracked?
+                        let subscription_state =
+                            self.sdata.deliver_session_on_match(session, subscription);
                         self.state = self.get_match_state(subscription_state);
                     } else {
                         /* TODOTR CHECK THIS LOGIC */
-                        // May want dependence on subscribable types 
+                        // May want dependence on subscribable types
                         // (e.g., force remove if you want to match Connection only on first Session?)
                         self.state = self.cdata.conn_parser.session_nomatch_state();
                     }
@@ -131,7 +134,7 @@ where
     }
 
     fn get_match_state(&mut self, subscription_state: ConnState) -> ConnState {
-        // Does the filter want the connection to stay tracked? 
+        // Does the filter want the connection to stay tracked?
         let filter_state = self.cdata.conn_parser.session_match_state();
         return {
             if subscription_state == ConnState::Remove && filter_state == ConnState::Remove {
@@ -145,9 +148,8 @@ where
                 // - No need to keep parsing after the handshake, but should still track.
                 ConnState::Tracking
             }
-        }
+        };
     }
-
 }
 
 #[derive(Debug, PartialEq, Eq, Clone, Copy)]

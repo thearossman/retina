@@ -3,7 +3,6 @@ use std::collections::HashSet;
 pub struct TlsHandshakeData;
 
 impl TlsHandshakeData {
-
     #[inline]
     pub fn session_field() -> proc_macro2::TokenStream {
         quote! {
@@ -46,19 +45,21 @@ impl TlsHandshakeData {
         quote! {}
         // quote! { self.tls = None; }
     }
-
 }
-
-
 
 pub struct TlsSubscription;
 
 impl TlsSubscription {
-
-    pub fn delivered_field() -> (proc_macro2::TokenStream, HashSet<String>, proc_macro2::TokenStream) {
-        (quote! { pub tls: Rc<Option<Tls>>, },
-         ["tls".to_string()].iter().cloned().collect(),
-         quote! { tls: self.tls.clone(), } )
+    pub fn delivered_field() -> (
+        proc_macro2::TokenStream,
+        HashSet<String>,
+        proc_macro2::TokenStream,
+    ) {
+        (
+            quote! { pub tls: Rc<Option<Tls>>, },
+            ["tls".to_string()].iter().cloned().collect(),
+            quote! { tls: self.tls.clone(), },
+        )
     }
 
     #[allow(dead_code)]
@@ -66,5 +67,4 @@ impl TlsSubscription {
         // quote! { self.tls.is_some() }
         quote! {}
     }
-
 }

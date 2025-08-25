@@ -66,7 +66,8 @@ def main(args):
 
     executable = f'/home/tcr6/retina/target/release/{binary}'
     cmd = f'sudo env LD_LIBRARY_PATH=$LD_LIBRARY_PATH RUST_LOG=error {executable} -c {config_file}'
-    cmd += f' --spin {args.spin}'
+    if 'basic' in binary or 'spin' in binary:
+        cmd += f' --spin {args.spin}'
     print(cmd)
     config=toml.load(config_file)
     n_cores = len(config['online']['ports'][0]['cores'])

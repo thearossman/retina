@@ -51,10 +51,12 @@ where
     /// `initial_timeout` and a maximum out-or-order tolerance of `max_ooo`. This means that there
     /// can be at most `max_ooo` packets buffered out of sequence before Retina chooses to discard
     /// the connection.
-    pub(super) fn new_tcp(ctxt: L4Context, 
-                          initial_timeout: usize, 
-                          max_ooo: usize,
-                          pkt_results: FilterResultData) -> Result<Self> {
+    pub(super) fn new_tcp(
+        ctxt: L4Context,
+        initial_timeout: usize,
+        max_ooo: usize,
+        pkt_results: FilterResultData,
+    ) -> Result<Self> {
         let five_tuple = FiveTuple::from_ctxt(ctxt);
         let tcp_conn = if ctxt.flags & SYN != 0 && ctxt.flags & ACK == 0 && ctxt.flags & RST == 0 {
             TcpConn::new_on_syn(ctxt, max_ooo)
@@ -72,9 +74,11 @@ where
     /// Creates a new UDP connection from `ctxt` with an initial inactivity window of
     /// `initial_timeout`.
     #[allow(clippy::unnecessary_wraps)]
-    pub(super) fn new_udp(ctxt: L4Context, 
-                          initial_timeout: usize,
-                          pkt_results: FilterResultData) -> Result<Self> {
+    pub(super) fn new_udp(
+        ctxt: L4Context,
+        initial_timeout: usize,
+        pkt_results: FilterResultData,
+    ) -> Result<Self> {
         let five_tuple = FiveTuple::from_ctxt(ctxt);
         let udp_conn = UdpConn;
         Ok(Conn {
@@ -141,8 +145,10 @@ where
     /// - the connection expires due to inactivity
     /// - the connection is drained at the end of the run
     pub(crate) fn terminate(&mut self, subscription: &Subscription<T::Subscribed>) {
-        let conn_matched = matches!(self.info.sdata.filter_conn(&self.info.cdata, subscription), 
-                                          FilterResult::MatchTerminal(_));
+        let conn_matched = matches!(
+            self.info.sdata.filter_conn(&self.info.cdata, subscription),
+            FilterResult::MatchTerminal(_)
+        );
         match self.info.state {
             ConnState::Probing => {
                 if conn_matched {
@@ -151,11 +157,13 @@ where
             }
             ConnState::Parsing => {
                 // call `on_terminate` if any sessions matched.
-                let mut session_matched = false; 
+                let mut session_matched = false;
                 for session in self.info.cdata.conn_parser.drain_sessions() {
                     if self.info.sdata.filter_session(&session, subscription) {
                         session_matched = true;
-                        self.info.sdata.deliver_session_on_match(session, subscription);
+                        self.info
+                            .sdata
+                            .deliver_session_on_match(session, subscription);
                     }
                 }
                 if session_matched || conn_matched {

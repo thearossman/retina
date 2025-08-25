@@ -7,13 +7,13 @@
 
 pub mod connection;
 pub mod connection_frame;
+pub mod custom;
 pub mod dns_transaction;
 pub mod frame;
 pub mod http_transaction;
+pub mod tls_connection;
 pub mod tls_handshake;
 pub mod zc_frame;
-pub mod tls_connection;
-pub mod custom; 
 
 pub use self::custom::custom_data::{SubscribableWrapper, Subscribed};
 
@@ -23,14 +23,14 @@ pub use self::connection_frame::ConnectionFrame;
 pub use self::dns_transaction::DnsTransaction;
 pub use self::frame::Frame;
 pub use self::http_transaction::HttpTransaction;
+pub use self::tls_connection::TlsConnection;
 pub use self::tls_handshake::TlsHandshake;
 pub use self::zc_frame::ZcFrame;
-pub use self::tls_connection::TlsConnection;
 
+use crate::conntrack::conn::conn_info::ConnState;
 use crate::conntrack::conn_id::FiveTuple;
 use crate::conntrack::pdu::L4Pdu;
 use crate::conntrack::ConnTracker;
-use crate::conntrack::conn::conn_info::ConnState;
 use crate::filter::{ConnFilterFn, PacketFilterFn, SessionFilterFn};
 use crate::filter::{FilterFactory, FilterResult, FilterResultData};
 use crate::memory::mbuf::Mbuf;
@@ -85,24 +85,37 @@ pub trait Trackable {
     /// represented by `five_tuple`.
     fn new(five_tuple: FiveTuple, pkt_result: FilterResultData) -> Self;
 
-    fn update(&mut self, 
-              // Needed for connection and frame data
-              pdu: L4Pdu, 
-              // Needed for frame-level subscriptions - if filtering by session, 
-              // only deliver packets associated with matched session (may have multiple per connection)
-              session_id: Option<usize>, 
-              subscription: &Subscription<Self::Subscribed>);
+    fn update(
+        &mut self,
+        // Needed for connection and frame data
+        pdu: L4Pdu,
+        // Needed for frame-level subscriptions - if filtering by session,
+        // only deliver packets associated with matched session (may have multiple per connection)
+        session_id: Option<usize>,
+        subscription: &Subscription<Self::Subscribed>,
+    );
 
     // Needed for session data
-    fn deliver_session_on_match(&mut self, session: Session, 
-                                subscription: &Subscription<Self::Subscribed>) -> ConnState;
+    fn deliver_session_on_match(
+        &mut self,
+        session: Session,
+        subscription: &Subscription<Self::Subscribed>,
+    ) -> ConnState;
 
     /// Update tracked subscr iption data on connection termination.
     fn on_terminate(&mut self, subscription: &Subscription<Self::Subscribed>);
-    
+
     fn filter_packet(&mut self, pkt_filter_result: FilterResultData);
-    fn filter_conn(&mut self, conn: &ConnData, subscription:  &Subscription<Self::Subscribed>) -> FilterResult;
-    fn filter_session(&mut self, session: &Session, subscription: &Subscription<Self::Subscribed>) -> bool;
+    fn filter_conn(
+        &mut self,
+        conn: &ConnData,
+        subscription: &Subscription<Self::Subscribed>,
+    ) -> FilterResult;
+    fn filter_session(
+        &mut self,
+        session: &Session,
+        subscription: &Subscription<Self::Subscribed>,
+    ) -> bool;
 }
 
 /// A request for a callback on a subset of traffic specified by the filter.
@@ -124,7 +137,10 @@ where
     S: Subscribable,
 {
     /// Creates a new subscription from a filter and a callback.
-    pub(crate) fn new(factory: FilterFactory, callbacks: Vec<Box<dyn Fn(S::SubscribedData) + 'a>>) -> Self {
+    pub(crate) fn new(
+        factory: FilterFactory,
+        callbacks: Vec<Box<dyn Fn(S::SubscribedData) + 'a>>,
+    ) -> Self {
         Subscription {
             packet_filter: factory.packet_filter,
             conn_filter: factory.conn_filter,
@@ -141,13 +157,21 @@ where
     }
 
     /// Invokes the connection filter.
-    pub(crate) fn filter_conn(&self, pkt_result: &FilterResultData, conn: &ConnData) -> FilterResultData {
+    pub(crate) fn filter_conn(
+        &self,
+        pkt_result: &FilterResultData,
+        conn: &ConnData,
+    ) -> FilterResultData {
         (self.conn_filter)(pkt_result, conn)
     }
 
     /// Invokes the application-layer session filter. The `idx` parameter is the numerical ID of the
     /// session.
-    pub(crate) fn filter_session(&self, session: &Session, conn_result: &FilterResultData) -> FilterResultData {
+    pub(crate) fn filter_session(
+        &self,
+        session: &Session,
+        conn_result: &FilterResultData,
+    ) -> FilterResultData {
         (self.session_filter)(session, conn_result)
     }
 
@@ -167,7 +191,6 @@ where
     }
 }
 
-
 pub struct MatchData {
     pkt_filter_result: FilterResultData,
     conn_filter_result: Option<FilterResultData>,
@@ -180,12 +203,12 @@ pub struct MatchData {
 impl MatchData {
     pub fn new(pkt_filter_result: FilterResultData) -> Self {
         Self {
-            pkt_filter_result, 
+            pkt_filter_result,
             conn_filter_result: None,
             conn_term_matched: 0,
             conn_nonterminal_matches: 0,
             session_term_matched: 0,
-            session_matched: false 
+            session_matched: false,
         }
     }
 
@@ -194,7 +217,11 @@ impl MatchData {
         self.pkt_filter_result = pkt_filter_result;
     }
 
-    pub fn filter_conn<S: Subscribable>(&mut self, conn: &ConnData, subscription: &Subscription<S>) -> FilterResult {
+    pub fn filter_conn<S: Subscribable>(
+        &mut self,
+        conn: &ConnData,
+        subscription: &Subscription<S>,
+    ) -> FilterResult {
         let result = subscription.filter_conn(&self.pkt_filter_result, conn);
         self.conn_nonterminal_matches = result.nonterminal_matches;
         self.conn_term_matched = result.terminal_matches;
@@ -207,25 +234,27 @@ impl MatchData {
             } else {
                 FilterResult::NoMatch
             }
-        }
+        };
     }
 
-    pub fn filter_session<S: Subscribable>(&mut self, session: &Session, subscription: &Subscription<S>) -> bool {
+    pub fn filter_session<S: Subscribable>(
+        &mut self,
+        session: &Session,
+        subscription: &Subscription<S>,
+    ) -> bool {
         self.session_matched = true;
         let result = match &self.conn_filter_result {
-            Some(result_data) => { 
-                subscription.filter_session(session, &result_data) 
-            },
-            None => { 
+            Some(result_data) => subscription.filter_session(session, &result_data),
+            None => {
                 // Shouldn't be reached
                 return false;
-            },
+            }
         };
         self.session_term_matched = result.terminal_matches;
         // at session layer now (TODOTR 1/1/24: needs to be fixed for some session/conn cases)
         // add "clear session match" api for if we deliver a session and then track the connection or similar
         // only relevant for certain cases that are relatively edge-case-y
-        self.conn_nonterminal_matches = 0; 
+        self.conn_nonterminal_matches = 0;
         return self.terminal_matches() != 0;
     }
 
@@ -241,8 +270,7 @@ impl MatchData {
         // at session layer now (TODOTR 1/1/24 better ways to do this)
         if self.session_matched {
             return 0;
-        } else 
-        if self.conn_filter_result.is_some() {
+        } else if self.conn_filter_result.is_some() {
             return self.conn_nonterminal_matches;
         }
         return self.pkt_filter_result.nonterminal_matches;
@@ -267,5 +295,4 @@ impl MatchData {
     pub fn matched_nonterm_by_idx(&self, idx: usize) -> bool {
         self.nonterminal_matches() & (0b1 << idx) != 0
     }
-
 }

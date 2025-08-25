@@ -1,7 +1,9 @@
+#![recursion_limit = "256"]
+
+use retina_core::Runtime;
 use retina_core::config::load_config;
 use retina_core::rte_rdtsc;
 use retina_core::subscription::{SubscribableWrapper, Subscribed};
-use retina_core::Runtime;
 use retina_filtergen::retina_main;
 use std::path::PathBuf;
 
@@ -19,19 +21,7 @@ struct Args {
     config: PathBuf,
 }
 
-#[allow(unused)]
-fn no_op(_data: Subscribed) {}
-
-#[allow(unused)]
-fn callback1(_data: Subscribed) {
-    let start = unsafe { rte_rdtsc() };
-    loop {
-        let now = unsafe { rte_rdtsc() };
-        if now - start > 10000 {
-            break;
-        }
-    }
-}
+fn callback_http(_data: Subscribed) {}
 
 #[retina_main]
 fn main() {

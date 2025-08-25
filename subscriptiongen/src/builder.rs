@@ -1,11 +1,11 @@
-use std::collections::{HashSet, VecDeque};
 use crate::prototypes::*;
-use serde_yaml::{Value, Mapping, from_reader};
+use proc_macro2::{Ident, Span};
 use quote::quote;
-use proc_macro2::{Span, Ident};
+use serde_yaml::{from_reader, Mapping, Value};
+use std::collections::{HashSet, VecDeque};
 
 /// TODO: this is very messy and, if we move forward with this,
-/// should be cleaned up. 
+/// should be cleaned up.
 
 pub(crate) struct MethodBuilder {
     fields_str: HashSet<String>,
@@ -25,7 +25,6 @@ pub(crate) struct MethodBuilder {
 }
 
 impl MethodBuilder {
-
     pub(crate) fn new(filepath_in: &str) -> Self {
         let f_in = std::fs::File::open(filepath_in);
         if let Err(e) = f_in {
@@ -72,14 +71,16 @@ impl MethodBuilder {
         std::mem::take(&mut self.deliver_session_on_match)
     }
 
-    pub(crate) fn gen_terminate(&mut self) -> (proc_macro2::TokenStream, Vec<proc_macro2::TokenStream>) {
+    pub(crate) fn gen_terminate(
+        &mut self,
+    ) -> (proc_macro2::TokenStream, Vec<proc_macro2::TokenStream>) {
         let get_conn = match self.connection_bitmask {
-            0 => { quote! {} },
-            _ => { 
-                ConnectionData::get_conn()
+            0 => {
+                quote! {}
             }
+            _ => ConnectionData::get_conn(),
         };
-        ( get_conn , Vec::from(std::mem::take(&mut self.terminate)) )
+        (get_conn, Vec::from(std::mem::take(&mut self.terminate)))
     }
 
     pub(crate) fn gen_parsers(&mut self) -> Vec<proc_macro2::TokenStream> {
@@ -97,23 +98,23 @@ impl MethodBuilder {
     pub(crate) fn gen_subscriptions(&mut self) -> Vec<proc_macro2::TokenStream> {
         std::mem::take(&mut self.subscriptions)
     }
-    
+
     pub(crate) fn gen_drop(&mut self) -> Vec<proc_macro2::TokenStream> {
         std::mem::take(&mut self.drop)
     }
 
     /// Uses `matching` data to determine whether conn_track should
-    /// maintain the connection. Note that the filter may also have 
-    /// requirements. The framework will continue tracking if the filter 
+    /// maintain the connection. Note that the filter may also have
+    /// requirements. The framework will continue tracking if the filter
     /// OR subscription want to keep tracking.
-    
+
     pub(crate) fn match_state(&self) -> proc_macro2::TokenStream {
         let track_bitmask = syn::LitInt::new(&self.tracking_bitmask.to_string(), Span::call_site());
-        quote! { 
+        quote! {
             if self.match_data.matching_by_bitmask(#track_bitmask) {
                 return ConnState::Tracking;
             }
-            ConnState::Remove 
+            ConnState::Remove
         }
     }
 
@@ -126,15 +127,22 @@ impl MethodBuilder {
         // Subscribable types
         let types = raw_data.get("subscribed").unwrap();
         let iter = types.as_mapping().unwrap();
-        // String rep. of required data that will be tracked, across all subscriptions. 
+        // String rep. of required data that will be tracked, across all subscriptions.
         let mut required_data = HashSet::new();
         let mut required_conn_data = HashSet::new();
         for (k, v) in iter {
             // Customizable
-            let subscription_name = k.as_str().expect("Cannot read subscription name"); 
-            let subscription_data = v.as_mapping()
-                                             .expect(&format!("Cannot interpret subscription data as map: {}", subscription_name));
-            self.build_subscription(subscription_data, subscription_name, &mut required_data, &mut required_conn_data);
+            let subscription_name = k.as_str().expect("Cannot read subscription name");
+            let subscription_data = v.as_mapping().expect(&format!(
+                "Cannot interpret subscription data as map: {}",
+                subscription_name
+            ));
+            self.build_subscription(
+                subscription_data,
+                subscription_name,
+                &mut required_data,
+                &mut required_conn_data,
+            );
         }
         for s in required_data {
             self.add_tracked_data(&s);
@@ -145,39 +153,49 @@ impl MethodBuilder {
         }
     }
 
-    /// Build the information necessary for a subscription. 
+    /// Build the information necessary for a subscription.
     /// - The subscription struct
     /// - Subscription delivery
-    /// Store data that needs to be tracked for later tracking. 
-    fn build_subscription(&mut self, subscription_data: &Mapping, subscription_name: &str, 
-                           required_data: &mut HashSet<String>, required_conn_data: &mut HashSet<String>)
-    {
+    /// Store data that needs to be tracked for later tracking.
+    fn build_subscription(
+        &mut self,
+        subscription_data: &Mapping,
+        subscription_name: &str,
+        required_data: &mut HashSet<String>,
+        required_conn_data: &mut HashSet<String>,
+    ) {
         /* Build struct */
-        let fields = subscription_data.get("fields")
-                            .expect(&format!("Must specify desired fields for \"{}\"", subscription_name))
-                            .as_mapping()
-                            .expect(&format!("Fields must be interpretable as mapping: \"{}\"", subscription_name));
+        let fields = subscription_data
+            .get("fields")
+            .expect(&format!(
+                "Must specify desired fields for \"{}\"",
+                subscription_name
+            ))
+            .as_mapping()
+            .expect(&format!(
+                "Fields must be interpretable as mapping: \"{}\"",
+                subscription_name
+            ));
 
-        let fields: std::collections::HashMap<&str, &Value> = 
-                    fields.into_iter()
-                    .map( | (k, v) | (k.as_str().unwrap(), v ))
-                    .collect();
-        
+        let fields: std::collections::HashMap<&str, &Value> = fields
+            .into_iter()
+            .map(|(k, v)| (k.as_str().unwrap(), v))
+            .collect();
+
         // Connection data should be updated.
         let is_connection = fields.contains_key("connection");
         // Should continue to be tracked after match
         let is_tracking = is_connection || self.should_track(&fields);
-        
+
         let mut struct_fields = vec![];
         let mut deliver_data = vec![];
         for (field_name, v) in fields {
             let field_value: Option<Vec<&str>> = match v.as_sequence() {
-                    Some(seq) => Some(seq.into_iter().map( | v | v.as_str().unwrap() ).collect() ),
-                    None => None,
+                Some(seq) => Some(seq.into_iter().map(|v| v.as_str().unwrap()).collect()),
+                None => None,
             };
-            let (fields, 
-                 field_names,
-                 extract_field_data) = build_field(field_name, field_value, is_connection);
+            let (fields, field_names, extract_field_data) =
+                build_field(field_name, field_value, is_connection);
             struct_fields.push(fields);
             deliver_data.extend(extract_field_data);
             if field_name == "connection" {
@@ -187,7 +205,7 @@ impl MethodBuilder {
             }
         }
 
-        /* Since data may be shared, need to check and 
+        /* Since data may be shared, need to check and
          * deliver to callbacks for each index. */
         let name = Ident::new(subscription_name, Span::call_site());
 
@@ -195,16 +213,19 @@ impl MethodBuilder {
             Subscribed::#name(#name {
                 #( #deliver_data)*
             })
-        };  
+        };
 
         /* Set up data delivery */
-        let idxs = subscription_data.get("idx")
-                            .expect("Must specify at least one \"idx\"")
-                            .as_sequence()
-                            .expect("\"idx\" field should be formatted as a list");
-        
+        let idxs = subscription_data
+            .get("idx")
+            .expect("Must specify at least one \"idx\"")
+            .as_sequence()
+            .expect("\"idx\" field should be formatted as a list");
+
         for i in idxs {
-            let idx = i.as_i64().expect("Found \"idx\" that cannot be parsed as int");
+            let idx = i
+                .as_i64()
+                .expect("Found \"idx\" that cannot be parsed as int");
             let subscription_idx = syn::LitInt::new(&idx.to_string(), Span::call_site());
             let from_data = quote! {
                 if self.match_data.matched_term_by_idx(#subscription_idx) {
@@ -216,17 +237,19 @@ impl MethodBuilder {
             };
             if is_tracking {
                 self.terminate.push_back(from_data);
-                if is_connection { self.connection_bitmask |= 0b1 << idx; }
+                if is_connection {
+                    self.connection_bitmask |= 0b1 << idx;
+                }
                 self.tracking_bitmask |= 0b1 << idx;
             } else {
                 self.subscriptions.push(from_data);
             }
-        }      
+        }
 
         /* Define type */
         let struct_def = quote! {
             #[derive(Debug)]
-            pub struct #name { 
+            pub struct #name {
                 #( #struct_fields )*
             }
         };
@@ -235,7 +258,6 @@ impl MethodBuilder {
         /* Define enum variant */
         let enum_def = quote! { #name(#name), };
         self.enums.push(enum_def);
-
     }
 
     // Placeholder for request to track connection without collecting all data?
@@ -243,45 +265,49 @@ impl MethodBuilder {
         fields.contains_key("five_tuple") && fields.len() == 1
     }
 
-    /// *Track* data when delivered. E.g., store TLS session in struct. 
+    /// *Track* data when delivered. E.g., store TLS session in struct.
     fn add_tracked_data(&mut self, input: &str) {
-        if self.fields_str.contains(input) { return; }
+        if self.fields_str.contains(input) {
+            return;
+        }
         self.fields_str.insert(input.to_string());
         match input {
             "http" => {
                 self.fields.push(HttpTransactionData::session_field());
                 self.new.push(HttpTransactionData::gen_new());
-                self.deliver_session_on_match.push(HttpTransactionData::deliver_session_on_match(
-                    self.deliver_session_on_match.is_empty(),
-                ));
+                self.deliver_session_on_match
+                    .push(HttpTransactionData::deliver_session_on_match(
+                        self.deliver_session_on_match.is_empty(),
+                    ));
                 self.drop.push(HttpTransactionData::drop());
                 self.parser.push(HttpTransactionData::parser());
-                // add_data five tuple? 
-            },
+                // add_data five tuple?
+            }
             "tls" => {
                 self.fields.push(TlsHandshakeData::session_field());
                 self.new.push(TlsHandshakeData::gen_new());
-                self.deliver_session_on_match.push(TlsHandshakeData::deliver_session_on_match(
-                    self.deliver_session_on_match.is_empty(),
-                ));
+                self.deliver_session_on_match
+                    .push(TlsHandshakeData::deliver_session_on_match(
+                        self.deliver_session_on_match.is_empty(),
+                    ));
                 self.drop.push(TlsHandshakeData::drop());
                 self.parser.push(TlsHandshakeData::parser());
-            },
+            }
             "five_tuple" => {
                 self.fields.push(FiveTupleData::field());
                 self.new.push(FiveTupleData::gen_new());
-            },
+            }
             "connection" => {
                 self.fields.push(ConnectionData::tracked_field());
                 self.new.push(ConnectionData::gen_new());
-                self.update.push(ConnectionData::gen_update(self.connection_bitmask));
+                self.update
+                    .push(ConnectionData::gen_update(self.connection_bitmask));
             }
             _ => {
                 panic!("Unrecognized field");
             }
         }
     }
-
 }
 
 /// yaml parsing...
@@ -312,7 +338,7 @@ pub(crate) fn read_subscriptions(filepath_in: &str) -> proc_macro2::TokenStream 
     }
 }
 
-/* 
+/*
  * TODOs:
  * - Strings and var/enum names should be consts in `prototypes`
  * - Shared fields that aren't copy (pass ref/shared ptr to CB?)

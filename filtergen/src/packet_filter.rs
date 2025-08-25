@@ -6,7 +6,7 @@ use retina_core::filter::ast::*;
 use retina_core::filter::ptree::{PNode, PTree, Terminate};
 use retina_core::protocol;
 
-use crate::util::{binary_to_tokens, terminal_match, nonterminal_match};
+use crate::util::{binary_to_tokens, nonterminal_match, terminal_match};
 
 // TODO: lots of opportunities to optimize further. But need to be careful about correctness
 // example: collapse if statements at each header?
@@ -14,8 +14,7 @@ pub(crate) fn gen_packet_filter(
     ptree: &PTree,
     statics: &mut Vec<proc_macro2::TokenStream>,
 ) -> (proc_macro2::TokenStream, Vec<usize>) {
-    
-    // Generate ethernet/empty filter, if applicable: 
+    // Generate ethernet/empty filter, if applicable:
     let mut root = quote! {};
     if !ptree.root.is_terminal.is_empty() {
         let (code, bitmask) = terminal_match(&ptree.root);

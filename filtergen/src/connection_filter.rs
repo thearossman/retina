@@ -5,14 +5,13 @@ use quote::quote;
 use retina_core::filter::ast::*;
 use retina_core::filter::ptree::{PNode, PTree, Terminate};
 
-use crate::util::{terminal_match, nonterminal_match};
+use crate::util::{nonterminal_match, terminal_match};
 
 pub(crate) fn gen_connection_filter(
     ptree: &PTree,
     statics: &mut Vec<proc_macro2::TokenStream>,
     pt_nodes: Vec<usize>,
 ) -> (proc_macro2::TokenStream, Vec<usize>) {
-
     let mut ct_nodes = vec![];
     let mut body: Vec<proc_macro2::TokenStream> = vec![];
     let conn_subtrees = pt_nodes

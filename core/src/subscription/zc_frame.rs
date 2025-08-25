@@ -27,14 +27,14 @@
 //! }
 //! ```
 
+use crate::conntrack::conn::conn_info::ConnState;
 use crate::conntrack::conn_id::FiveTuple;
 use crate::conntrack::pdu::{L4Context, L4Pdu};
 use crate::conntrack::ConnTracker;
 use crate::filter::{FilterResult, FilterResultData};
 use crate::memory::mbuf::Mbuf;
-use crate::conntrack::conn::conn_info::ConnState;
-use crate::protocols::stream::{ConnParser, Session, ConnData};
-use crate::subscription::{Subscribable, Subscription, Trackable, MatchData};
+use crate::protocols::stream::{ConnData, ConnParser, Session};
+use crate::subscription::{MatchData, Subscribable, Subscription, Trackable};
 
 use std::collections::HashMap;
 
@@ -101,8 +101,11 @@ impl Trackable for TrackedZcFrame {
         }
     }
 
-    fn deliver_session_on_match(&mut self, session: Session, 
-                                subscription: &Subscription<Self::Subscribed>) -> ConnState {
+    fn deliver_session_on_match(
+        &mut self,
+        session: Session,
+        subscription: &Subscription<Self::Subscribed>,
+    ) -> ConnState {
         if let Some(session) = self.session_buf.remove(&session.id) {
             session.into_iter().for_each(|mbuf| {
                 subscription.invoke(mbuf);
@@ -112,10 +115,12 @@ impl Trackable for TrackedZcFrame {
         ConnState::Remove
     }
 
-    fn update(&mut self, 
-        pdu: L4Pdu, 
+    fn update(
+        &mut self,
+        pdu: L4Pdu,
         session_id: Option<usize>,
-        subscription: &Subscription<Self::Subscribed>) {
+        subscription: &Subscription<Self::Subscribed>,
+    ) {
         if self.match_data.matched_term_by_idx(0) {
             subscription.invoke(pdu.mbuf_own());
         } else {
@@ -137,10 +142,18 @@ impl Trackable for TrackedZcFrame {
         self.match_data.filter_packet(pkt_filter_result);
     }
 
-    fn filter_conn(&mut self, conn: &ConnData, subscription:  &Subscription<Self::Subscribed>) -> FilterResult {
+    fn filter_conn(
+        &mut self,
+        conn: &ConnData,
+        subscription: &Subscription<Self::Subscribed>,
+    ) -> FilterResult {
         return self.match_data.filter_conn(conn, subscription);
     }
-    fn filter_session(&mut self, session: &Session, subscription: &Subscription<Self::Subscribed>) -> bool {
+    fn filter_session(
+        &mut self,
+        session: &Session,
+        subscription: &Subscription<Self::Subscribed>,
+    ) -> bool {
         return self.match_data.filter_session(session, subscription);
     }
 }

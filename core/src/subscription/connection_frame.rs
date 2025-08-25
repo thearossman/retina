@@ -24,14 +24,14 @@
 //! packets in the connection are delivered in the order of observation.
 // TODO: find a workaround for this, perhaps timestamping all packets by default.
 
+use crate::conntrack::conn::conn_info::ConnState;
 use crate::conntrack::conn_id::FiveTuple;
 use crate::conntrack::pdu::{L4Context, L4Pdu};
 use crate::conntrack::ConnTracker;
-use crate::filter::{FilterResultData, FilterResult};
+use crate::filter::{FilterResult, FilterResultData};
 use crate::memory::mbuf::Mbuf;
-use crate::protocols::stream::{ConnParser, Session, ConnData};
-use crate::conntrack::conn::conn_info::ConnState;
-use crate::subscription::{Subscribable, Subscription, Trackable, MatchData};
+use crate::protocols::stream::{ConnData, ConnParser, Session};
+use crate::subscription::{MatchData, Subscribable, Subscription, Trackable};
 
 use std::net::SocketAddr;
 
@@ -113,15 +113,16 @@ impl Trackable for TrackedConnectionFrame {
         }
     }
 
-    fn update(&mut self, 
-        pdu: L4Pdu, 
+    fn update(
+        &mut self,
+        pdu: L4Pdu,
         _session_id: Option<usize>,
-        subscription: &Subscription<Self::Subscribed>)
-    {
+        subscription: &Subscription<Self::Subscribed>,
+    ) {
         match self.match_data.matched_term_by_idx(0) {
             true => {
                 subscription.invoke(ConnectionFrame::new(self.five_tuple, pdu.mbuf_ref()));
-            },
+            }
             false => {
                 self.buf
                     .push(ConnectionFrame::new(self.five_tuple, pdu.mbuf_ref()));
@@ -129,7 +130,11 @@ impl Trackable for TrackedConnectionFrame {
         }
     }
 
-    fn deliver_session_on_match(&mut self, _session: Session, subscription: &Subscription<Self::Subscribed>) -> ConnState {
+    fn deliver_session_on_match(
+        &mut self,
+        _session: Session,
+        subscription: &Subscription<Self::Subscribed>,
+    ) -> ConnState {
         self.buf.drain(..).for_each(|frame| {
             subscription.invoke(frame);
         });
@@ -146,11 +151,19 @@ impl Trackable for TrackedConnectionFrame {
         self.match_data.filter_packet(pkt_filter_result);
     }
 
-    fn filter_conn(&mut self, conn: &ConnData, subscription:  &Subscription<Self::Subscribed>) -> FilterResult {
+    fn filter_conn(
+        &mut self,
+        conn: &ConnData,
+        subscription: &Subscription<Self::Subscribed>,
+    ) -> FilterResult {
         return self.match_data.filter_conn(conn, subscription);
     }
 
-    fn filter_session(&mut self, session: &Session, subscription: &Subscription<Self::Subscribed>) -> bool {
+    fn filter_session(
+        &mut self,
+        session: &Session,
+        subscription: &Subscription<Self::Subscribed>,
+    ) -> bool {
         return self.match_data.filter_session(session, subscription);
     }
 }

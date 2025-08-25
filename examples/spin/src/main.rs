@@ -19,14 +19,14 @@ struct Args {
     spin: u64,
 }
 
-lazy_static!(
+lazy_static! {
     static ref CYCLES: RwLock<u64> = RwLock::new(0);
     static ref HTTP: RwLock<u64> = RwLock::new(0);
     static ref TCP80: RwLock<u64> = RwLock::new(0);
     static ref IPDST: RwLock<u64> = RwLock::new(0);
     static ref IPSRC: RwLock<u64> = RwLock::new(0);
     static ref ETH: RwLock<u64> = RwLock::new(0);
-);
+};
 
 #[allow(unused)]
 fn http(_: Subscribed) {

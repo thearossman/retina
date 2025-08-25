@@ -12,7 +12,6 @@ pub(crate) fn gen_session_filter(
     statics: &mut Vec<proc_macro2::TokenStream>,
     ct_nodes: Vec<usize>,
 ) -> proc_macro2::TokenStream {
-
     let mut body: Vec<proc_macro2::TokenStream> = vec![];
     let session_subtrees = ct_nodes
         .into_iter()
@@ -51,7 +50,6 @@ fn add_node_match_arm(
     statics: &mut Vec<proc_macro2::TokenStream>,
     node: &PNode,
 ) {
-
     let idx_lit = syn::LitInt::new(&node.id.to_string(), Span::call_site());
     let mut body: Vec<proc_macro2::TokenStream> = vec![];
     gen_session_filter_util(&mut body, statics, node);
@@ -68,9 +66,8 @@ fn add_node_match_arm(
 
             }
         });
-    }        
+    }
 }
-
 
 fn gen_session_filter_util(
     code: &mut Vec<proc_macro2::TokenStream>,

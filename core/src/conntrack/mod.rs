@@ -15,12 +15,12 @@ use self::conn_id::ConnId;
 use self::pdu::{L4Context, L4Pdu};
 use self::timerwheel::TimerWheel;
 use crate::config::ConnTrackConfig;
+use crate::filter::FilterResultData;
 use crate::memory::mbuf::Mbuf;
 use crate::protocols::packet::tcp::TCP_PROTOCOL;
 use crate::protocols::packet::udp::UDP_PROTOCOL;
 use crate::protocols::stream::ParserRegistry;
 use crate::subscription::{Subscription, Trackable};
-use crate::filter::FilterResultData;
 
 use std::cmp;
 use std::time::Instant;
@@ -79,7 +79,7 @@ where
         mbuf: Mbuf,
         ctxt: L4Context,
         subscription: &Subscription<T::Subscribed>,
-        pkt_results: FilterResultData
+        pkt_results: FilterResultData,
     ) {
         let conn_id = ConnId::new(ctxt.src, ctxt.dst, ctxt.proto);
         match self.table.raw_entry_mut().from_key(&conn_id) {
@@ -114,11 +114,11 @@ where
                             ctxt,
                             self.config.tcp_establish_timeout,
                             self.config.max_out_of_order,
-                            pkt_results
+                            pkt_results,
                         ),
-                        UDP_PROTOCOL => Conn::new_udp(ctxt, 
-                                              self.config.udp_inactivity_timeout, 
-                                                            pkt_results),
+                        UDP_PROTOCOL => {
+                            Conn::new_udp(ctxt, self.config.udp_inactivity_timeout, pkt_results)
+                        }
                         _ => Err(anyhow!("Invalid L4 Protocol")),
                     };
                     if let Ok(mut conn) = conn {

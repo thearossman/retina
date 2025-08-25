@@ -119,14 +119,14 @@
 
 mod connection_filter;
 mod packet_filter;
+mod parse;
 mod session_filter;
 mod util;
-mod parse;
 
 use proc_macro::TokenStream;
 use quote::quote;
-use syn::parse_macro_input;
 use retina_core::filter::Filter;
+use syn::parse_macro_input;
 
 use crate::connection_filter::gen_connection_filter;
 use crate::packet_filter::gen_packet_filter;
@@ -159,9 +159,9 @@ pub fn retina_main(_args: TokenStream, input: TokenStream) -> TokenStream {
     let input = parse_macro_input!(input as syn::ItemFn);
 
     let input_configs = parse::get_configs();
-    
-    let (ptree, collapsed_filter, application_protocols) = 
-                        parse::get_filters_from_config(input_configs.clone());
+
+    let (ptree, collapsed_filter, application_protocols) =
+        parse::get_filters_from_config(input_configs.clone());
     let callbacks = parse::get_callbacks_from_config(input_configs);
 
     // store lazily evaluated statics like pre-compiled Regex
@@ -190,7 +190,7 @@ pub fn retina_main(_args: TokenStream, input: TokenStream) -> TokenStream {
 
     let connection_filter_fn = quote! {
         #[inline]
-        fn connection_filter(pkt_results: &retina_core::filter::FilterResultData, 
+        fn connection_filter(pkt_results: &retina_core::filter::FilterResultData,
                              conn: &retina_core::protocols::stream::ConnData) -> retina_core::filter::FilterResultData {
             #connection_filter_body
         }
@@ -198,7 +198,7 @@ pub fn retina_main(_args: TokenStream, input: TokenStream) -> TokenStream {
 
     let session_filter_fn = quote! {
         #[inline]
-        fn session_filter(session: &retina_core::protocols::stream::Session, 
+        fn session_filter(session: &retina_core::protocols::stream::Session,
                           conn_results: &retina_core::filter::FilterResultData) -> retina_core::filter::FilterResultData {
             #session_filter_body
         }
@@ -209,8 +209,8 @@ pub fn retina_main(_args: TokenStream, input: TokenStream) -> TokenStream {
             #packet_filter_fn
             #connection_filter_fn
             #session_filter_fn
-            retina_core::filter::FilterFactory::new(#collapsed_filter, 
-                                                    #application_protocols, 
+            retina_core::filter::FilterFactory::new(#collapsed_filter,
+                                                    #application_protocols,
                                                     packet_filter, connection_filter, session_filter)
         }
 
@@ -222,7 +222,6 @@ pub fn retina_main(_args: TokenStream, input: TokenStream) -> TokenStream {
     };
     filtergen.into()
 }
-
 
 #[proc_macro_attribute]
 pub fn filter(args: TokenStream, input: TokenStream) -> TokenStream {
@@ -265,7 +264,7 @@ pub fn filter(args: TokenStream, input: TokenStream) -> TokenStream {
 
     let connection_filter_fn = quote! {
         #[inline]
-        fn connection_filter(pkt_results: &retina_core::filter::FilterResultData, 
+        fn connection_filter(pkt_results: &retina_core::filter::FilterResultData,
                              conn: &retina_core::protocols::stream::ConnData) -> retina_core::filter::FilterResultData {
             #connection_filter_body
         }
@@ -273,7 +272,7 @@ pub fn filter(args: TokenStream, input: TokenStream) -> TokenStream {
 
     let session_filter_fn = quote! {
         #[inline]
-        fn session_filter(session: &retina_core::protocols::stream::Session, 
+        fn session_filter(session: &retina_core::protocols::stream::Session,
                           conn_results: &retina_core::filter::FilterResultData) -> retina_core::filter::FilterResultData {
             #session_filter_body
         }
@@ -284,10 +283,10 @@ pub fn filter(args: TokenStream, input: TokenStream) -> TokenStream {
             #packet_filter_fn
             #connection_filter_fn
             #session_filter_fn
-            retina_core::filter::FilterFactory::new(#filter_str, 
+            retina_core::filter::FilterFactory::new(#filter_str,
                                 #application_protocols,
-                                packet_filter, 
-                                connection_filter, 
+                                packet_filter,
+                                connection_filter,
                                 session_filter)
         }
 

@@ -1,8 +1,8 @@
 use super::ast::*;
 use super::pattern::{FlatPattern, LayeredPattern};
 
-use std::fmt;
 use std::collections::HashSet;
+use std::fmt;
 
 /// Represents the sub-filter that a predicate node terminates.
 #[derive(Debug, Clone)]
@@ -171,8 +171,12 @@ impl PTree {
         }
     }
 
-    pub(crate) fn add_pattern(&mut self, pattern: &FlatPattern, 
-                              pattern_id: usize, filter_id: usize) {
+    pub(crate) fn add_pattern(
+        &mut self,
+        pattern: &FlatPattern,
+        pattern_id: usize,
+        filter_id: usize,
+    ) {
         let mut node = &mut self.root;
         node.patterns.push(pattern_id);
         for predicate in pattern.predicates.iter() {
@@ -189,9 +193,10 @@ impl PTree {
                 }
             } else {
                 // Add filter ID for a terminal or non-terminal match.
-                if (node.pred.on_packet() && predicate.on_connection()) || 
-                    (node.pred.on_connection() && predicate.on_session()) {
-                        node.filter_ids.insert(filter_id);
+                if (node.pred.on_packet() && predicate.on_connection())
+                    || (node.pred.on_connection() && predicate.on_session())
+                {
+                    node.filter_ids.insert(filter_id);
                 }
             }
             node = node.get_child(predicate);
@@ -279,7 +284,7 @@ impl PTree {
     fn pprint(&self) -> String {
         fn pprint(s: &mut String, node: &PNode, prefix: String, last: bool) {
             let prefix_current = if last { "`- " } else { "|- " };
-            
+
             let mut s_next = format!(
                 "{}{}{} ({}) {}: ",
                 prefix, prefix_current, node, node.id, node.terminates

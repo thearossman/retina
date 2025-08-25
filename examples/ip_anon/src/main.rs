@@ -35,7 +35,8 @@ fn main() -> Result<()> {
             }
         }
     };
-    let mut runtime: Runtime<ConnectionFrame> = Runtime::new(config, filter, vec![Box::new(callback)]).unwrap();
+    let mut runtime: Runtime<ConnectionFrame> =
+        Runtime::new(config, filter, vec![Box::new(callback)]).unwrap();
     runtime.run();
     Ok(())
 }

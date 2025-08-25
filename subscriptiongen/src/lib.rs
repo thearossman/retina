@@ -1,38 +1,33 @@
-/// Reads from user-provided yaml file to generate subscription data. 
+mod builder;
+/// Reads from user-provided yaml file to generate subscription data.
 /// File format is described in README.
+mod prototypes;
 
-mod prototypes; 
-mod builder; 
-
-use builder::{MethodBuilder, read_subscriptions};
+use builder::{read_subscriptions, MethodBuilder};
 
 use proc_macro::TokenStream;
 use quote::quote;
-use std::env; 
-
+use std::env;
 
 /// Temp: NUM_SUBSCRIPTIONS in configuration file must be correct
 #[proc_macro_attribute]
 pub fn num_subscriptions(_args: TokenStream, _input: TokenStream) -> TokenStream {
-    let filepath_in = env::var("IN_FILE")
-                                .expect("Provide IN_FILE yaml file variable");
+    let filepath_in = env::var("IN_FILE").expect("Provide IN_FILE yaml file variable");
     read_subscriptions(&filepath_in).into() // tmp
 }
 
 /// Embeds all data tracking and delivery in Retina core framework (subscription/custom module).
 #[proc_macro_attribute]
 pub fn subscription_type(_args: TokenStream, _input: TokenStream) -> TokenStream {
-
-    let filepath_in = env::var("IN_FILE")
-                                .expect("Provide IN_FILE yaml file variable");
+    let filepath_in = env::var("IN_FILE").expect("Provide IN_FILE yaml file variable");
     let mut cfg = MethodBuilder::new(&filepath_in);
     cfg.parse();
 
-    let def = cfg.gen_struct(); 
+    let def = cfg.gen_struct();
     let new = cfg.gen_new();
-    let update = cfg.gen_update(); 
+    let update = cfg.gen_update();
     let deliver_session_on_match = cfg.gen_deliver_session_on_match();
-    let (get_term_data, terminate) = cfg.gen_terminate(); 
+    let (get_term_data, terminate) = cfg.gen_terminate();
     let parsers = cfg.gen_parsers();
     let structs = cfg.gen_structs();
     let enum_fields = cfg.gen_enums();
@@ -68,8 +63,8 @@ pub fn subscription_type(_args: TokenStream, _input: TokenStream) -> TokenStream
                 }
             }
 
-            fn update(&mut self, 
-                pdu: L4Pdu, 
+            fn update(&mut self,
+                pdu: L4Pdu,
                 session_id: Option<usize>,
                 subscription: &Subscription<Self::Subscribed>) {
                 #( #update )*
@@ -111,11 +106,11 @@ fn subscribable_type(parsers: Vec<proc_macro2::TokenStream>) -> proc_macro2::Tok
         impl Subscribable for SubscribableWrapper {
             type Tracked = TrackedWrapper;
             type SubscribedData = Subscribed;
-        
+
             fn parsers() -> Vec<ConnParser> {
                 vec![ #( #parsers)* ]
             }
-        
+
             fn process_packet(
                 mbuf: Mbuf,
                 subscription: &Subscription<Self>,
@@ -134,11 +129,11 @@ fn subscribable_type(parsers: Vec<proc_macro2::TokenStream>) -> proc_macro2::Tok
     }
 }
 
-
 // TODOTR
-fn deliverable_data(structs: Vec<proc_macro2::TokenStream>, 
-                    enum_fields: Vec<proc_macro2::TokenStream>) -> proc_macro2::TokenStream {
-
+fn deliverable_data(
+    structs: Vec<proc_macro2::TokenStream>,
+    enum_fields: Vec<proc_macro2::TokenStream>,
+) -> proc_macro2::TokenStream {
     quote! {
         #[derive(Debug)]
         pub enum Subscribed {
