@@ -15,7 +15,7 @@ members = [
     "examples/app_classifier",
     "examples/benchmark",
     "examples/re_matcher",
-    "tests/functionality/basic_test",
+    "tests/functionality/basic_test", "examples/measuring_sec",
 ]
 resolver = "2"
 

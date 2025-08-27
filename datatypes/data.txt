@@ -29,6 +29,9 @@
 {"Datatype":{"name":"SshHandshake","level":"L7EndHdrs","expl_parsers":["ssh"]}}
 {"DatatypeFn":{"group_name":"SshHandshake","func":{"name":"from_session","datatypes":["Session"],"returns":{"Constructor":"OptRef"}},"level":["L7EndHdrs"]}}
 {"Datatype":{"name":"FiveTuple","level":"L4FirstPacket","expl_parsers":[]}}
+{"Datatype":{"name":"AnonFiveTuple","level":"L4FirstPacket","expl_parsers":[]}}
+{"Datatype":{"name":"ClearedFiveTuple","level":"L4FirstPacket","expl_parsers":[]}}
+{"Datatype":{"name":"StartTime","level":"L4FirstPacket","expl_parsers":[]}}
 {"Datatype":{"name":"EtherTCI","level":"L4FirstPacket","expl_parsers":[]}}
 {"Datatype":{"name":"EthAddr","level":"L4FirstPacket","expl_parsers":[]}}
 {"Datatype":{"name":"TlsHandshake","level":"L7EndHdrs","expl_parsers":["tls"]}}
