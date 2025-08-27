@@ -71,18 +71,27 @@ impl Tracked for ConnDuration {
 #[derive(Debug, serde::Serialize, Clone)]
 #[cfg_attr(not(feature = "skip_expand"), datatype("L4Terminated"))]
 pub struct PktCount {
-    pub pkt_count: usize,
+    pub orig: usize,
+    pub resp: usize,
 }
 
 impl PktCount {
-    pub fn raw(&self) -> usize {
-        self.pkt_count
+    pub fn total(&self) -> usize {
+        self.orig + self.resp
+    }
+
+    pub fn orig(&self) -> usize {
+        self.orig
+    }
+
+    pub fn resp(&self) -> usize {
+        self.resp
     }
 }
 
 impl Tracked for PktCount {
     fn new(_first_pkt: &L4Pdu) -> Self {
-        Self { pkt_count: 0 }
+        Self { orig: 0, resp: 0 }
     }
 
     #[inline]
@@ -93,30 +102,44 @@ impl Tracked for PktCount {
         not(feature = "skip_expand"),
         datatype_group("PktCount,level=L4InPayload")
     )]
-    fn update(&mut self, _: &L4Pdu) {
-        self.pkt_count += 1;
+    fn update(&mut self, pdu: &L4Pdu) {
+        if pdu.dir {
+            self.orig += 1;
+        } else {
+            self.resp += 1;
+        }
     }
 
     #[inline]
     fn phase_tx(&mut self, _: &StateTxData) {}
 }
 
-/// The number of bytes, including headers, observed in a connection
+/// The number of bytes, excluding packet headers, in each
+/// flow in a connection connection
 #[derive(Debug, serde::Serialize, Clone)]
 #[cfg_attr(not(feature = "skip_expand"), datatype("L4Terminated"))]
 pub struct ByteCount {
-    pub byte_count: usize,
+    pub orig: usize,
+    pub resp: usize,
 }
 
 impl ByteCount {
-    pub fn raw(&self) -> usize {
-        self.byte_count
+    pub fn total(&self) -> usize {
+        self.orig + self.resp
+    }
+
+    pub fn orig(&self) -> usize {
+        self.orig
+    }
+
+    pub fn resp(&self) -> usize {
+        self.resp
     }
 }
 
 impl Tracked for ByteCount {
     fn new(_first_pkt: &L4Pdu) -> Self {
-        Self { byte_count: 0 }
+        Self { orig: 0, resp: 0 }
     }
 
     #[inline]
@@ -128,7 +151,11 @@ impl Tracked for ByteCount {
         datatype_group("ByteCount,level=L4InPayload")
     )]
     fn update(&mut self, pdu: &L4Pdu) {
-        self.byte_count += pdu.mbuf_ref().data_len();
+        if pdu.dir {
+            self.orig += pdu.length();
+        } else {
+            self.resp += pdu.length();
+        }
     }
 
     #[inline]

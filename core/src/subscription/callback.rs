@@ -103,7 +103,9 @@ pub struct StaticCallbackWrapper {
     pub invoked: bool,
 }
 impl StaticCallbackWrapper {
-    pub fn new() -> Self {
+    // Note - easier for code generation if all `new` fns
+    // take in `L4Pdu` ref.
+    pub fn new(_: &L4Pdu) -> Self {
         Self { invoked: false }
     }
     pub fn should_invoke(&self) -> bool {

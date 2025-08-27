@@ -1,6 +1,4 @@
-use retina_core::FiveTuple;
-use retina_core::L4Pdu;
-use retina_core::Runtime;
+use retina_core::{L4Pdu, Runtime};
 use retina_core::config::load_config;
 use retina_core::protocols::stream::dns::Data;
 use retina_core::protocols::{Session, stream::SessionData};
@@ -8,15 +6,10 @@ use retina_core::subscription::*;
 use retina_datatypes::*;
 use retina_filtergen::*;
 
-use std::fs::File;
-use std::io::{BufWriter, Write};
 use std::net::IpAddr;
 use std::path::PathBuf;
-use std::sync::Mutex;
-use std::sync::atomic::{AtomicUsize, Ordering};
 
 use clap::Parser;
-use serde::Serialize;
 
 //// Application-layer protocols ////
 
@@ -24,7 +17,7 @@ use serde::Serialize;
 /// "Through a combination of network and User-Agent string signatures
 /// we detect 41 applications..."
 
-// #[callback("http and DropHighVolume and DropInternal")]
+#[callback("http and DropHighVolume and DropInternal")]
 fn get_http(http: &HttpTransaction, five_tuple: &AnonFiveTuple, ts: &StartTime) {
     // Browser information: K/V store from anonymized source IP to UA, with ts
     let user_agent = http.user_agent();
@@ -33,7 +26,7 @@ fn get_http(http: &HttpTransaction, five_tuple: &AnonFiveTuple, ts: &StartTime) 
     let uri = http.uri();
 }
 
-// #[callback("(quic or tls) and DropHighVolume and DropInternal")]
+#[callback("(quic or tls) and DropHighVolume and DropInternal")]
 fn get_tls(session: &Session, five_tuple: &AnonFiveTuple, ts: &StartTime) {
     let sni = match &session.data {
         SessionData::Tls(tls) => tls.sni(),
@@ -42,7 +35,7 @@ fn get_tls(session: &Session, five_tuple: &AnonFiveTuple, ts: &StartTime) {
     };
 }
 
-// #[callback("dns and DropHighVolume and DropInternal")]
+#[callback("dns and DropHighVolume and DropInternal")]
 fn get_dns(dns: &DnsTransaction, five_tuple: &AnonFiveTuple, ts: &StartTime) {
     if dns.query.is_none()
         || dns.response.is_none()
@@ -69,25 +62,49 @@ fn get_dns(dns: &DnsTransaction, five_tuple: &AnonFiveTuple, ts: &StartTime) {
     // TODO just build up the cache...?
 }
 
+/// General information ///
+
+#[callback("tcp or udp,level=L4FirstPacket")]
+fn record_device(five_tuple: &AnonFiveTuple) {
+    // TODO record the presence of an IP on the network
+}
+
+#[callback("(http or tls or quic) and DropHighVolume and DropInternal,level=L4Terminated")]
+fn record_conn(
+    pkts: &PktCount,
+    bytes: &ByteCount,
+    dur: &ConnDuration,
+    hist: &ConnHistory,
+    ft: &AnonFiveTuple,
+    ts: &StartTime,
+) {
+}
+
 /// Data for fingerprints ///
 
 //// Filter out traffic we know will be irrelevant ////
 /// [TODO might be more efficient to not group these]
 
+#[filter]
+#[derive(Debug)]
 struct DropInternal;
 
-impl DropInternal {
+impl StreamingFilter for DropInternal {
     fn new(_: &L4Pdu) -> Self {
         Self
     }
 
-    // #[filter_group(DropInternal,level=L4FirstPacket)]
-    fn on_first_pkt(&mut self, pkt: &L4Pdu) -> FilterResult {
-        // TODO check dst against private subnets
+    fn clear(&mut self) {}
+}
+
+impl DropInternal {
+    #[filter_group("DropInternal,level=L4FirstPacket")]
+    fn on_first_pkt(&mut self, ft: &AnonFiveTuple) -> FilterResult {
+        // TODO check dst against subnets
         FilterResult::Continue
     }
 
-    // #[filter_group(DropInternal,level=L7OnDisc)]
+    #[filter_group("DropInternal,level=L7OnDisc")]
     fn on_session(&mut self, session: &Session) -> FilterResult {
         // TODO match on list of known HTTPs/SNIs
         FilterResult::Continue
@@ -95,20 +112,25 @@ impl DropInternal {
 }
 
 /// TODO this is where we'd use FilterResult::DropInHW
+#[filter]
+#[derive(Debug)]
 struct DropHighVolume;
 
-impl DropHighVolume {
+impl StreamingFilter for DropHighVolume {
     fn new(_: &L4Pdu) -> Self {
         Self
     }
+    fn clear(&mut self) {}
+}
 
-    // #[filter_group(DropHighVolume,level=L4FirstPacket)]
-    fn on_first_pkt(&mut self, pkt: &L4Pdu) -> FilterResult {
+impl DropHighVolume {
+    #[filter_group("DropHighVolume,level=L4FirstPacket")]
+    fn on_first_pkt(&mut self, ft: &AnonFiveTuple) -> FilterResult {
         // TODO check against known subnets
         FilterResult::Continue
     }
 
-    // #[filter_group(DropHighVolume,level=L7EndHdrs)]
+    #[filter_group("DropHighVolume,level=L7EndHdrs")]
     fn on_session(&mut self, session: &Session) -> FilterResult {
         // TODO match on list of known SNIs
         FilterResult::Accept
@@ -128,12 +150,12 @@ struct Args {
     // TODO outfile
 }
 
-// #[input_files("$RETINA_HOME/datatypes/data.txt")]
-// #[retina_main]
+#[input_files("$RETINA_HOME/datatypes/data.txt")]
+#[retina_main]
 fn main() {
     env_logger::init();
     let args = Args::parse();
     let config = load_config(&args.config);
-    //let mut runtime: Runtime<SubscribedWrapper> = Runtime::new(config, filter).unwrap();
-    //runtime.run();
+    let mut runtime: Runtime<SubscribedWrapper> = Runtime::new(config, filter).unwrap();
+    runtime.run();
 }
