@@ -1,10 +1,11 @@
 // Adapted from https://github.com/stanford-esrg/cato/tree/cc0ff3c99ce2ad674fd61757611a682008586ee2/scripts/train_rust_dt
 
 use smartcore::dataset::Dataset;
-use smartcore::linalg::basic::matrix::DenseMatrix;
-use smartcore::tree::decision_tree_classifier::{
-    DecisionTreeClassifier, DecisionTreeClassifierParameters, SplitCriterion,
+use smartcore::ensemble::random_forest_classifier::{
+    RandomForestClassifier, RandomForestClassifierParameters,
 };
+use smartcore::linalg::basic::matrix::DenseMatrix;
+use smartcore::tree::decision_tree_classifier::SplitCriterion;
 
 use anyhow::{Result, anyhow};
 use clap::Parser;
@@ -17,6 +18,13 @@ const CRITERION: SplitCriterion = SplitCriterion::Gini;
 const MAX_DEPTH: Option<u16> = None;
 const MIN_SAMPLES_LEAF: usize = 1;
 const MIN_SAMPLES_SPLIT: usize = 2;
+
+// Skip if `label` is this value to be 0
+lazy_static::lazy_static! {
+    static ref SKIP_IF: Vec<f64> = vec![
+        0.0
+    ];
+}
 
 // Labels
 const LABEL_COLUMN: &str = "resolution";
@@ -68,6 +76,8 @@ fn load_dataset(dataset_file: &str) -> Result<Dataset<f64, usize>> {
     }
     let label_idx = label_idx.ok_or(anyhow!("No label."))?;
 
+    let mut skipped_rows = 0;
+
     // Iterate through CSV rows
     for (_, record) in rdr.records().enumerate() {
         if let Ok(val) = record // Fails if not utf-8
@@ -75,8 +85,14 @@ fn load_dataset(dataset_file: &str) -> Result<Dataset<f64, usize>> {
             .unwrap()
             .get(label_idx) // Require label in row
             .ok_or(anyhow!("No target found."))?
-            .parse()
+            .parse::<f64>()
         {
+            if SKIP_IF.contains(&val) {
+                skipped_rows += 1;
+                continue;
+            }
+            assert!(val.fract() == 0.0, "{} cannot be converted to usize", val);
+            let val = val as usize;
             target.push(val); // Label for this row (everything else is a feature)
             if !target_vals.contains(&val) {
                 // Space of possible targets
@@ -92,8 +108,9 @@ fn load_dataset(dataset_file: &str) -> Result<Dataset<f64, usize>> {
         }
     }
     println!("Num samples: {}", n_rows);
-    println!("Num features: {}", n_cols);
-    println!("Num classes: {}", target_vals.len());
+    println!("Num features: {} ({})", n_cols, headers.join(","));
+    println!("Num classes: {} ({:?})", target_vals.len(), target_vals);
+    println!("Skipped (invalid) rows: {}", skipped_rows);
 
     let dataset = Dataset {
         data,
@@ -101,19 +118,19 @@ fn load_dataset(dataset_file: &str) -> Result<Dataset<f64, usize>> {
         num_samples: n_rows,
         num_features: n_cols,
         feature_names: headers,
-        target_names: target_vals.iter().map(|s| s.to_string()).collect(),
+        target_names: target_vals.iter().map(|v| v.to_string()).collect(),
         description: dataset_file.to_string(),
     };
     println!("Done loading data, elapsed: {:?}", start.elapsed());
     Ok(dataset)
 }
 
-/// Trains a decision tree classifier from dataset
+/// Trains a random forest classifier from dataset
 fn train_dt(
     train_dataset: Dataset<f64, usize>,
-    params: DecisionTreeClassifierParameters,
-) -> Result<DecisionTreeClassifier<f64, usize, DenseMatrix<f64>, Vec<usize>>> {
-    println!("Training decision tree classifier with params {:?}", params);
+    params: RandomForestClassifierParameters,
+) -> Result<RandomForestClassifier<f64, usize, DenseMatrix<f64>, Vec<usize>>> {
+    println!("Training random forest classifier with params {:?}", params);
     let x_train = DenseMatrix::new(
         train_dataset.num_samples,
         train_dataset.num_features,
@@ -123,7 +140,7 @@ fn train_dt(
     let y_train = train_dataset.target;
 
     let start = Instant::now();
-    let clf = DecisionTreeClassifier::fit(&x_train, &y_train, params)?;
+    let clf = RandomForestClassifier::fit(&x_train, &y_train, params)?;
     println!("Done training, elapsed: {:?}", start.elapsed());
 
     Ok(clf)
@@ -136,12 +153,11 @@ fn main() -> Result<()> {
     let model_bin_fname = args.model_bin;
 
     // Set up parameters
-    let mut params = DecisionTreeClassifierParameters::default()
+    let mut params = RandomForestClassifierParameters::default()
         .with_criterion(CRITERION)
         .with_min_samples_leaf(MIN_SAMPLES_LEAF)
         .with_min_samples_split(MIN_SAMPLES_SPLIT);
     params.max_depth = MAX_DEPTH;
-    params.seed = Some(0);
 
     // Load training dataset
     let dataset = load_dataset(&train_dataset_fname)?;
