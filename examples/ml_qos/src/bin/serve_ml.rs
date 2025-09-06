@@ -44,6 +44,7 @@ impl Predictor {
             let mut pred = CLF.predict(&instance).unwrap();
             assert!(pred.len() == 1);
             self.labels.push(pred.pop().unwrap());
+            N_PREDICTIONS.fetch_add(1, Ordering::Relaxed);
         }
         true
     }
@@ -71,8 +72,9 @@ fn main() -> Result<()> {
     runtime.run();
 
     println!(
-        "Done. Processed {:?} connections",
-        N_CONNS.load(Ordering::Relaxed)
+        "Done. Processed {:?} connections, {:?} inference.",
+        N_CONNS.load(Ordering::Relaxed),
+        N_PREDICTIONS.load(Ordering::Relaxed)
     );
 
     Ok(())
@@ -90,6 +92,8 @@ lazy_static::lazy_static! {
     };
     // Number of processed connections
     static ref N_CONNS: AtomicUsize = AtomicUsize::new(0);
+    // Number of times predictions have been made
+    static ref N_PREDICTIONS: AtomicUsize = AtomicUsize::new(0);
     // Global list of results
     // static ref RESULTS: parking_lot::Mutex<Vec<usize>> = parking_lot::Mutex::new(Vec::new());
 }

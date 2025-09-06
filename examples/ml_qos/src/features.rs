@@ -89,6 +89,7 @@ impl FeatureChunk {
     }
 
     pub fn reset(&mut self) {
+        self.ready = false;
         // Reset all "last 10" features to 0
         self.last_10_min_seg_size = 0.0;
         self.last_10_std_seg_size = 0.0;
