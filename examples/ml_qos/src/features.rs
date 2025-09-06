@@ -142,7 +142,10 @@ impl FeatureChunk {
         // Running counters (all)
         self.all_prev_avg_seg_size = self.welford_seg_size_all.mean().unwrap();
         self.all_prev_max_seg_size = max_cmp(self.all_prev_max_seg_size, seg_size);
-        self.all_prev_std_seg_size = self.welford_seg_size_all.var().unwrap().sqrt();
+        self.all_prev_std_seg_size = match self.welford_seg_size_all.var() {
+            Some(v) => v.sqrt(),
+            None => 0.0,
+        };
 
         // Running counters (last 10s)
         self.last_10_min_seg_size = if self.last_10_min_seg_size > 0.0 {
@@ -151,7 +154,10 @@ impl FeatureChunk {
             seg_size
         };
         self.cumsum_seg_size += seg_size;
-        self.last_10_std_seg_size = self.welford_seg_size_last_10.var().unwrap().sqrt();
+        self.last_10_std_seg_size = match self.welford_seg_size_last_10.var() {
+            Some(v) => v.sqrt(),
+            None => 0.0,
+        };
         self.last_10_max_seg_size = max_cmp(self.last_10_max_seg_size, seg_size);
 
         // TODO last_10_ewma_seg_size
