@@ -1,8 +1,8 @@
-use retina_core::{L4Pdu, Runtime};
 use retina_core::config::load_config;
 use retina_core::protocols::stream::dns::Data;
 use retina_core::protocols::{Session, stream::SessionData};
 use retina_core::subscription::*;
+use retina_core::{L4Pdu, Runtime};
 use retina_datatypes::*;
 use retina_filtergen::*;
 

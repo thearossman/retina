@@ -202,7 +202,7 @@ pub(crate) fn datatype_func_to_tokens(dt: &DatatypeFnSpec) -> proc_macro2::Token
         };
     } else if param == "StateTxData" {
         return quote! {
-            conn.tracked.#dt_name.#fname(tx);
+            conn.tracked.#dt_name.#fname(&tx);
         };
     }
     panic!("Unknown param for {}: {}", dt.func.name, param);
@@ -745,7 +745,7 @@ pub(crate) fn binary_to_tokens(
             }
             BinOp::Re => {
                 if Regex::new(text).is_err() {
-                    panic!("Invalid Regex string")
+                    panic!("Invalid Regex string: {}", text);
                 }
                 let val_lit = syn::LitStr::new(text, Span::call_site());
                 let kind = quote! { regex::Regex };
@@ -756,7 +756,7 @@ pub(crate) fn binary_to_tokens(
             }
             BinOp::ByteRe => {
                 if BytesRegex::new(text).is_err() {
-                    panic!("Invalid Regex string")
+                    panic!("Invalid Regex string: {}", text);
                 }
                 let val_lit = syn::LitStr::new(text, Span::call_site());
                 let kind = quote! { regex::bytes::Regex };
