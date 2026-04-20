@@ -3,6 +3,10 @@
 [![build-status](https://github.com/stanford-esrg/retina/actions/workflows/ci.yml/badge.svg)](https://github.com/stanford-esrg/retina/actions)
 [![doc-status](https://github.com/stanford-esrg/retina/actions/workflows/rustdoc.yml/badge.svg)](https://stanford-esrg.github.io/retina/retina_core)
 
+**Note**: We recommend using [Iris](https://github.com/stanford-esrg/iris)
+instead of Retina. Iris began as a fork of Retina, is more actively maintained,
+and has extended functionality. 
+
 Retina is a network analysis framework that enables operators and researchers
 to ask complex questions about high-speed (>100gbE) network links. Retina
 allows users to easily *subscribe* to subsets of parsed application-layer
